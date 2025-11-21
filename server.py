@@ -62,7 +62,6 @@ if __name__ == "__main__":
     app.run(host="0.0.0.0", port=8080)
 
 import requests
-import os
 
 LINE_CHANNEL_ACCESS_TOKEN = os.getenv("LINE_CHANNEL_ACCESS_TOKEN")
 
