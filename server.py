@@ -13,20 +13,20 @@ def home():
 
 @app.route("/callback", methods=["POST"])
 def callback():
-    try:
-        body = request.get_json()
+    body = request.get_json()
 
-        # イベントを取り出す
-        events = body.get("events", [])
-        for event in events:
-            # ユーザーのメッセージ取得
-            if "message" in event:
-                user_message = event["message"].get("text", "")
+    events = body.get("events", [])
+    for event in events:
+        if event["type"] == "message" and event["message"]["type"] == "text":
 
-                # テスト返信（まずはこれが返ってくれば成功）
-                return jsonify({"reply":"受け取りました！"}), 200
+            user_message = event["message"]["text"]
+            reply_token = event["replyToken"]
 
-        return "OK", 200
+            reply_text = f"受け取りました：{user_message}"
+            reply(reply_token, reply_text)
+
+    return "OK", 200
+
 
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -61,3 +61,19 @@ if __name__ == "__main__":
     # Cloud Run 必須：PORT=8080
     app.run(host="0.0.0.0", port=8080)
 
+import requests
+import os
+
+LINE_CHANNEL_ACCESS_TOKEN = os.getenv("LINE_CHANNEL_ACCESS_TOKEN")
+
+def reply(reply_token, message):
+    url = "https://api.line.me/v2/bot/message/reply"
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {LINE_CHANNEL_ACCESS_TOKEN}"
+    }
+    data = {
+        "replyToken": reply_token,
+        "messages": [{"type": "text", "text": message}]
+    }
+    requests.post(url, headers=headers, json=data)
