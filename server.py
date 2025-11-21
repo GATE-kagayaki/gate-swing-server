@@ -10,9 +10,27 @@ client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 @app.route("/", methods=["GET"])
 def home():
     return "GATE Swing Server is running."
+
 @app.route("/callback", methods=["POST"])
 def callback():
-    return "OK", 200
+    try:
+        body = request.get_json()
+
+        # イベントを取り出す
+        events = body.get("events", [])
+        for event in events:
+            # ユーザーのメッセージ取得
+            if "message" in event:
+                user_message = event["message"].get("text", "")
+
+                # テスト返信（まずはこれが返ってくれば成功）
+                return jsonify({"reply":"受け取りました！"}), 200
+
+        return "OK", 200
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
 
 @app.route("/analyze", methods=["POST"])
 def analyze():
