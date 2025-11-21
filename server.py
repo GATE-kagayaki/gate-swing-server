@@ -13,24 +13,24 @@ def home():
 
 @app.route("/callback", methods=["POST"])
 def callback():
-    body = request.get_json()
+    try:
+        body = request.get_json()
 
-    events = body.get("events", [])
-    for event in events:
-        if event["type"] == "message" and event["message"]["type"] == "text":
+        events = body.get("events", [])
+        for event in events:
+            # メッセージイベントか？
+            if event.get("type") == "message" and "message" in event:
+                reply_token = event["replyToken"]
+                user_message = event["message"].get("text", "")
 
-            user_message = event["message"]["text"]
-            reply_token = event["replyToken"]
+                # LINEへ返信
+                reply(reply_token, f"受け取りました：{user_message}")
 
-            reply_text = f"受け取りました：{user_message}"
-            reply(reply_token, reply_text)
-
-    return "OK", 200
-
+        return "OK", 200
 
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
+        print("Error:", e)
+        return "Error", 500
 
 @app.route("/analyze", methods=["POST"])
 def analyze():
