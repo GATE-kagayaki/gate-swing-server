@@ -10,6 +10,9 @@ client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 @app.route("/", methods=["GET"])
 def home():
     return "GATE Swing Server is running."
+@app.route("/callback", methods=["POST"])
+def callback():
+    return "OK", 200
 
 @app.route("/analyze", methods=["POST"])
 def analyze():
