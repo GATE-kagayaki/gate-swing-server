@@ -23,7 +23,6 @@ GCS_BUCKET_NAME = "gate-swing-data"  # ← バケット名
 storage_client = storage.Client()
 bucket = storage_client.bucket(GCS_BUCKET_NAME)
 
-
 # ----------------------------
 # LINE 返信処理
 # ----------------------------
@@ -39,16 +38,23 @@ def reply(reply_token, message):
     }
     requests.post(url, headers=headers, json=data)
 
-
 # ----------------------------
-# Cloud Storage へ動画保存
+# Cloud Storage へ動画をストリーミング保存
 # ----------------------------
-def save_video_to_gcs(file_content, file_name):
+def save_video_to_gcs_stream(content_url, file_name):
+    headers = {"Authorization": f"Bearer {LINE_CHANNEL_ACCESS_TOKEN}"}
     blob = bucket.blob(file_name)
-    blob.upload_from_string(file_content)
-    blob.make_public()  # 公開URL化
-    return blob.public_url
 
+    # ストリームでダウンロードして直接 GCS に書き込み
+    with requests.get(content_url, headers=headers, stream=True) as r:
+        r.raise_for_status()
+        with blob.open("wb") as f:
+            for chunk in r.iter_content(chunk_size=1024 * 1024):  # 1MB ずつ
+                if chunk:
+                    f.write(chunk)
+
+    blob.make_public()  # 公開 URL にする
+    return blob.public_url
 
 # ----------------------------
 # ホーム
@@ -56,7 +62,6 @@ def save_video_to_gcs(file_content, file_name):
 @app.route("/", methods=["GET"])
 def home():
     return "GATE Swing Server is running."
-
 
 # ----------------------------
 # LINE Webhook
@@ -71,28 +76,26 @@ def callback():
             if event.get("type") == "message":
 
                 msg_type = event["message"]["type"]
+                reply_token = event["replyToken"]
 
-                # テキスト
+                # -------------------
+                # テキストメッセージ
+                # -------------------
                 if msg_type == "text":
-                    reply_token = event["replyToken"]
                     text = event["message"]["text"]
                     reply(reply_token, f"受け取りました：{text}")
 
-                # 動画
+                # -------------------
+                # 動画メッセージ
+                # -------------------
                 elif msg_type == "video":
-                    reply_token = event["replyToken"]
+                    message_id = event["message"]["id"]
+                    content_url = f"https://api.line.me/v2/bot/message/{message_id}/content"
 
-                    # LINE から動画データ取得
-                    content_url = f"https://api.line.me/v2/bot/message/{event['message']['id']}/content"
-                    headers = {"Authorization": f"Bearer {LINE_CHANNEL_ACCESS_TOKEN}"}
+                    file_name = f"video_{message_id}.mp4"
 
-                    video_data = requests.get(content_url, headers=headers).content
-
-                    # 保存名
-                    file_name = f"video_{event['message']['id']}.mp4"
-
-                    # GCS へ保存
-                    video_url = save_video_to_gcs(video_data, file_name)
+                    # ストリーミングでダウンロードして保存
+                    video_url = save_video_to_gcs_stream(content_url, file_name)
 
                     reply(reply_token, "動画を受け取りました！AI解析中です…")
                     print("Saved video:", video_url)
@@ -102,7 +105,6 @@ def callback():
     except Exception as e:
         print("Error:", e)
         return jsonify({"error": str(e)}), 500
-
 
 # ----------------------------
 # AI 解析 API
@@ -130,10 +132,8 @@ def analyze():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-
 # ----------------------------
 # Cloud Run 用エントリポイント
 # ----------------------------
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=8080)
-
