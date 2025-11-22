@@ -39,7 +39,7 @@ def reply(reply_token, message):
     requests.post(url, headers=headers, json=data)
 
 # ----------------------------
-# Cloud Storage へ動画をストリーミング保存
+# Cloud Storage へ動画ストリーミング保存
 # ----------------------------
 def save_video_to_gcs_stream(content_url, file_name):
     headers = {"Authorization": f"Bearer {LINE_CHANNEL_ACCESS_TOKEN}"}
@@ -48,7 +48,7 @@ def save_video_to_gcs_stream(content_url, file_name):
     with requests.get(content_url, headers=headers, stream=True) as r:
         r.raise_for_status()
         with blob.open("wb") as f:
-            for chunk in r.iter_content(chunk_size=1024 * 1024):  # 1MB
+            for chunk in r.iter_content(chunk_size=1024 * 1024):
                 if chunk:
                     f.write(chunk)
 
@@ -76,17 +76,15 @@ def callback():
                 msg_type = event["message"]["type"]
                 reply_token = event["replyToken"]
 
-                # テキスト
                 if msg_type == "text":
                     text = event["message"]["text"]
                     reply(reply_token, f"受け取りました：{text}")
 
-                # 動画
                 elif msg_type == "video":
                     message_id = event["message"]["id"]
                     content_url = f"https://api.line.me/v2/bot/message/{message_id}/content"
-                    file_name = f"video_{message_id}.mp4"
 
+                    file_name = f"video_{message_id}.mp4"
                     video_url = save_video_to_gcs_stream(content_url, file_name)
 
                     reply(reply_token, "動画を受け取りました！AI解析中です…")
@@ -125,7 +123,7 @@ def analyze():
         return jsonify({"error": str(e)}), 500
 
 # ----------------------------
-# Cloud Run 用エントリポイント
+# Cloud Run エントリポイント
 # ----------------------------
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=8080)
