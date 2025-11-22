@@ -19,7 +19,7 @@ LINE_CHANNEL_ACCESS_TOKEN = os.getenv("LINE_CHANNEL_ACCESS_TOKEN")
 # ----------------------------
 # Cloud Storage 設定
 # ----------------------------
-GCS_BUCKET_NAME = os.getenv("GCS_BUCKET_NAME")  # ← ここを環境変数にする
+GCS_BUCKET_NAME = os.getenv("GCS_BUCKET_NAME")
 storage_client = storage.Client()
 bucket = storage_client.bucket(GCS_BUCKET_NAME)
 
@@ -36,14 +36,17 @@ def reply(reply_token, message):
         "replyToken": reply_token,
         "messages": [{"type": "text", "text": message}]
     }
-    requests.post(url, headers=headers, json=data)
+    response = requests.post(url, headers=headers, json=data)
+    print("Reply status:", response.status_code)
 
 # ----------------------------
-# Cloud Storage へ動画ストリーミング保存
+# Cloud Storage へ動画保存
 # ----------------------------
 def save_video_to_gcs_stream(content_url, file_name):
     headers = {"Authorization": f"Bearer {LINE_CHANNEL_ACCESS_TOKEN}"}
     blob = bucket.blob(file_name)
+
+    print("Start downloading video...")
 
     with requests.get(content_url, headers=headers, stream=True) as r:
         r.raise_for_status()
@@ -53,6 +56,7 @@ def save_video_to_gcs_stream(content_url, file_name):
                     f.write(chunk)
 
     blob.make_public()
+    print("Video saved:", blob.public_url)
     return blob.public_url
 
 # ----------------------------
@@ -76,18 +80,25 @@ def callback():
                 msg_type = event["message"]["type"]
                 reply_token = event["replyToken"]
 
+                # ✅ テキストメッセージ
                 if msg_type == "text":
                     text = event["message"]["text"]
                     reply(reply_token, f"受け取りました：{text}")
 
+                # ✅ 動画メッセージ
                 elif msg_type == "video":
+                    print("VIDEO EVENT RECEIVED")
+
+                    # ✅ ここで先に返信！
+                    reply(reply_token, "動画を受け取りました！AI解析中です…")
+                    print("Reply sent immediately")
+
+                    # ✅ その後に保存処理
                     message_id = event["message"]["id"]
                     content_url = f"https://api.line.me/v2/bot/message/{message_id}/content"
-
                     file_name = f"video_{message_id}.mp4"
-                    video_url = save_video_to_gcs_stream(content_url, file_name)
 
-                    reply(reply_token, "動画を受け取りました！AI解析中です…")
+                    video_url = save_video_to_gcs_stream(content_url, file_name)
                     print("Saved video:", video_url)
 
         return "OK", 200
@@ -120,6 +131,7 @@ def analyze():
         return jsonify({"reply": answer})
 
     except Exception as e:
+        print("Error:", e)
         return jsonify({"error": str(e)}), 500
 
 # ----------------------------
