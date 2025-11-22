@@ -19,7 +19,7 @@ LINE_CHANNEL_ACCESS_TOKEN = os.getenv("LINE_CHANNEL_ACCESS_TOKEN")
 # ----------------------------
 # Cloud Storage 設定
 # ----------------------------
-GCS_BUCKET_NAME = "gate-swing-data"
+GCS_BUCKET_NAME = os.getenv("GCS_BUCKET_NAME")  # ← ここを環境変数にする
 storage_client = storage.Client()
 bucket = storage_client.bucket(GCS_BUCKET_NAME)
 
