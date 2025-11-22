@@ -19,7 +19,7 @@ LINE_CHANNEL_ACCESS_TOKEN = os.getenv("LINE_CHANNEL_ACCESS_TOKEN")
 # ----------------------------
 # Cloud Storage 設定
 # ----------------------------
-GCS_BUCKET_NAME = "gate-swing-data"  # ← バケット名
+GCS_BUCKET_NAME = "gate-swing-data"
 storage_client = storage.Client()
 bucket = storage_client.bucket(GCS_BUCKET_NAME)
 
@@ -45,15 +45,14 @@ def save_video_to_gcs_stream(content_url, file_name):
     headers = {"Authorization": f"Bearer {LINE_CHANNEL_ACCESS_TOKEN}"}
     blob = bucket.blob(file_name)
 
-    # ストリームでダウンロードして直接 GCS に書き込み
     with requests.get(content_url, headers=headers, stream=True) as r:
         r.raise_for_status()
         with blob.open("wb") as f:
-            for chunk in r.iter_content(chunk_size=1024 * 1024):  # 1MB ずつ
+            for chunk in r.iter_content(chunk_size=1024 * 1024):  # 1MB
                 if chunk:
                     f.write(chunk)
 
-    blob.make_public()  # 公開 URL にする
+    blob.make_public()
     return blob.public_url
 
 # ----------------------------
@@ -74,27 +73,20 @@ def callback():
 
         for event in events:
             if event.get("type") == "message":
-
                 msg_type = event["message"]["type"]
                 reply_token = event["replyToken"]
 
-                # -------------------
-                # テキストメッセージ
-                # -------------------
+                # テキスト
                 if msg_type == "text":
                     text = event["message"]["text"]
                     reply(reply_token, f"受け取りました：{text}")
 
-                # -------------------
-                # 動画メッセージ
-                # -------------------
+                # 動画
                 elif msg_type == "video":
                     message_id = event["message"]["id"]
                     content_url = f"https://api.line.me/v2/bot/message/{message_id}/content"
-
                     file_name = f"video_{message_id}.mp4"
 
-                    # ストリーミングでダウンロードして保存
                     video_url = save_video_to_gcs_stream(content_url, file_name)
 
                     reply(reply_token, "動画を受け取りました！AI解析中です…")
