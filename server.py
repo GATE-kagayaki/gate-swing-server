@@ -19,9 +19,10 @@ LINE_CHANNEL_ACCESS_TOKEN = os.getenv("LINE_CHANNEL_ACCESS_TOKEN")
 # ----------------------------
 # Cloud Storage 設定
 # ----------------------------
-GCS_BUCKET_NAME = "gate-swing-data"  # ← あなたのバケット名
+GCS_BUCKET_NAME = "gate-swing-data"  # ← バケット名
 storage_client = storage.Client()
 bucket = storage_client.bucket(GCS_BUCKET_NAME)
+
 
 # ----------------------------
 # LINE 返信処理
@@ -45,7 +46,7 @@ def reply(reply_token, message):
 def save_video_to_gcs(file_content, file_name):
     blob = bucket.blob(file_name)
     blob.upload_from_string(file_content)
-    blob.make_public()
+    blob.make_public()  # 公開URL化
     return blob.public_url
 
 
@@ -81,23 +82,26 @@ def callback():
                 elif msg_type == "video":
                     reply_token = event["replyToken"]
 
+                    # LINE から動画データ取得
                     content_url = f"https://api.line.me/v2/bot/message/{event['message']['id']}/content"
                     headers = {"Authorization": f"Bearer {LINE_CHANNEL_ACCESS_TOKEN}"}
 
                     video_data = requests.get(content_url, headers=headers).content
+
+                    # 保存名
                     file_name = f"video_{event['message']['id']}.mp4"
 
+                    # GCS へ保存
                     video_url = save_video_to_gcs(video_data, file_name)
 
                     reply(reply_token, "動画を受け取りました！AI解析中です…")
-
                     print("Saved video:", video_url)
 
         return "OK", 200
 
     except Exception as e:
         print("Error:", e)
-        return "Error", 500
+        return jsonify({"error": str(e)}), 500
 
 
 # ----------------------------
@@ -128,7 +132,8 @@ def analyze():
 
 
 # ----------------------------
-# Cloud Run 用
+# Cloud Run 用エントリポイント
 # ----------------------------
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=8080)
+
