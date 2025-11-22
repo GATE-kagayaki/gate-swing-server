@@ -6,18 +6,26 @@ from google.cloud import storage
 
 app = Flask(__name__)
 
+# ----------------------------
 # OpenAI API クライアント
+# ----------------------------
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
+# ----------------------------
 # LINE アクセストークン
+# ----------------------------
 LINE_CHANNEL_ACCESS_TOKEN = os.getenv("LINE_CHANNEL_ACCESS_TOKEN")
 
+# ----------------------------
 # Cloud Storage 設定
-GCS_BUCKET_NAME = "gate-swing-data"  # バケット名
+# ----------------------------
+GCS_BUCKET_NAME = "gate-swing-data"  # ← あなたのバケット名
 storage_client = storage.Client()
 bucket = storage_client.bucket(GCS_BUCKET_NAME)
 
-# LINE返信
+# ----------------------------
+# LINE 返信処理
+# ----------------------------
 def reply(reply_token, message):
     url = "https://api.line.me/v2/bot/message/reply"
     headers = {
@@ -30,19 +38,28 @@ def reply(reply_token, message):
     }
     requests.post(url, headers=headers, json=data)
 
-# Cloud Storage に動画保存
+
+# ----------------------------
+# Cloud Storage へ動画保存
+# ----------------------------
 def save_video_to_gcs(file_content, file_name):
     blob = bucket.blob(file_name)
     blob.upload_from_string(file_content)
     blob.make_public()
     return blob.public_url
 
+
+# ----------------------------
 # ホーム
+# ----------------------------
 @app.route("/", methods=["GET"])
 def home():
     return "GATE Swing Server is running."
 
-# Webhook
+
+# ----------------------------
+# LINE Webhook
+# ----------------------------
 @app.route("/callback", methods=["POST"])
 def callback():
     try:
@@ -51,13 +68,14 @@ def callback():
 
         for event in events:
             if event.get("type") == "message":
+
                 msg_type = event["message"]["type"]
 
                 # テキスト
                 if msg_type == "text":
                     reply_token = event["replyToken"]
-                    user_message = event["message"].get("text", "")
-                    reply(reply_token, f"受け取りました：{user_message}")
+                    text = event["message"]["text"]
+                    reply(reply_token, f"受け取りました：{text}")
 
                 # 動画
                 elif msg_type == "video":
@@ -65,12 +83,14 @@ def callback():
 
                     content_url = f"https://api.line.me/v2/bot/message/{event['message']['id']}/content"
                     headers = {"Authorization": f"Bearer {LINE_CHANNEL_ACCESS_TOKEN}"}
-                    video_data = requests.get(content_url, headers=headers).content
 
+                    video_data = requests.get(content_url, headers=headers).content
                     file_name = f"video_{event['message']['id']}.mp4"
+
                     video_url = save_video_to_gcs(video_data, file_name)
 
                     reply(reply_token, "動画を受け取りました！AI解析中です…")
+
                     print("Saved video:", video_url)
 
         return "OK", 200
@@ -79,7 +99,10 @@ def callback():
         print("Error:", e)
         return "Error", 500
 
-# AI解析API
+
+# ----------------------------
+# AI 解析 API
+# ----------------------------
 @app.route("/analyze", methods=["POST"])
 def analyze():
     try:
@@ -103,6 +126,9 @@ def analyze():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-# Cloud Run 起動ポイント
+
+# ----------------------------
+# Cloud Run 用
+# ----------------------------
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=8080)
