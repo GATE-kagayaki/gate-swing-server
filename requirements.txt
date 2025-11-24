@@ -3,3 +3,4 @@ openai
 gunicorn
 requests
 google-cloud-storage
+reportlab
