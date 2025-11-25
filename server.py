@@ -9,6 +9,7 @@ app = Flask(__name__)
 
 LINE_CHANNEL_ACCESS_TOKEN = os.getenv("LINE_CHANNEL_ACCESS_TOKEN")
 GCS_BUCKET_NAME = os.getenv("GCS_BUCKET_NAME")
+
 storage_client = storage.Client()
 bucket = storage_client.bucket(GCS_BUCKET_NAME)
 
@@ -30,6 +31,7 @@ def save_video_to_gcs_stream(content_url, file_name):
     headers = {"Authorization": f"Bearer {LINE_CHANNEL_ACCESS_TOKEN}"}
     blob = bucket.blob(file_name)
 
+    # LINE動画はストリーミングして保存
     with requests.get(content_url, headers=headers, stream=True) as r:
         r.raise_for_status()
         with blob.open("wb") as f:
@@ -48,27 +50,37 @@ def callback():
         events = body.get("events", [])
 
         for event in events:
+            # メッセージ受信イベント
             if event.get("type") == "message":
                 msg_type = event["message"]["type"]
                 reply_token = event["replyToken"]
 
+                # テキスト
                 if msg_type == "text":
                     reply(reply_token, "テキストを受信しました")
 
+                # 動画
                 elif msg_type == "video":
                     reply(reply_token, "動画を受け取りました！レポート作成中です…")
 
                     message_id = event["message"]["id"]
-                    content_url = (
-                        f"https://api-data.line.me/v2/bot/message/{message_id}/content"
-                    )
+                    content_url = f"https://api.line.me/v2/bot/message/{message_id}/content"
 
+                    # GCSへ保存
                     file_name = f"video_{message_id}.mp4"
                     video_url = save_video_to_gcs_stream(content_url, file_name)
 
+                    # PDFレポート生成
                     pdf_path = generate_pdf_report("/tmp/report.pdf")
-                    pdf_url = upload_to_gcs(pdf_path, GCS_BUCKET_NAME, f"reports/{message_id}.pdf")
 
+                    # PDFをGCSへアップロード
+                    pdf_url = upload_to_gcs(
+                        pdf_path,
+                        GCS_BUCKET_NAME,
+                        f"reports/{message_id}.pdf"
+                    )
+
+                    # LINEに返信
                     reply(reply_token, f"レポートが完成しました👇\n{pdf_url}")
 
         return "OK", 200
