@@ -1,9 +1,12 @@
 from flask import Flask, request, jsonify
 import os
 import requests
+import logging
 from google.cloud import storage
 
 from report_generator import generate_pdf_report, upload_to_gcs
+
+logging.basicConfig(level=logging.INFO)
 
 app = Flask(__name__)
 
@@ -61,19 +64,15 @@ def callback():
                     file_name = f"video_{message_id}.mp4"
                     video_url = save_video_to_gcs_stream(content_url, file_name)
 
-                    # ✅ PDF生成
                     pdf_path = generate_pdf_report("/tmp/report.pdf")
-
-                    # ✅ GCSアップロード
                     pdf_url = upload_to_gcs(pdf_path, GCS_BUCKET_NAME, f"reports/{message_id}.pdf")
 
-                    # ✅ LINEに返信
                     reply(reply_token, f"レポートが完成しました👇\n{pdf_url}")
 
         return "OK", 200
 
     except Exception as e:
-        print("Error:", e)
+        logging.exception("Server error occurred")
         return jsonify({"error": str(e)}), 500
 
 if __name__ == "__main__":
