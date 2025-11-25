@@ -1,12 +1,9 @@
 from flask import Flask, request, jsonify
 import os
 import requests
-import logging
 from google.cloud import storage
 
 from report_generator import generate_pdf_report, upload_to_gcs
-
-logging.basicConfig(level=logging.INFO)
 
 app = Flask(__name__)
 
@@ -56,25 +53,27 @@ def callback():
                     reply(reply_token, "テキストを受信しました")
 
                 elif msg_type == "video":
-    reply(reply_token, "動画を受け取りました！レポート作成中です…")
+                    reply(reply_token, "動画を受け取りました！レポート作成中です…")
 
-    message_id = event["message"]["id"]
-    # ここを必ず api-data にする！！
-    content_url = f"https://api-data.line.me/v2/bot/message/{message_id}/content"
+                    message_id = event["message"]["id"]
+                    content_url = f"https://api.line.me/v2/bot/message/{message_id}/content"
 
-    file_name = f"video_{message_id}.mp4"
-    video_url = save_video_to_gcs_stream(content_url, file_name)
+                    file_name = f"video_{message_id}.mp4"
+                    video_url = save_video_to_gcs_stream(content_url, file_name)
 
-    pdf_path = generate_pdf_report("/tmp/report.pdf")
-    pdf_url = upload_to_gcs(pdf_path, GCS_BUCKET_NAME, f"reports/{message_id}.pdf")
+                    # PDF生成
+                    pdf_path = generate_pdf_report("/tmp/report.pdf")
 
-    reply(reply_token, f"レポートが完成しました👇\n{pdf_url}")
+                    # PDFアップロード
+                    pdf_url = upload_to_gcs(pdf_path, GCS_BUCKET_NAME, f"reports/{message_id}.pdf")
 
+                    # LINEへ返信
+                    reply(reply_token, f"レポートが完成しました👇\n{pdf_url}")
 
         return "OK", 200
 
     except Exception as e:
-        logging.exception("Server error occurred")
+        print("Error:", e)
         return jsonify({"error": str(e)}), 500
 
 if __name__ == "__main__":
