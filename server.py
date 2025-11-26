@@ -13,7 +13,6 @@ GCS_BUCKET_NAME = os.getenv("GCS_BUCKET_NAME")
 storage_client = storage.Client()
 bucket = storage_client.bucket(GCS_BUCKET_NAME)
 
-
 def reply(reply_token, message):
     url = "https://api.line.me/v2/bot/message/reply"
     headers = {
@@ -26,7 +25,6 @@ def reply(reply_token, message):
     }
     requests.post(url, headers=headers, json=data)
 
-
 def save_video_to_gcs_stream(content_url, file_name):
     headers = {"Authorization": f"Bearer {LINE_CHANNEL_ACCESS_TOKEN}"}
     blob = bucket.blob(file_name)
@@ -38,15 +36,13 @@ def save_video_to_gcs_stream(content_url, file_name):
                 if chunk:
                     f.write(chunk)
 
-    blob.make_public()
-    return blob.public_url
-
+    # UBL適用中のため make_public は NG
+    return blob.generate_signed_url(expiration=3600)
 
 @app.route("/callback", methods=["POST"])
 def callback():
     try:
         body = request.get_json()
-        print("RAW EVENT:", body)
         events = body.get("events", [])
 
         for event in events:
@@ -83,6 +79,6 @@ def callback():
         print("Error:", e)
         return jsonify({"error": str(e)}), 500
 
-
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=8080)
+
