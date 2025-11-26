@@ -30,6 +30,10 @@ def upload_to_gcs(local_pdf_path, bucket_name, dest_filename):
     storage_client = storage.Client()
     bucket = storage_client.bucket(bucket_name)
     blob = bucket.blob(dest_filename)
+
     blob.upload_from_filename(local_pdf_path)
-    blob.make_public()
-    return blob.public_url
+
+    # make_public は使えないので署名付きURLを返す
+    url = blob.generate_signed_url(expiration=datetime.timedelta(hours=1))
+    return url
+
