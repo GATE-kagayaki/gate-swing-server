@@ -72,11 +72,7 @@ def callback():
                     pdf_path = generate_pdf_report("/tmp/report.pdf")
 
                     # GCSへPDFアップロード
-                    pdf_url = upload_to_gcs(
-                        pdf_path,
-                        GCS_BUCKET_NAME,
-                        f"reports/{message_id}.pdf"
-                    )
+                    pdf_url = upload_to_gcs(pdf_path, GCS_BUCKET_NAME, f"reports/{message_id}.pdf")
 
                     reply(reply_token, f"レポートが完成しました👇\n{pdf_url}")
 
