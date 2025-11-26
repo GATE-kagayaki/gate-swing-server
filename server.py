@@ -13,6 +13,7 @@ GCS_BUCKET_NAME = os.getenv("GCS_BUCKET_NAME")
 storage_client = storage.Client()
 bucket = storage_client.bucket(GCS_BUCKET_NAME)
 
+
 def reply(reply_token, message):
     url = "https://api.line.me/v2/bot/message/reply"
     headers = {
@@ -24,6 +25,7 @@ def reply(reply_token, message):
         "messages": [{"type": "text", "text": message}]
     }
     requests.post(url, headers=headers, json=data)
+
 
 def save_video_to_gcs_stream(content_url, file_name):
     headers = {"Authorization": f"Bearer {LINE_CHANNEL_ACCESS_TOKEN}"}
@@ -38,6 +40,7 @@ def save_video_to_gcs_stream(content_url, file_name):
 
     blob.make_public()
     return blob.public_url
+
 
 @app.route("/callback", methods=["POST"])
 def callback():
@@ -59,7 +62,9 @@ def callback():
                     reply(reply_token, "動画を受け取りました！レポート作成中です…")
 
                     message_id = event["message"]["id"]
-                    content_url = f"https://api.line.me/v2/bot/message/{message_id}/content"
+
+                    # ★修正：動画URLは api-data.line.me を使う必要がある
+                    content_url = f"https://api-data.line.me/v2/bot/message/{message_id}/content"
 
                     # GCSへ保存
                     file_name = f"video_{message_id}.mp4"
@@ -68,7 +73,7 @@ def callback():
                     # PDF生成
                     pdf_path = generate_pdf_report("/tmp/report.pdf")
 
-                    # GCSへPDFアップロード
+                    # PDFをGCSへアップロード
                     pdf_url = upload_to_gcs(pdf_path, GCS_BUCKET_NAME, f"reports/{message_id}.pdf")
 
                     reply(reply_token, f"レポートが完成しました👇\n{pdf_url}")
@@ -79,6 +84,6 @@ def callback():
         print("Error:", e)
         return jsonify({"error": str(e)}), 500
 
+
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=8080)
-
