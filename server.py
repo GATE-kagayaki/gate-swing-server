@@ -3,38 +3,46 @@ import os
 import requests
 from google.cloud import storage
 
+# PDF生成用（あなたの report_generator.py を想定）
 from report_generator import generate_pdf_report, upload_to_gcs
 
 app = Flask(__name__)
 
-# --- Environment Variables ---
-LINE_CHANNEL_ACCESS_TOKEN = os.getenv("LINE_CHANNEL_ACCESS_TOKEN")
-GCS_BUCKET_NAME = os.getenv("GCS_BUCKET_NAME")
+LINE_ACCESS_TOKEN = os.getenv("LINE_CHANNEL_ACCESS_TOKEN")
+BUCKET_NAME = os.getenv("GCS_BUCKET_NAME")
 
-# --- GCS Setup ---
+# GCS
 storage_client = storage.Client()
-bucket = storage_client.bucket(GCS_BUCKET_NAME)
+bucket = storage_client.bucket(BUCKET_NAME)
 
 
-# --- Reply to LINE ---
-def reply(reply_token, message):
+# ---------------------------------------------------
+# LINE 返信
+# ---------------------------------------------------
+def reply_text(reply_token, text):
     url = "https://api.line.me/v2/bot/message/reply"
     headers = {
         "Content-Type": "application/json",
-        "Authorization": f"Bearer {LINE_CHANNEL_ACCESS_TOKEN}"
+        "Authorization": f"Bearer {LINE_ACCESS_TOKEN}"
     }
-    data = {
+    body = {
         "replyToken": reply_token,
-        "messages": [{"type": "text", "text": message}]
+        "messages": [{"type": "text", "text": text}]
     }
-    requests.post(url, headers=headers, json=data)
+    requests.post(url, headers=headers, json=body)
 
 
-# --- Save Video to GCS ---
-def save_video_to_gcs_stream(content_url, file_name):
-    headers = {"Authorization": f"Bearer {LINE_CHANNEL_ACCESS_TOKEN}"}
+# ---------------------------------------------------
+# 動画ダウンロード (stream)
+# ---------------------------------------------------
+def download_video_to_gcs(message_id):
+    content_url = f"https://api.line.me/v2/bot/message/{message_id}/content"
+    headers = {"Authorization": f"Bearer {LINE_ACCESS_TOKEN}"}
+
+    file_name = f"video_{message_id}.mp4"
     blob = bucket.blob(file_name)
 
+    # ストリーミングで GCS に書き込み
     with requests.get(content_url, headers=headers, stream=True) as r:
         r.raise_for_status()
         with blob.open("wb") as f:
@@ -42,63 +50,59 @@ def save_video_to_gcs_stream(content_url, file_name):
                 if chunk:
                     f.write(chunk)
 
-    # Cloud Run は uniform bucket のため make_public は不要
+    blob.make_public()
     return blob.public_url
 
 
-# --- Webhook Handler ---
+# ---------------------------------------------------
+# Webhook
+# ---------------------------------------------------
 @app.route("/callback", methods=["POST"])
 def callback():
     try:
         body = request.get_json()
+        events = body.get("events", [])
+
         print("RAW EVENT:", body)  # デバッグログ
 
-        events = body.get("events", [])
-        if not events:
-            return "OK", 200
+        for event in events:
+            if event.get("type") != "message":
+                continue
 
-        event = events[0]
-
-        # --- Message Event ---
-        if event.get("type") == "message":
-            msg_type = event["message"]["type"]
+            msg = event["message"]
             reply_token = event["replyToken"]
 
-            # --- Text Message ---
-            if msg_type == "text":
-                reply(reply_token, "テキストを受信しました！")
-                return "OK", 200
+            # テキスト
+            if msg["type"] == "text":
+                reply_text(reply_token, f"受信: {msg['text']}")
+                continue
 
-            # --- Video Message ---
-            if msg_type == "video":
-                reply(reply_token, "動画を受け取りました！レポート作成中です…")
+            # 動画
+            if msg["type"] == "video":
+                reply_text(reply_token, "動画を受信しました。解析レポートを作成中です…")
 
-                message_id = event["message"]["id"]
-                content_url = f"https://api.line.me/v2/bot/message/{message_id}/content"
+                message_id = msg["id"]
 
-                # 1. Save video
-                file_name = f"video_{message_id}.mp4"
-                video_url = save_video_to_gcs_stream(content_url, file_name)
+                # 動画を GCS に保存
+                video_url = download_video_to_gcs(message_id)
 
-                # 2. Create PDF
-                pdf_local = "/tmp/report.pdf"
-                generate_pdf_report(pdf_local)
+                # PDF生成
+                pdf_path = generate_pdf_report("/tmp/report.pdf")
 
-                # 3. Upload PDF
-                pdf_url = upload_to_gcs(pdf_local, GCS_BUCKET_NAME, f"reports/{message_id}.pdf")
+                # PDFをGCSにアップロード
+                pdf_url = upload_to_gcs(pdf_path, BUCKET_NAME, f"reports/{message_id}.pdf")
 
-                # 4. Reply with link
-                reply(reply_token, f"レポートが完成しました👇\n{pdf_url}")
-
-                return "OK", 200
+                reply_text(reply_token, f"レポートが完成しました👇\n{pdf_url}")
 
         return "OK", 200
 
     except Exception as e:
-        print("ERROR:", str(e))
+        print("ERROR in callback:", e)
         return jsonify({"error": str(e)}), 500
 
 
-# --- Run App ---
+# ---------------------------------------------------
+# Cloud Run 起動
+# ---------------------------------------------------
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=8080)
