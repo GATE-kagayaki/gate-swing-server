@@ -53,26 +53,33 @@ def callback():
                 msg_type = event["message"]["type"]
                 reply_token = event["replyToken"]
 
+                   # テキスト
                 if msg_type == "text":
                     reply(reply_token, "テキストを受信しました")
 
+                # 動画
                 elif msg_type == "video":
                     reply(reply_token, "動画を受け取りました！レポート作成中です…")
 
                     message_id = event["message"]["id"]
                     content_url = f"https://api.line.me/v2/bot/message/{message_id}/content"
 
+                    # GCSへ保存
                     file_name = f"video_{message_id}.mp4"
                     video_url = save_video_to_gcs_stream(content_url, file_name)
 
+                    # PDFレポート生成
                     pdf_path = generate_pdf_report("/tmp/report.pdf")
 
+                    # PDFをGCSへアップロード
                     pdf_url = upload_to_gcs(
-                        pdf_path, GCS_BUCKET_NAME, f"reports/{message_id}.pdf"
+                        pdf_path,
+                        GCS_BUCKET_NAME,
+                        f"reports/{message_id}.pdf"
                     )
 
                     reply(reply_token, f"レポートが完成しました👇\n{pdf_url}")
-
+            
         return "OK", 200
 
     except Exception as e:
