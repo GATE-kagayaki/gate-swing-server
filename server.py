@@ -46,6 +46,7 @@ def save_video_to_gcs_stream(content_url, file_name):
 def callback():
     try:
         body = request.get_json()
+        print("RAW EVENT:", body)
         events = body.get("events", [])
 
         for event in events:
