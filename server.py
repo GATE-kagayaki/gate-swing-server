@@ -55,23 +55,31 @@ def callback():
                     reply(reply_token, "テキストを受信しました")
 
                 # 動画
-                elif msg_type == "video":
-                    reply(reply_token, "動画を受け取りました！レポート作成中です…")
+               elif msg_type == "video":
+                   reply(reply_token, "動画を受け取りました！レポート作成中です…")
 
-                    message_id = event["message"]["id"]
-                    content_url = f"https://api.line.me/v2/bot/message/{message_id}/content"
+                   message_id = event["message"]["id"]
+                   content_provider = event["message"].get("contentProvider", {})
+                   provider_type = content_provider.get("type")
 
-                    # GCSへ保存
-                    file_name = f"video_{message_id}.mp4"
-                    video_url = save_video_to_gcs_stream(content_url, file_name)
+                   # external 動画（端末の動画）は直接URLを使う
+                   if provider_type == "external":
+                   content_url = content_provider.get("originalContentUrl")
+                   else:
+                   # LINEサーバー保存の動画は messageId から取得
+                   content_url = f"https://api-data.line.me/v2/bot/message/{message_id}/content"
 
-                    # PDF生成
-                    pdf_path = generate_pdf_report("/tmp/report.pdf")
+                   # GCSへ保存
+                   file_name = f"video_{message_id}.mp4"
+                   video_url = save_video_to_gcs_stream(content_url, file_name)
 
-                    # GCSへPDFアップロード
-                    pdf_url = upload_to_gcs(pdf_path, GCS_BUCKET_NAME, f"reports/{message_id}.pdf")
+                   # PDF生成
+                   pdf_path = generate_pdf_report("/tmp/report.pdf")
 
-                    reply(reply_token, f"レポートが完成しました👇\n{pdf_url}")
+                   # PDFアップロード
+                   pdf_url = upload_to_gcs(pdf_path, GCS_BUCKET_NAME, f"reports/{message_id}.pdf")
+
+                   reply(reply_token, f"レポートが完成しました👇\n{pdf_url}")
 
         return "OK", 200
 
