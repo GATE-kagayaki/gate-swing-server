@@ -1,39 +1,29 @@
-from reportlab.lib.pagesizes import A4
-from reportlab.pdfgen import canvas
-import datetime
+# report_generator.py
 from google.cloud import storage
 
-def generate_pdf_report(pdf_filename):
-    c = canvas.Canvas(pdf_filename, pagesize=A4)
-    width, height = A4
-    y = height - 40
+def generate_pdf_report(output_path: str, video_url: str) -> str:
+    # video_url を使って解析し、output_path に PDF を生成する処理を書く
+    # ここではダミー実装の例
+    from reportlab.lib.pagesizes import A4
+    from reportlab.pdfgen import canvas
 
-    c.setFont("Helvetica-Bold", 18)
-    c.drawString(40, y, "GATE Swing Analysis Report")
-    y -= 25
-
-    c.setFont("Helvetica", 10)
-    date_str = datetime.datetime.now().strftime("%Y-%m-%d")
-    c.drawString(40, y, f"Date: {date_str}")
-    y -= 40
-
-    c.setFont("Helvetica-Bold", 12)
-    c.drawString(40, y, "スイング解析レポート（仮データ）")
-    y -= 200
-
-    c.drawString(40, y, "※ここに解析結果が入ります（本番はAI結果を差し込み）")
+    c = canvas.Canvas(output_path, pagesize=A4)
+    c.drawString(100, 800, "動画解析レポート")
+    c.drawString(100, 780, f"動画URL: {video_url}")
+    c.showPage()
     c.save()
-    return pdf_filename
+
+    return output_path
 
 
-def upload_to_gcs(local_pdf_path, bucket_name, dest_filename):
-    storage_client = storage.Client()
-    bucket = storage_client.bucket(bucket_name)
-    blob = bucket.blob(dest_filename)
+def upload_to_gcs(local_path: str, bucket_name: str, dest_blob_name: str) -> str:
+    client = storage.Client()
+    bucket = client.bucket(bucket_name)
+    blob = bucket.blob(dest_blob_name)
+    blob.upload_from_filename(local_path)
 
-    blob.upload_from_filename(local_pdf_path)
-
-    # make_public は使えないので署名付きURLを返す
-    url = blob.generate_signed_url(expiration=datetime.timedelta(hours=1))
+    # 必要に応じて署名付きURLに変更可能
+    url = blob.generate_signed_url(version="v4", expiration=3600, method="GET")
     return url
+
 
