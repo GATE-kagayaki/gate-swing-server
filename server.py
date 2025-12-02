@@ -209,10 +209,9 @@ def handle_event(event: dict) -> None:
 # ---------------------------------------------------
 # ヘルスチェック用
 # ---------------------------------------------------
-@app.route("/health", methods=["GET"])
-def health():
-    return "OK", 200
-
+@app.route("/upload_test", methods=["POST"])
+def upload_test():
+    return {"message": "upload test OK"}, 200
 
 # ---------------------------------------------------
 # Cloud Run 起動
