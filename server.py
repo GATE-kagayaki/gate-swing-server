@@ -78,7 +78,7 @@ def download_video_to_gcs(message_id: str) -> str:
     戻り値:
         video_gcs_url: GCS からアクセス可能な URL (署名付きURLや公開URL)
     """
-    content_url = f"https://api-date.line.me/v2/bot/message/{message_id}/content"
+    content_url = f"https://api-data.line.me/v2/bot/message/{message_id}/content"
     headers = {"Authorization": f"Bearer {LINE_ACCESS_TOKEN}"}
 
     file_name = f"videos/video_{message_id}.mp4"
