@@ -97,14 +97,19 @@ def handle_video_message(event):
                 tmp.write(chunk)
             tmp_path = tmp.name
 
-        # ========================
-        # 2. GCS に保存
-        # ========================
+        # ================================
+        # 2. GCS に保存（署名付きURLを使う）
+        # ================================
         gcs_path = f"videos/{os.path.basename(tmp_path)}.mp4"
         blob = bucket.blob(gcs_path)
         blob.upload_from_filename(tmp_path)
-        blob.make_public()
-        video_url = blob.public_url
+
+        # 署名付きURLを発行（1時間有効）
+        video_url = blob.generate_signed_url(
+            version="v4",
+            expiration=3600,
+            method="GET"
+         )
 
         # ========================
         # 3. 解析（stub → 生成AIレポート）
