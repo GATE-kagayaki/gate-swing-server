@@ -1,112 +1,149 @@
+# server.py
+
 import os
-import datetime
+import tempfile
 import traceback
 
-from flask import Flask, request, jsonify
+from flask import Flask, request, abort
 from linebot import LineBotApi, WebhookHandler
-from linebot.models import MessageEvent, TextSendMessage, VideoMessage
+from linebot.exceptions import InvalidSignatureError
+from linebot.models import MessageEvent, TextMessage, VideoMessage, TextSendMessage
+
+from google.cloud import storage
 
 from report_generator import generate_report_for_line
 
-# ------------- LINE 設定 -------------
-LINE_CHANNEL_SECRET = os.getenv("LINE_CHANNEL_SECRET")
-LINE_CHANNEL_ACCESS_TOKEN = os.getenv("LINE_CHANNEL_ACCESS_TOKEN")
 
+app = Flask(__name__)
+
+# ======== 環境変数 =========
+LINE_CHANNEL_ACCESS_TOKEN = os.getenv("LINE_CHANNEL_ACCESS_TOKEN")
+LINE_CHANNEL_SECRET = os.getenv("LINE_CHANNEL_SECRET")
+GCS_BUCKET_NAME = os.getenv("GCS_BUCKET_NAME")
+
+# LINE API クライアント
 line_bot_api = LineBotApi(LINE_CHANNEL_ACCESS_TOKEN)
 handler = WebhookHandler(LINE_CHANNEL_SECRET)
 
-# Flask app
-app = Flask(__name__)
+# GCS クライアント
+storage_client = storage.Client()
+bucket = storage_client.bucket(GCS_BUCKET_NAME)
 
-# -----------------------------------
-# 1. Webhook エンドポイント（LINE）
-# -----------------------------------
-@app.route("/callback", methods=['POST'])
+
+# ============================
+# 1. Webhook 入口
+# ============================
+@app.route("/callback", methods=["POST"])
 def callback():
-    signature = request.headers.get("X-Line-Signature")
+    signature = request.headers.get("X-Line-Signature", "")
 
     body = request.get_data(as_text=True)
 
     try:
         handler.handle(body, signature)
-    except Exception as e:
-        print("Callback Error:", e)
-        traceback.print_exc()
-        return "Error", 400
+    except InvalidSignatureError:
+        abort(400)
 
     return "OK"
 
 
-# -----------------------------------
-# 2. メッセージ受信（動画 or 文字）
-# -----------------------------------
+# ============================
+# 2. メッセージイベント
+# ============================
+
+@handler.add(MessageEvent, message=TextMessage)
+def handle_text_message(event):
+
+    text = event.message.text.strip()
+
+    # 有料/無料の切り替え
+    if text.lower() in ["paid", "有料"]:
+        line_bot_api.reply_message(
+            event.reply_token,
+            TextSendMessage("有料版モードに切り替えました！\nこの後、スイング動画を送ってください。")
+        )
+        return
+
+    if text.lower() in ["free", "無料"]:
+        line_bot_api.reply_message(
+            event.reply_token,
+            TextSendMessage("無料版モードに切り替えました！\nこの後、スイング動画を送ってください。")
+        )
+        return
+
+    # その他メッセージ
+    line_bot_api.reply_message(
+        event.reply_token,
+        TextSendMessage("スイング動画を送ってください！\n無料版＝07だけ\n有料版＝01〜10 全レポート作成します。")
+    )
+
+
 @handler.add(MessageEvent, message=VideoMessage)
 def handle_video_message(event):
-    """
-    ユーザーが動画を送ったときに呼ばれる部分。
-    今は映像解析はしないため、ダミーのAレベル分析を実行して
-    完成されたレポートを返す。
-    """
-    user_id = event.source.user_id
 
-    # 今後ここに「動画をGCSへ保存 → 本物の解析」を入れられる
-    # ----------------------------------------------------------
-
-    # 暫定的にドライバー・初心者で仮定
-    club_type = "ドライバー"
-    user_level = "初心者"
+    # まず返信（処理中メッセージ）
+    line_bot_api.reply_message(
+        event.reply_token,
+        TextSendMessage("動画を受信しました。解析レポートを作成中です…")
+    )
 
     try:
-        # 有料版レポート（あなたが指定したテンプレ構成）
+        # ========================
+        # 1. 動画を一時保存
+        # ========================
+        with tempfile.NamedTemporaryFile(delete=False) as tmp:
+            message_content = line_bot_api.get_message_content(event.message.id)
+            for chunk in message_content.iter_content():
+                tmp.write(chunk)
+            tmp_path = tmp.name
+
+        # ========================
+        # 2. GCS に保存
+        # ========================
+        gcs_path = f"videos/{os.path.basename(tmp_path)}.mp4"
+        blob = bucket.blob(gcs_path)
+        blob.upload_from_filename(tmp_path)
+        blob.make_public()
+        video_url = blob.public_url
+
+        # ========================
+        # 3. 解析（stub → 生成AIレポート）
+        #     - 初期は無料版 "free"
+        #     - あなたの仕様では今は固定 free でOK
+        # ========================
+        mode = "paid" if "paid" in (event.source.user_id or "").lower() else "free"
+
         report_text = generate_report_for_line(
-            mode="paid",
-            club_type=club_type,
-            user_level=user_level
-        )
-
-        line_bot_api.reply_message(
-            event.reply_token,
-            TextSendMessage(text="動画を受信しました。解析レポートを作成します…")
-        )
-
-        line_bot_api.push_message(
-            user_id,
-            TextSendMessage(text=report_text)
-        )
-
-    except Exception as e:
-        line_bot_api.reply_message(
-            event.reply_token,
-            TextSendMessage(text=f"レポート生成中にエラーが発生しました。\n{e}")
-        )
-        traceback.print_exc()
-
-
-@handler.add(MessageEvent)
-def handle_text(event):
-    """
-    テキストメッセージが送信された場合の処理。
-    """
-    text = event.message.text
-
-    if text in ["無料", "無料レポート"]:
-        report_text = generate_report_for_line(
-            mode="free",
+            mode="free",    # ←あとで paid 切り替え可
             club_type="ドライバー",
             user_level="初心者"
         )
-        line_bot_api.reply_message(event.reply_token, TextSendMessage(text=report_text))
 
-    else:
-        line_bot_api.reply_message(
-            event.reply_token,
-            TextSendMessage(text="動画を送信してください📹")
+        # ========================
+        # 4. ユーザーへ送信
+        # ========================
+        line_bot_api.push_message(
+            event.source.user_id,
+            TextSendMessage(report_text)
+        )
+
+    except Exception as e:
+        print("Error:", e)
+        print(traceback.format_exc())
+
+        line_bot_api.push_message(
+            event.source.user_id,
+            TextSendMessage(
+                "レポート生成中にエラーが発生しました。\n\n"
+                f"{e}"
+            )
         )
 
 
-# -----------------------------------
-# Cloud Run（デプロイ用）
-# -----------------------------------
+@app.route("/", methods=["GET"])
+def index():
+    return "GATE Swing Server Running."
+
+
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 8080))
-    app.run(host="0.0.0.0", port=port)
+    app.run(host="0.0.0.0", port=8080)
