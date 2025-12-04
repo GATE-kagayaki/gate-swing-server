@@ -104,8 +104,7 @@ def handle_video_message(event):
         blob = bucket.blob(gcs_path)
         blob.upload_from_filename(tmp_path)
 
-        # 署名付きURLを発行（1時間有効）
-        video_url = blob.generate_signed_url(
+        video_url = f"gs://{bucket.name}/{gcs_path}"
             version="v4",
             expiration=3600,
             method="GET"
