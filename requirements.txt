@@ -4,3 +4,4 @@ gunicorn
 requests
 google-cloud-storage
 reportlab
+line-bot-sdk
