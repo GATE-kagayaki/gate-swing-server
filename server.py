@@ -1,7 +1,7 @@
 import os
 import threading # 非同期処理のため必須 (処理のタイムアウト回避)
 import tempfile # 一時ファイル管理を確実にするため追加
-import ffmpeg # 動画圧縮ライブラリ (メモリ不足回避のため必須)
+import ffmpeg_python as ffmpeg # ★★★ 修正済み: ffmpeg-pythonをインポート名ffmpegとして使用 ★★★
 import requests
 from flask import Flask, request, abort
 from linebot import LineBotApi, WebhookHandler
@@ -51,6 +51,7 @@ def process_video_async(user_id, video_content):
         app.logger.info(f"動画を幅 640px に圧縮・変換開始。")
         
         # FFmpegで圧縮とリサイズを実行 (crf=28で高圧縮)
+        # ffmpeg-pythonを 'ffmpeg' として使用
         (
             ffmpeg
             .input(original_video_path)
