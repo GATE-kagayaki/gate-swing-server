@@ -163,9 +163,3 @@ def handle_video(event):
     # threading.Threadを使ってprocess_video_asyncをバックグラウンドで実行
     thread = threading.Thread(target=process_video_async, args=(user_id, video_content))
     thread.start()
-
-if __name__ == "__main__":
-    port = int(os.environ.get('PORT', 8080))
-    # Matplotlibのフォントキャッシュ構築を抑制し、/tmpをホームディレクトリに設定
-    os.environ['HOME'] = '/tmp'
-    app.run(host='0.0.0.0', port=port)
