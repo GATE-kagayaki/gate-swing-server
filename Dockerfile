@@ -1,11 +1,9 @@
-# Base image for Python applications
-FROM python:3.10-slim
+# ベースイメージをより安定した Python 3.10-slim-bullseye に変更
+FROM python:3.10-slim-bullseye
 
-# Set the working directory in the container
-WORKDIR /app
-
-# Install OS dependencies required by MediaPipe, OpenCV, and FFmpeg
-RUN apt-get update && apt-get install -y \
+# 1. OSパッケージのインストール
+# ffmpeg、libsm6, libxext6、そしてOpenCV/MediaPipeの動作に必要な全ての依存依存関係をインストール
+RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg \
     libgl1 \
     libglib2.0-0 \
@@ -13,16 +11,22 @@ RUN apt-get update && apt-get install -y \
     libxrender1 \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy the requirements file and install dependencies
+# 2. 作業ディレクトリを設定
+WORKDIR /app
+
+# 3. Pythonの依存関係をインストール
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy the rest of the application files
-COPY . .
+# 4. アプリケーションコードをコピー
+# ★★★ report_generator.py は削除済みのため、この行は削除またはコメントアウトします。
+# COPY report_generator.py .
+COPY server.py .
 
-# Expose the port Cloud Run will use
+# 5. ポートを設定
 ENV PORT 8080
 EXPOSE 8080
 
-# Start Gunicorn server (★ ここが重要！)
+# 6. アプリケーションを実行
+# -w 1 (ワーカー数1) に修正済みで、起動時の負荷を最小限に抑えます。
 CMD ["gunicorn", "-w", "1", "-b", "0.0.0.0:8080", "server:app", "--timeout", "900"]
