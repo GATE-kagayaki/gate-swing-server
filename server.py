@@ -7,7 +7,7 @@ from linebot.models import MessageEvent, TextMessage, TextSendMessage, VideoMess
 from linebot.utils import extract_content_from_multipart
 import requests
 import report_generator 
-import ffmpeg # ★★★ ffmpeg-pythonをインポート ★★★
+import ffmpeg
 
 # 環境変数から設定値を取得
 LINE_CHANNEL_ACCESS_TOKEN = os.environ.get('LINE_CHANNEL_ACCESS_TOKEN')
@@ -47,29 +47,35 @@ def process_video_async(user_id, video_content):
     try:
         app.logger.info(f"動画を幅 640px に圧縮・変換開始。")
         # -vf scale=640:-1 で幅640pxにリサイズし、crf 28で高圧縮
+        # ★★★ 修正: ffmpegの実行パスを明示的に指定します ★★★
         (
             ffmpeg
             .input(original_video_path)
             .output(compressed_video_path, vf='scale=640:-1', crf=28, vcodec='libx264')
             .overwrite_output()
-            .run(capture_stdout=True, capture_stderr=True)
+            .run(cmd='ffmpeg', capture_stdout=True, capture_stderr=True) # <-- 修正箇所
         )
         # 解析に使うパスを圧縮後のファイルに設定
         video_to_analyze = compressed_video_path
         app.logger.info(f"動画圧縮・変換成功: {compressed_video_path}")
         
     except ffmpeg.Error as e:
-        app.logger.error(f"FFmpegによる動画圧縮に失敗: {e.stderr.decode('utf8')}", exc_info=True)
-        # 圧縮失敗時は元のファイルを解析（失敗する可能性が高いが試みる）
-        video_to_analyze = original_video_path
+        error_details = e.stderr.decode('utf8') if e.stderr else '詳細不明'
+        app.logger.error(f"FFmpegによる動画圧縮に失敗: {error_details}", exc_info=True)
+        report_text = f"【動画処理エラー】圧縮に失敗しました。詳細: {error_details[:100]}..."
+        line_bot_api.push_message(user_id, TextSendMessage(text=report_text))
+        # 圧縮失敗時は元のファイルを解析せずに終了 (負荷を避けるため)
+        return
         
     except Exception as e:
         app.logger.error(f"予期せぬ圧縮エラー: {e}", exc_info=True)
-        video_to_analyze = original_video_path
+        report_text = f"【予期せぬエラー】動画処理で問題が発生しました: {str(e)[:100]}..."
+        line_bot_api.push_message(user_id, TextSendMessage(text=report_text))
+        return
         
     # 2. 動画の解析を実行
     try:
-        # 圧縮または元のファイルを解析
+        # 圧縮されたファイルを解析
         report_text = report_generator.analyze_swing(video_to_analyze)
     except Exception as e:
         report_text = f"【解析エラー】動画処理中に予期せぬエラーが発生しました: {e}"
@@ -106,7 +112,7 @@ def process_video_async(user_id, video_content):
 
 
 # ------------------------------------------------
-# LINE Webhookのメイン処理
+# LINE Webhookのメイン処理 (省略)
 # ------------------------------------------------
 @app.route("/callback", methods=['POST'])
 def callback():
