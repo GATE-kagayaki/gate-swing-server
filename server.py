@@ -1,148 +1,147 @@
 import os
 import tempfile
+import cv2
+import numpy as np
+import mediapipe as mp
 from flask import Flask, request, abort
-
 from linebot import LineBotApi, WebhookHandler
 from linebot.exceptions import InvalidSignatureError
 from linebot.models import (
-    MessageEvent,
-    TextMessage,
-    VideoMessage,
-    TextSendMessage,
+    MessageEvent, TextMessage, VideoMessage, TextSendMessage
 )
 
-from google.cloud import storage
+# ---------------------------------------------------------
+# 環境変数の設定 (Cloud Runの環境変数設定で入力します)
+# ---------------------------------------------------------
+LINE_CHANNEL_ACCESS_TOKEN = os.environ.get('LINE_CHANNEL_ACCESS_TOKEN')
+LINE_CHANNEL_SECRET = os.environ.get('LINE_CHANNEL_SECRET')
 
-from report_generator import generate_report_for_line
+# Flaskアプリケーションの初期化
+app = Flask(__name__)
 
-# ----------------------------------------------------
-# 1. 環境変数
-# ----------------------------------------------------
-LINE_CHANNEL_ACCESS_TOKEN = os.getenv("LINE_CHANNEL_ACCESS_TOKEN")
-LINE_CHANNEL_SECRET = os.getenv("LINE_CHANNEL_SECRET")
-GCS_BUCKET_NAME = os.getenv("GCS_BUCKET_NAME")
-
-if not LINE_CHANNEL_ACCESS_TOKEN or not LINE_CHANNEL_SECRET:
-    raise Exception("LINE の環境変数が正しく設定されていません。")
-
-if not GCS_BUCKET_NAME:
-    raise Exception("GCS_BUCKET_NAME が設定されていません。")
-
-
-# ----------------------------------------------------
-# 2. LINE SDK 初期化
-# ----------------------------------------------------
+# LINE Bot API設定
 line_bot_api = LineBotApi(LINE_CHANNEL_ACCESS_TOKEN)
 handler = WebhookHandler(LINE_CHANNEL_SECRET)
 
+# MediaPipe設定
+mp_pose = mp.solutions.pose
 
-# ----------------------------------------------------
-# 3. Flask
-# ----------------------------------------------------
-app = Flask(__name__)
-
-
-@app.route("/callback", methods=["POST"])
+# ---------------------------------------------------------
+# 1. LINE Webhook エンドポイント
+# ---------------------------------------------------------
+@app.route("/callback", methods=['POST'])
 def callback():
-    signature = request.headers.get("X-Line-Signature")
-
+    # 署名の検証
+    signature = request.headers['X-Line-Signature']
     body = request.get_data(as_text=True)
+    app.logger.info("Request body: " + body)
 
     try:
         handler.handle(body, signature)
     except InvalidSignatureError:
         abort(400)
 
-    return "OK"
+    return 'OK'
 
-
-# ----------------------------------------------------
-# 4. メッセージ受信
-# ----------------------------------------------------
-
-@handler.add(MessageEvent, message=TextMessage)
-def handle_text_message(event):
-    """
-    テキストメッセージを受信したとき
-    """
-    text = event.message.text
-
-    # シンプルな応答
-    reply = f"「{text}」を受け取りました。動画を送ってください。"
-
-    line_bot_api.reply_message(
-        event.reply_token,
-        TextSendMessage(text=reply)
-    )
-
-
+# ---------------------------------------------------------
+# 2. 動画メッセージを受け取った時の処理
+# ---------------------------------------------------------
 @handler.add(MessageEvent, message=VideoMessage)
 def handle_video_message(event):
-    """
-    動画メッセージを受信したとき
-    """
+    message_id = event.message.id
+    reply_token = event.reply_token
+    user_id = event.source.user_id
+
+    # とりあえず「解析開始」を伝える
     try:
         line_bot_api.reply_message(
-            event.reply_token,
-            TextSendMessage(text="動画を受信しました。解析レポートを作成中です…")
+            reply_token,
+            TextSendMessage(text="動画を受け取りました⛳️\nスイング解析を開始します...")
         )
-    except:
-        pass  # 念のため
+    except Exception as e:
+        print(f"Reply Error: {e}")
 
+    # 動画のダウンロードと解析実行
     try:
-        # --------------------------------------------------------
-        # ① 動画データを一時保存
-        # --------------------------------------------------------
-        message_content = line_bot_api.get_message_content(event.message.id)
-
-        with tempfile.NamedTemporaryFile(delete=False) as tmp:
+        # LINEサーバーから動画コンテンツを取得
+        message_content = line_bot_api.get_message_content(message_id)
+        
+        # 一時ファイルに保存
+        with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as tmp_file:
+            video_path = tmp_file.name
             for chunk in message_content.iter_content():
-                tmp.write(chunk)
+                tmp_file.write(chunk)
 
-            tmp_path = tmp.name
+        # -----------------------------------------------
+        # ★ ここで骨格解析を実行
+        # -----------------------------------------------
+        landmarks_data = process_video_with_mediapipe(video_path)
+        
+        # 解析結果に基づいてレポートを作成（仮のメッセージ）
+        # 将来的には report_generator.py を呼び出す場所です
+        report_text = f"解析完了！\n合計フレーム数: {len(landmarks_data)}\n\n(現在は骨格抽出まで完了しています。ここにスイング診断結果が表示されます)"
 
-        # --------------------------------------------------------
-        # ② GCS にアップロード（ACL操作しない）
-        # --------------------------------------------------------
-        storage_client = storage.Client()
-        bucket = storage_client.bucket(GCS_BUCKET_NAME)
-
-        gcs_path = f"videos/{os.path.basename(tmp_path)}.mp4"
-        blob = bucket.blob(gcs_path)
-        blob.upload_from_filename(tmp_path)
-
-        # Uniform bucket access のため ACL変更は禁止
-        # signed URL も作らない
-        video_url = f"gs://{GCS_BUCKET_NAME}/{gcs_path}"
-
-        # --------------------------------------------------------
-        # ③ レポート生成（無料固定）
-        # --------------------------------------------------------
-        report_text = generate_report_for_line(
-            mode="free",
-            club_type="ドライバー",
-            user_level="初心者"
-        )
-
-        # --------------------------------------------------------
-        # ④ LINE へ返信
-        # --------------------------------------------------------
+        # 結果をPUSHメッセージで送信（reply_tokenは1回しか使えないため）
         line_bot_api.push_message(
-            event.source.user_id,
+            user_id,
             TextSendMessage(text=report_text)
         )
 
     except Exception as e:
-        # エラーがあっても必ず返信
-        err_msg = f"レポート生成中にエラーが発生しました。\n{str(e)}"
-        line_bot_api.push_message(
-            event.source.user_id,
-            TextSendMessage(text=err_msg)
-        )
+        error_msg = f"システムエラーが発生しました: {e}"
+        print(error_msg)
+        line_bot_api.push_message(user_id, TextSendMessage(text=error_msg))
+    
+    finally:
+        # 一時ファイルの削除
+        if os.path.exists(video_path):
+            os.remove(video_path)
 
+# ---------------------------------------------------------
+# 3. MediaPipe解析ロジック
+# ---------------------------------------------------------
+def process_video_with_mediapipe(video_path):
+    """
+    動画から骨格ランドマークを抽出する関数
+    """
+    landmarks_data = []
+    
+    cap = cv2.VideoCapture(video_path)
+    
+    with mp_pose.Pose(
+        min_detection_confidence=0.5,
+        min_tracking_confidence=0.5,
+        model_complexity=1) as pose: # Cloud RunなどCPU環境ではmodel_complexity=1 (or 0) が軽量でおすすめ
+        
+        while cap.isOpened():
+            success, image = cap.read()
+            if not success:
+                break
 
-# ----------------------------------------------------
-# 5. Cloud Run 用エントリポイント
-# ----------------------------------------------------
+            # 高速化のため書き込み不可モード＆RGB変換
+            image.flags.writeable = False
+            image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+            
+            results = pose.process(image)
+            
+            if results.pose_landmarks:
+                # 必要なデータだけ抽出して保存
+                frame_landmarks = []
+                for landmark in results.pose_landmarks.landmark:
+                    frame_landmarks.append({
+                        'x': landmark.x,
+                        'y': landmark.y,
+                        'z': landmark.z,
+                        'visibility': landmark.visibility
+                    })
+                landmarks_data.append(frame_landmarks)
+                
+    cap.release()
+    return landmarks_data
+
+# ---------------------------------------------------------
+# サーバー起動
+# ---------------------------------------------------------
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=int(os.getenv("PORT", 8080)))
+    port = int(os.environ.get('PORT', 8080))
+    app.run(host='0.0.0.0', port=port)
