@@ -1,163 +1,115 @@
-# report_generator.py
+import cv2
+import mediapipe as mp
+import numpy as np
 
-import os
-import textwrap
-from openai import OpenAI
+# MediaPipe設定
+mp_pose = mp.solutions.pose
 
-# OpenAI クライアント（APIキーは環境変数で自動取得）
-client = OpenAI()
-
-
-# ================================
-# 1. スイングの「ざっくり分析」(Aレベル)
-# ================================
-def analyze_swing_stub(club_type: str = "ドライバー", user_level: str = "初心者") -> dict:
+def calculate_angle(a, b, c):
     """
-    今はまだ本物の映像解析は入れず、
-    クラブ種別とレベルから「ありがちな傾向」を返すダミー分析。
-    将来ここを、本物のOpenCV/MediaPipe解析に差し替える前提。
+    3点(a, b, c)から角度bを計算する関数
+    a, b, c はそれぞれ [x, y] または [x, y, z] の座標リスト/配列
     """
+    a = np.array(a) # First
+    b = np.array(b) # Mid
+    c = np.array(c) # End
+    
+    radians = np.arctan2(c[1]-b[1], c[0]-b[0]) - np.arctan2(a[1]-b[1], a[0]-b[0])
+    angle = np.abs(radians*180.0/np.pi)
+    
+    if angle > 180.0:
+        angle = 360-angle
+        
+    return angle
 
-    # 超ざっくりな傾向をパターン分け
-    if club_type == "ドライバー":
-        base = {
-            "head": "テークバックで頭が右に流れやすく、切り返しで左に戻る動きが強め。",
-            "shoulder": "トップまではしっかり回るが、ダウンで肩の戻りが早くなりやすい。",
-            "hip": "腰の回転が肩と同時になりがちで、下半身リードが弱め。",
-            "wrist": "切り返しでコックがほどけやすく、アーリーリリース傾向。",
-            "path": "クラブはややアウトサイドから入りやすい。",
-        }
-    else:
-        base = {
-            "head": "頭の上下動は少なめだが、左右にはややブレやすい傾向。",
-            "shoulder": "肩は十分に回るものの、ダウンスイングで開きが早め。",
-            "hip": "下半身の回転量が少なく、体全体で振りにいきやすい。",
-            "wrist": "インパクト前に手首の角度がほどけやすく、当てにいく動きになりがち。",
-            "path": "ややカット軌道気味で、左への引っかけやスライスが出やすい。",
-        }
-
-    if user_level == "超初心者":
-        level_note = "まだボールにしっかり当てることが最優先の段階です。"
-    elif user_level == "中級":
-        level_note = "スコア安定のために、再現性とインパクトゾーンの質を高めていきたい段階です."
-    else:
-        level_note = "基礎はある程度できているので、『ミスのパターン』を減らせると一気に伸びます。"
-
-    return {
-        "club_type": club_type,
-        "user_level": user_level,
-        "level_note": level_note,
-        **base,
-    }
-
-
-# ================================
-# 2. 無料レポート（要約版）
-# ================================
-def generate_free_report_text(analysis: dict) -> str:
+def analyze_swing(video_path):
     """
-    無料版：07.Key Diagnosis 相当の「総合診断コメントだけ」を返す。
-    短く・分かりやすく・前向きに。
+    動画を解析し、スイングの評価レポート（テキスト）を返します。
     """
+    cap = cv2.VideoCapture(video_path)
+    
+    # スイングデータの格納用
+    landmarks_history = []
+    
+    # 簡易的なフェーズ検知用（今回は全フレーム解析後の最大値などで判定）
+    max_shoulder_rotation = 0
+    address_spine_angle = 0
+    
+    with mp_pose.Pose(
+        min_detection_confidence=0.5,
+        min_tracking_confidence=0.5,
+        model_complexity=1) as pose:
+        
+        frame_count = 0
+        
+        while cap.isOpened():
+            success, image = cap.read()
+            if not success:
+                break
+            
+            # 高速化のため画像をリサイズ（任意）
+            # image = cv2.resize(image, (640, 480))
+            
+            # RGB変換
+            image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+            image.flags.writeable = False
+            
+            # 推論実行
+            results = pose.process(image)
+            
+            if results.pose_landmarks:
+                landmarks = results.pose_landmarks.landmark
+                
+                # 必要なランドマークの座標を取得
+                # 11:左肩, 12:右肩, 23:左腰, 24:右腰
+                left_shoulder = [landmarks[mp_pose.PoseLandmark.LEFT_SHOULDER.value].x,
+                                 landmarks[mp_pose.PoseLandmark.LEFT_SHOULDER.value].y]
+                right_shoulder = [landmarks[mp_pose.PoseLandmark.RIGHT_SHOULDER.value].x,
+                                  landmarks[mp_pose.PoseLandmark.RIGHT_SHOULDER.value].y]
+                left_hip = [landmarks[mp_pose.PoseLandmark.LEFT_HIP.value].x,
+                            landmarks[mp_pose.PoseLandmark.LEFT_HIP.value].y]
+                right_hip = [landmarks[mp_pose.PoseLandmark.RIGHT_HIP.value].x,
+                             landmarks[mp_pose.PoseLandmark.RIGHT_HIP.value].y]
+                
+                # アドレス時の前傾角度（簡易判定：最初の数フレーム）
+                if frame_count < 10:
+                    # 股関節-肩-垂直線 などの角度計算が必要だが、今回は簡易的に「腰と肩のY座標差」などでチェック
+                    pass 
 
-    prompt = f"""
-    あなたは日本語のゴルフコーチAIです。
-    次のスイング分析情報をもとに、
-    「総合診断コメント」と「改善の方向性」を
-    初心者〜中級者向けに、やさしく・前向きに・具体的に説明してください。
+                # 肩の回転角度（捻転）を簡易計算
+                # 2D画像上での肩の傾きを計算
+                shoulder_angle = calculate_angle(
+                    [left_shoulder[0], 0], left_shoulder, right_shoulder
+                )
+                
+                # 最大値を更新（バックスイングの深さの指標として）
+                if shoulder_angle > max_shoulder_rotation:
+                    max_shoulder_rotation = shoulder_angle
 
-    - クラブ: {analysis['club_type']}
-    - レベル感: {analysis['user_level']}（{analysis['level_note']}）
-    - 頭の動き: {analysis['head']}
-    - 肩の動き: {analysis['shoulder']}
-    - 腰の動き: {analysis['hip']}
-    - 手首の使い方: {analysis['wrist']}
-    - スイング軌道: {analysis['path']}
+                landmarks_history.append(landmarks)
+            
+            frame_count += 1
+            
+    cap.release()
+    
+    # --- レポート作成 ---
+    report_lines = []
+    report_lines.append("⛳ スイング診断レポート ⛳")
+    report_lines.append(f"総フレーム数: {frame_count}")
+    
+    # 診断ロジック（サンプル）
+    # ※実際はカメラアングルや左右打ちによってロジックを調整する必要があります
+    if max_shoulder_rotation > 0:
+        report_lines.append(f"★ 肩の回転: {int(max_shoulder_rotation)}度")
+        if max_shoulder_rotation > 80:
+            report_lines.append("  → 深い捻転ができています！素晴らしいです。")
+        elif max_shoulder_rotation < 45:
+            report_lines.append("  → 少し回転が浅いかもしれません。もっと背中をターゲットに向ける意識を持ってみましょう。")
+        else:
+            report_lines.append("  → 標準的な回転量です。")
+    
+    report_lines.append("\nお疲れ様でした！次回も継続して計測しましょう。")
+    
+    return "\n".join(report_lines)
 
-    出力フォーマット（日本語）:
-
-    07. 総合診断
-
-    ● 今のスイングの特徴（2〜3行）
-    ● その結果出やすい球筋やミス（1〜2行）
-    ● まず意識したいポイント（箇条書きで2つ）
-
-    ・専門用語は使いすぎない
-    ・「ダメ出し」ではなく、「こうするともっと良くなる」という言い方
-    ・全体で300〜400文字くらい
-    """
-
-    res = client.chat.completions.create(
-        model="gpt-4o-mini",
-        messages=[{"role": "user", "content": textwrap.dedent(prompt)}],
-        temperature=0.7,
-    )
-
-    return res.choices[0].message.content.strip()
-
-
-# ================================
-# 3. 有料レポート（01〜10フル構成）
-# ================================
-def generate_paid_report_text(analysis: dict) -> str:
-    """
-    有料版：01〜10までフル構成のレポートを生成。
-    すでにあなたと合意したテンプレ構成に沿って出力。
-    """
-
-    prompt = f"""
-    あなたは日本語のゴルフスイング解析コーチAIです。
-    次のスイング分析情報をもとに、
-    「01〜10の構成」を持つ詳細レポートを作成してください。
-
-    ▼スイング情報（ざっくり・Aレベル）
-    - クラブ: {analysis['club_type']}
-    - レベル感: {analysis['user_level']}（{analysis['level_note']}）
-    - 頭の動き: {analysis['head']}
-    - 肩の動き: {analysis['shoulder']}
-    - 腰の動き: {analysis['hip']}
-    - 手首の使い方: {analysis['wrist']}
-    - スイング軌道: {analysis['path']}
-
-    ▼レポート構成（タイトルは必ずこのままの日本語で）
-
-    01. 概要
-    02. 頭の安定性
-    03. 肩の回転
-    04. 腰の回転
-    05. 手首の使い方
-    06. スイング軌道
-    07. 総合診断
-    08. 改善ドリル
-    09. フィッティングの方向性
-    10. まとめ
-
-    ▼共通ルール
-    - すべて日本語
-    - 初心者〜中級者向けに専門用語を噛み砕く
-    - 「できていない」ではなく「こうするともっと良くなる」
-    - セクション番号とタイトルは必ず入れる
-    """
-
-    res = client.chat.completions.create(
-        model="gpt-4o-mini",
-        messages=[{"role": "user", "content": textwrap.dedent(prompt)}],
-        temperature=0.7,
-    )
-
-    return res.choices[0].message.content.strip()
-
-
-# ================================
-# 4. LINE用のレポート生成ラッパー
-# ================================
-def generate_report_for_line(mode: str = "free",
-                             club_type: str = "ドライバー",
-                             user_level: str = "初心者") -> str:
-
-    analysis = analyze_swing_stub(club_type=club_type, user_level=user_level)
-
-    if mode == "free":
-        return generate_free_report_text(analysis)
-    else:
-        return generate_paid_report_text(analysis)
+   
