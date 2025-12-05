@@ -5,7 +5,6 @@ FROM python:3.10-slim
 WORKDIR /app
 
 # Install OS dependencies required by MediaPipe, OpenCV, and FFmpeg
-# Note: ffmpeg is needed for video processing
 RUN apt-get update && apt-get install -y \
     ffmpeg \
     libgl1 \
@@ -25,6 +24,5 @@ COPY . .
 ENV PORT 8080
 EXPOSE 8080
 
-# Start Gunicorn server. 
-# ★★★ -w 1 に修正: 起動時の負荷を下げ、タイムアウトを防ぐ ★★★
+# Start Gunicorn server (★ ここが重要！)
 CMD ["gunicorn", "-w", "1", "-b", "0.0.0.0:8080", "server:app", "--timeout", "900"]
