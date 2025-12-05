@@ -1,29 +1,27 @@
-# ベースイメージ
-FROM python:3.10-slim
+# Debian Busterをベースイメージとして使用
+FROM python:3.10-buster
 
-# ★★★ OpenCVの依存ライブラリをインストール（ImportError: libGL.so.1 対策）★★★
-# Cloud RunのようなGUIのない環境でMediaPipe/OpenCVを動作させるために必須です。
+# 1. OSパッケージのインストール
+# ffmpegとその依存関係をインストール
 RUN apt-get update && apt-get install -y \
-    libgl1 \
-    libglib2.0-0 \
+    ffmpeg \
     libsm6 \
-    libxrender1 \
+    libxext6 \
     && rm -rf /var/lib/apt/lists/*
-# ★★★ 修正箇所はここまで ★★★
 
-# 作業ディレクトリ
+# 2. 作業ディレクトリを設定
 WORKDIR /app
 
-# 必要ファイルをコピー
-COPY requirements.txt .
+# 3. Pythonの依存関係をインストール
+COPY requirements.txt /app/
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY server.py .
-COPY report_generator.py .
+# 4. アプリケーションコードをコピー
+COPY . /app
 
-# Cloud Run が使うポート番号
-ENV PORT=8080
+# 5. ポートを設定
+ENV PORT 8080
+EXPOSE 8080
 
-# 起動コマンド
-# server:app は、server.pyファイル内の Flask インスタンス(app)を指定しています。
-CMD ["gunicorn", "-b", "0.0.0.0:8080", "server:app"]
+# 6. アプリケーションを実行
+CMD ["gunicorn", "-w", "2", "-b", "0.0.0.0:8080", "server:app", "--timeout", "900"]
