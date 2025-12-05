@@ -1,10 +1,4 @@
-flask
-openai
-gunicorn
-requests
-google-cloud-storage
-reportlab
-line-bot-sdk
-opencv-python-headless
+opencv-python
 mediapipe
 numpy
+ffmpeg-python
