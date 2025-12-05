@@ -31,4 +31,5 @@ EXPOSE 8080
 
 # 6. アプリケーションを実行
 # Gunicornのタイムアウトを延長し、ワーカーを2つに設定（CPU 4 vCPUsを活かすため）
+# ★ここが 'server:app' であることが、server.py へのリネームを必要とします。
 CMD ["gunicorn", "-w", "2", "-b", "0.0.0.0:8080", "server:app", "--timeout", "900"]
