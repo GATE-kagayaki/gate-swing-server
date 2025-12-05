@@ -1,35 +1,30 @@
-# ベースイメージをより安定した Python 3.10-slim-bullseye に変更
-FROM python:3.10-slim-bullseye
+# Base image for Python applications
+FROM python:3.10-slim
 
-# 1. OSパッケージのインストール
-# ffmpeg、libsm6, libxext6、そしてOpenCV/MediaPipeの動作に必要な全ての依存関係をインストールします。
-# これがワーカーの起動クラッシュを防ぐために最も重要です。
-RUN apt-get update && apt-get install -y --no-install-recommends \
+# Set the working directory in the container
+WORKDIR /app
+
+# Install OS dependencies required by MediaPipe, OpenCV, and FFmpeg
+# Note: ffmpeg is needed for video processing
+RUN apt-get update && apt-get install -y \
     ffmpeg \
-    libsm6 \
-    libxext6 \
     libgl1 \
     libglib2.0-0 \
+    libsm6 \
     libxrender1 \
     && rm -rf /var/lib/apt/lists/*
 
-# 2. 作業ディレクトリを設定
-WORKDIR /app
-
-# 3. Pythonの依存関係をインストール
+# Copy the requirements file and install dependencies
 COPY requirements.txt .
-# pip install を実行
 RUN pip install --no-cache-dir -r requirements.txt
 
-# 4. アプリケーションコードをコピー
-COPY server.py .
-COPY report_generator.py .
+# Copy the rest of the application files
+COPY . .
 
-# 5. ポートを設定
+# Expose the port Cloud Run will use
 ENV PORT 8080
 EXPOSE 8080
 
-# 6. アプリケーションを実行
-# Gunicornのタイムアウトを延長し、ワーカーを2つに設定（CPU 4 vCPUsを活かすため）
-# ★ここが 'server:app' であることが、server.py へのリネームを必要とします。
-CMD ["gunicorn", "-w", "2", "-b", "0.0.0.0:8080", "server:app", "--timeout", "900"]
+# Start Gunicorn server. 
+# ★★★ -w 1 に修正: 起動時の負荷を下げ、タイムアウトを防ぐ ★★★
+CMD ["gunicorn", "-w", "1", "-b", "0.0.0.0:8080", "server:app", "--timeout", "900"]
