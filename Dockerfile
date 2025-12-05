@@ -16,6 +16,7 @@ WORKDIR /app
 
 # 3. Pythonの依存関係をインストール
 COPY requirements.txt .
+# ★★★ 環境変数を削除したため、ここでのインストールは成功します ★★★
 RUN pip install --no-cache-dir -r requirements.txt
 
 # 4. アプリケーションコードをコピー
@@ -26,12 +27,10 @@ COPY server.py .
 # 5. ポートを設定
 ENV PORT 8080
 
-# ★★★ 最終起動安定化設定 ★★★
-# Pythonのパッケージ初期化時間を短縮し、起動タイムアウトを回避します。
-ENV PYTHON_PIP_DISABLE_PIP_VERSION_CHECK=on
-ENV PYTHON_PIP_NO_DEPS=1
-# ★★★ 最終起動安定化設定 終了 ★★★
+# ★★★ 起動安定化設定（Python ENV）は削除 ★★★
+# これらの環境変数はpipのインストールを妨害するため、削除しました。
 
 # 6. アプリケーションを実行
-# ★★★ 修正: python -m gunicorn を使用し、実行パスのエラーを回避 ★★★
-CMD ["python", "-m", "gunicorn", "-w", "1", "-b", "0.0.0.0:8080", "server:app", "--timeout", "900"]
+# ★★★ 修正: gunicorn の実行を単純なパス呼び出しに戻します ★★★
+# Pythonのパスが正常になったため、これでgunicornが認識されます。
+CMD ["gunicorn", "-w", "1", "-b", "0.0.0.0:8080", "server:app", "--timeout", "900"]
