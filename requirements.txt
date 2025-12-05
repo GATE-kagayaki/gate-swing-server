@@ -5,3 +5,6 @@ requests
 google-cloud-storage
 reportlab
 line-bot-sdk
+opencv-python-headless
+mediapipe
+numpy
