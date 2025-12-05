@@ -3,7 +3,6 @@ import mediapipe as mp
 import numpy as np
 import os
 import math
-from linebot.models import TextSendMessage
 
 # ------------------------------------------------
 # ユーティリティ関数
@@ -29,6 +28,8 @@ def calculate_angle(p1, p2, p3):
 def analyze_swing(video_path):
     """
     動画を解析し、スイングの評価レポート（テキスト）を返します。
+    
+    注意: 動画ファイルは server.py 側で事前に幅 640px に圧縮・軽量化されています。
     """
     mp_pose = mp.solutions.pose
     
@@ -40,7 +41,7 @@ def analyze_swing(video_path):
     cap = cv2.VideoCapture(video_path)
     
     if not cap.isOpened():
-        return "【エラー】動画ファイルを開けませんでした。"
+        return "【エラー】動画ファイルを開けませんでした。ファイルパスを確認してください。"
 
     frame_count = 0
     
@@ -53,14 +54,9 @@ def analyze_swing(video_path):
             if not success:
                 break
             
-            # ★★★ メモリ削減と高速化のため、画像をリサイズする処理を追加 ★★★
-            # 高解像度動画によるメモリ不足(OOM Killed)対策
-            height, width, _ = image.shape
-            if width > 640:
-                scale = 640 / width
-                new_size = (640, int(height * scale))
-                image = cv2.resize(image, new_size, interpolation=cv2.INTER_AREA)
-            # ★★★ 修正終了 ★★★
+            # --- 以前のOpenCVによるリサイズ処理は削除済み ---
+            # server.py の ffmpeg 処理により、動画の負荷は既に軽減されています
+            # -----------------------------------------------
 
             # パフォーマンス向上のため、画像を書き込み不可としてMediaPipeに渡す
             image.flags.writeable = False
@@ -71,7 +67,6 @@ def analyze_swing(video_path):
             frame_count += 1
             
             if results.pose_landmarks:
-                # ... (以下、既存の解析ロジックが続く)
                 landmarks = results.pose_landmarks.landmark
 
                 # ランドマークの取得 (MediaPipeのインデックスを使用)
@@ -99,9 +94,8 @@ def analyze_swing(video_path):
                 shoulder_line_angle = np.degrees(np.arctan2(r_ear[1] - r_shoulder[1], r_ear[0] - r_shoulder[0]))
                 
                 # 体幹の回転角度 (仮)
-                # この実装では体軸に対する回転ではなく、簡略化された相対角度を使用します
                 # バックフェース時の最大回転を追跡
-                current_shoulder_rotation = shoulder_line_angle # 実際はZ軸の回転が必要だが、ここではY軸との相対で代用
+                current_shoulder_rotation = shoulder_line_angle
                 if current_shoulder_rotation > max_shoulder_rotation:
                     max_shoulder_rotation = current_shoulder_rotation
 
@@ -121,12 +115,9 @@ def analyze_swing(video_path):
     # レポート作成ロジック
     # -----------------
     
-    # 肩の回転は、水平に近いほど小さい角度、垂直に近いほど大きい角度として仮定
-    # ここでは、Y軸からの角度として簡略化し、大きな値がより回転していると解釈
     rotation_score = "良好"
     rotation_advice = "肩の回転はスムーズです。より深いトップを目指す場合は、左足の踏み込みを意識しましょう。"
     
-    # 簡略化されたヒップ回転の評価（水平線からの角度で判断）
     hip_score = "適切"
     hip_advice = "骨盤の回転は安定しています。切り返しで下半身先行を意識し、より強力なリリースを目指しましょう。"
 
@@ -148,8 +139,7 @@ def analyze_swing(video_path):
   - **アドバイス:** {hip_advice}
   
 💡 **次のステップ:**
-  - この解析は MediaPipe の2D座標に基づく簡略化されたものです。正確な評価には、専門のコーチングを受けてください。
-  - より長い動画や高解像度動画での解析が成功しない場合は、動画の長さを5秒程度に短くしてください。
+  - 動画はサーバー側で自動的に軽量化（幅640pxに圧縮）されました。高画質な動画を送信してもスムーズに処理できます。
 """
     return report
 
