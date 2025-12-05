@@ -1,9 +1,9 @@
-# Debian Busterをベースイメージとして使用
-FROM python:3.10-buster
+# より安定したスリムなPythonイメージに変更（Bullseyeベース）
+FROM python:3.10-slim-bullseye
 
 # 1. OSパッケージのインストール
 # ffmpeg、libsm6, libxext6 (OpenCVの依存関係)をインストール。
-# --no-install-recommendsと単一のRUNで依存関係エラーを最小限に抑える
+# --no-install-recommendsで依存関係エラーを最小限に抑える
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg \
     libsm6 \
@@ -28,3 +28,5 @@ EXPOSE 8080
 # 6. アプリケーションを実行
 CMD ["gunicorn", "-w", "2", "-b", "0.0.0.0:8080", "server:app", "--timeout", "900"]
 ```eof
+
+---
