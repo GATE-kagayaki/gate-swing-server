@@ -5,7 +5,7 @@ from flask import Flask, request, abort
 from linebot import LineBotApi, WebhookHandler
 from linebot.exceptions import InvalidSignatureError, LineBotApiError
 from linebot.models import MessageEvent, TextMessage, TextSendMessage, VideoMessage
-# ★★★ 重いインポート（ffmpeg, requests, report_generator）は全て削除 ★★★
+# ★★★ 全ての重いインポート（numpyを含む）を削除しました ★★★
 
 # 環境変数の設定
 LINE_CHANNEL_ACCESS_TOKEN = os.environ.get('LINE_CHANNEL_ACCESS_TOKEN')
@@ -26,7 +26,7 @@ def analyze_swing(video_path):
     """
     動画を解析し、スイングの評価レポート（テキスト）を返します。
     """
-    # ★★★ 重いライブラリをここでインポートする ★★★
+    # ★★★ 全ての重いライブラリをここでインポートする ★★★
     import cv2
     import mediapipe as mp
     import numpy as np
@@ -77,6 +77,7 @@ def analyze_swing(video_path):
                 # ... (簡略化された解析ロジックをここに続行)
                 r_shoulder = [landmarks[mp_pose.PoseLandmark.RIGHT_SHOULDER.value].x, landmarks[mp_pose.PoseLandmark.RIGHT_SHOULDER.value].y]
                 r_ear = [landmarks[mp_pose.PoseLandmark.RIGHT_EAR.value].x, landmarks[mp_pose.PoseLandmark.RIGHT_EAR.value].y]
+                # numpy関数を直接使用
                 max_shoulder_rotation = np.degrees(np.arctan2(r_ear[1] - r_shoulder[1], r_ear[0] - r_shoulder[0]))
                 
     cap.release()
