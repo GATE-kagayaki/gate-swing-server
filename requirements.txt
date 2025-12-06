@@ -2,3 +2,7 @@ opencv-python
 mediapipe
 numpy
 ffmpeg-python
+flask
+gunicorn
+requests
+line-bot-sdk
