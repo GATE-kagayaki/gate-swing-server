@@ -1,11 +1,14 @@
 import os
-import threading # 非同期処理のため、これだけはトップレベルに残す
-import tempfile
+import threading # 非同期処理のため必須 (処理のタイムアウト回避)
+import tempfile 
+import ffmpeg # 動画圧縮ライブラリ (メモリ不足回避のため必須)
+import requests
+import numpy as np # Python起動時の負荷が低いため、トップレベルに戻しました
+
 from flask import Flask, request, abort
 from linebot import LineBotApi, WebhookHandler
 from linebot.exceptions import InvalidSignatureError, LineBotApiError
 from linebot.models import MessageEvent, TextMessage, TextSendMessage, VideoMessage
-# ★★★ 全ての重いインポート（numpyを含む）を削除しました ★★★
 
 # 環境変数の設定
 LINE_CHANNEL_ACCESS_TOKEN = os.environ.get('LINE_CHANNEL_ACCESS_TOKEN')
@@ -26,10 +29,10 @@ def analyze_swing(video_path):
     """
     動画を解析し、スイングの評価レポート（テキスト）を返します。
     """
-    # ★★★ 全ての重いライブラリをここでインポートする ★★★
+    # ★★★ 重いライブラリをここでインポートする (関数内インポート) ★★★
     import cv2
     import mediapipe as mp
-    import numpy as np
+    # numpyはトップレベルにあるため再インポート不要
 
     # ここに calculate_angle 関数を定義
     def calculate_angle(p1, p2, p3):
@@ -72,12 +75,10 @@ def analyze_swing(video_path):
             frame_count += 1
             
             if results.pose_landmarks:
-                # 解析ロジック (省略) - ランドマーク抽出と角度計算
+                # 解析ロジック (簡略化) - ランドマーク抽出と角度計算
                 landmarks = results.pose_landmarks.landmark
-                # ... (簡略化された解析ロジックをここに続行)
                 r_shoulder = [landmarks[mp_pose.PoseLandmark.RIGHT_SHOULDER.value].x, landmarks[mp_pose.PoseLandmark.RIGHT_SHOULDER.value].y]
                 r_ear = [landmarks[mp_pose.PoseLandmark.RIGHT_EAR.value].x, landmarks[mp_pose.PoseLandmark.RIGHT_EAR.value].y]
-                # numpy関数を直接使用
                 max_shoulder_rotation = np.degrees(np.arctan2(r_ear[1] - r_shoulder[1], r_ear[0] - r_shoulder[0]))
                 
     cap.release()
@@ -98,7 +99,7 @@ def process_video_async(user_id, video_content):
     """
     動画のダウンロード、圧縮、解析、レポート送信をバックグラウンドで実行します。
     """
-    # ★★★ ここでrequests, ffmpegをインポートする ★★★
+    # ★★★ requests, ffmpegはここでインポートする (関数内インポート) ★★★
     import requests
     import ffmpeg
     
