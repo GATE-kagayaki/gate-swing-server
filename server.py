@@ -1,13 +1,7 @@
 import os
-import threading # 非同期処理のため必須 (処理のタイムアウト回避)
+import threading 
 import tempfile 
-import ffmpeg # 動画圧縮ライブラリ (メモリ不足回避のため必須)
-import requests
 import numpy as np 
-# ★★★ 最終修正: google.genai ではなく、新しいGoogle GenAI SDKの推奨形式に修正 ★★★
-from google import genai
-from google.genai import types
-
 from flask import Flask, request, abort
 from linebot import LineBotApi, WebhookHandler
 from linebot.exceptions import InvalidSignatureError, LineBotApiError
@@ -16,7 +10,7 @@ from linebot.models import MessageEvent, TextMessage, TextSendMessage, VideoMess
 # 環境変数の設定 (トップレベルに残す)
 LINE_CHANNEL_ACCESS_TOKEN = os.environ.get('LINE_CHANNEL_ACCESS_TOKEN')
 LINE_CHANNEL_SECRET = os.environ.get('LINE_CHANNEL_SECRET')
-GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY') # APIキーがここで読み込まれます
+GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY') 
 
 if not LINE_CHANNEL_ACCESS_TOKEN or not LINE_CHANNEL_SECRET:
     raise ValueError("LINE_CHANNEL_ACCESS_TOKEN and LINE_CHANNEL_SECRET must be set")
@@ -64,6 +58,10 @@ def analyze_swing(video_path):
 
     frame_count = 0
     
+    # ★★★ 動画の読み込み速度向上のための最適化 ★★★
+    # OpenCVの最適化フラグを設定
+    cap.set(cv2.CAP_PROP_POS_AVI_RATIO, 1)
+
     with mp_pose.Pose(
         min_detection_confidence=0.5,
         min_tracking_confidence=0.5) as pose:
@@ -169,10 +167,11 @@ def process_video_async(user_id, video_content):
         # 処理遅延の原因となるFFmpeg処理の安定化
         FFMPEG_PATH = '/usr/bin/ffmpeg' if os.path.exists('/usr/bin/ffmpeg') else 'ffmpeg'
         
+        # ★★★ 修正: -vsync 0 を追加し、FPSを維持しつつ安定化を試みる ★★★
         (
             ffmpeg
             .input(original_video_path)
-            .output(compressed_video_path, vf='scale=640:-1', crf=28, vcodec='libx264')
+            .output(compressed_video_path, vf='scale=640:-1', crf=28, vcodec='libx264', vsync=0) 
             .overwrite_output()
             .run(cmd=FFMPEG_PATH, capture_stdout=True, capture_stderr=True) 
         )
@@ -190,7 +189,6 @@ def process_video_async(user_id, video_content):
         
         # ★★★ AI診断の実行 - サービスロジックの中心 ★★★
         if GEMINI_API_KEY:
-            # Report Logic: 有料会員向けレポート生成
             ai_report_text = generate_full_member_advice(analysis_data, genai, types) 
         else:
             # ★★★ 無料会員向け: AIを使わず、MediaPipeデータに基づいた「課題提起」を生成 ★★★
@@ -312,8 +310,8 @@ def generate_free_member_summary(analysis_data):
         f"あなたのスイングを科学的データに基づき解析しました。\n\n"
         f"**【お客様の改善点（簡易診断）】**\n"
         f"{issue_list}\n\n"
-        f"**【お客様への応援メッセージ】**\n"
-        f"有料版をご利用いただくと、これらの問題の**詳細な原因、具体的な練習ドリル、最適なクラブフィッティング提案**をご利用いただけます。お客様のゴルフライフが充実したものになることを応援しております。"
+        f"**【お客様へのメッセージ】**\n"
+        f"有料版をご利用いただくと、これらの問題の**さらに詳しい分析による改善点の抽出**、具体的な練習ドリル、最適なクラブフィッティング提案をご利用いただけます。お客様のゴルフライフが充実したものになることを応援しております。" 
     )
         
     return report
