@@ -27,6 +27,5 @@ COPY server.py .
 ENV PORT 8080
 
 # 6. アプリケーションを実行
-# ★★★ 修正: python -m gunicorn を使用し、実行パスのエラーを回避 ★★★
-# Python自身にモジュールとしてgunicornを実行させることで、パスの問題を回避します。
-CMD ["python", "-m", "gunicorn", "-w", "1", "-b", "0.0.0.0:8080", "server:app", "--timeout", "900"]
+    # ★★★ 修正: python -m gunicorn を使用し、実行パスのエラーを回避 ★★★
+    CMD ["python", "-m", "gunicorn", "-w", "1", "-b", "0.0.0.0:8080", "server:app", "--timeout", "900"]
