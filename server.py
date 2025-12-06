@@ -165,14 +165,15 @@ def process_video_async(user_id, video_content):
     # 1.5 動画の自動圧縮とリサイズ処理 (メモリ不足回避のため必須)
     try:
         compressed_video_path = tempfile.NamedTemporaryFile(suffix="_compressed.mp4", delete=False).name
+        # 処理遅延の原因となるFFmpeg処理の安定化
+        FFMPEG_PATH = '/usr/bin/ffmpeg' if os.path.exists('/usr/bin/ffmpeg') else 'ffmpeg'
         
-        # ★★★ 修正: FFmpegコマンドを単純な'ffmpeg'呼び出しに戻し、OSにパスを任せる ★★★
         (
             ffmpeg
             .input(original_video_path)
-            .output(compressed_video_path, vf='scale=640:-1', crf=28, vcodec='libx264', vsync=0) 
+            .output(compressed_video_path, vf='scale=640:-1', crf=28, vcodec='libx264')
             .overwrite_output()
-            .run(cmd='ffmpeg', capture_stdout=True, capture_stderr=True) 
+            .run(cmd=FFMPEG_PATH, capture_stdout=True, capture_stderr=True) 
         )
         video_to_analyze = compressed_video_path
         
@@ -205,7 +206,7 @@ def process_video_async(user_id, video_content):
 
     # 3. 結果をユーザーにPUSH通知で返信 (中略)
     try:
-        completion_message = "✅ 解析が完了しました！\n詳細レポートを送信します。"
+        completion_message = "✅ 解析が完了しました！\nレポートを送信します。"
         line_bot_api.push_message(user_id, TextSendMessage(text=completion_message))
         
         line_bot_api.push_message(
@@ -293,22 +294,27 @@ def generate_free_member_summary(analysis_data):
     # 課題提起ロジック (数値を基に問題を特定)
     # 課題1: 頭の移動が大きい (0.03以上)
     if head_drift > 0.03:
-        issues.append("①頭の水平方向への移動が大きい (軸の不安定さ)")
+        issues.append("頭の水平方向への移動が大きい (軸の不安定さ)")
     # 課題2: コックが早くほどける (160度以上)
     if wrist_cock > 160:
-        issues.append("②手首のコックが早くほどける傾向があります (アーリーリリース)")
+        issues.append("手首のコックが早くほどける傾向があります (アーリーリリース)")
     # 課題3: 上半身の回転不足と腰の開きすぎ (40度以下 and 10度以上)
     if shoulder_rot < 40 and hip_rot > 10:
-        issues.append("③上半身の回転不足と腰の開きすぎの連鎖が確認されます")
+        issues.append("上半身の回転不足と腰の開きすぎの連鎖が確認されます")
 
-    # 課題リストの整形
-    issue_list = "\n".join(f"* {issue}" for issue in issues) if issues else "* 特に目立った問題は検出されませんでした。"
-
+    # 課題リストの整形 (黒丸リストに修正)
+    if not issues:
+        issue_text = "特に目立った問題は検出されませんでした。"
+    else:
+        issue_text = "あなたのスイングには、以下の改善点が見られます。\n"
+        for issue in issues:
+            issue_text += f"・ {issue}\n" # 黒丸「・」で箇条書き
+    
     # 最終レポート構成
     report = (
         f"あなたのスイングを科学的データに基づき解析しました。\n\n"
         f"**【お客様の改善点（簡易診断）】**\n"
-        f"{issue_list}\n\n"
+        f"{issue_text}\n\n"
         f"**【お客様へのメッセージ】**\n"
         f"有料版をご利用いただくと、これらの問題の**さらに詳しい分析による改善点の抽出**、具体的な練習ドリル、最適なクラブフィッティング提案をご利用いただけます。お客様のゴルフライフが充実したものになることを応援しております。" 
     )
