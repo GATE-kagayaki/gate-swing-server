@@ -1,10 +1,10 @@
 import os
 import threading # 非同期処理のため必須 (処理のタイムアウト回避)
 import tempfile 
-import ffmpeg # 動画圧縮ライブラリ (メモリ不足回避のため必須)
+# ffmpegは関数内でインポート (起動安定化のため)
 import requests
 import numpy as np 
-# ★★★ 修正: google.genai ではなく、新しいGoogle GenAI SDKの推奨形式に修正 ★★★
+# Gemini APIクライアントのインポート (ModuleNotFoundError対策)
 from google import genai
 from google.genai import types
 
@@ -13,10 +13,10 @@ from linebot import LineBotApi, WebhookHandler
 from linebot.exceptions import InvalidSignatureError, LineBotApiError
 from linebot.models import MessageEvent, TextMessage, TextSendMessage, VideoMessage
 
-# 環境変数の設定
+# 環境変数の設定 (トップレベルに残す)
 LINE_CHANNEL_ACCESS_TOKEN = os.environ.get('LINE_CHANNEL_ACCESS_TOKEN')
 LINE_CHANNEL_SECRET = os.environ.get('LINE_CHANNEL_SECRET')
-GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY')
+GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY') # APIキーがここで読み込まれます
 
 if not LINE_CHANNEL_ACCESS_TOKEN or not LINE_CHANNEL_SECRET:
     raise ValueError("LINE_CHANNEL_ACCESS_TOKEN and LINE_CHANNEL_SECRET must be set")
@@ -146,7 +146,6 @@ def process_video_async(user_id, video_content):
     """
     動画のダウンロード、圧縮、解析、レポート送信をバックグラウンドで実行します。
     """
-    # requests, ffmpegをここでインポート
     import requests
     import ffmpeg
     # Gemini APIクライアントをここでインポート (ModuleNotFoundError回避のため)
@@ -168,12 +167,15 @@ def process_video_async(user_id, video_content):
     # 1.5 動画の自動圧縮とリサイズ処理 (メモリ不足回避のため必須)
     try:
         compressed_video_path = tempfile.NamedTemporaryFile(suffix="_compressed.mp4", delete=False).name
+        # ★★★ 修正: ffmpegの実行パスを絶対パスで試みる（安定化）★★★
+        FFMPEG_PATH = '/usr/bin/ffmpeg' if os.path.exists('/usr/bin/ffmpeg') else 'ffmpeg'
+        
         (
             ffmpeg
             .input(original_video_path)
             .output(compressed_video_path, vf='scale=640:-1', crf=28, vcodec='libx264')
             .overwrite_output()
-            .run(cmd='ffmpeg', capture_stdout=True, capture_stderr=True) 
+            .run(cmd=FFMPEG_PATH, capture_stdout=True, capture_stderr=True) 
         )
         video_to_analyze = compressed_video_path
         
@@ -189,12 +191,12 @@ def process_video_async(user_id, video_content):
         
         # ★★★ AI診断の実行 - サービスロジックの中心 ★★★
         if GEMINI_API_KEY:
-            # Report Logic: 有料会員向けレポート生成
             ai_report_text = generate_full_member_advice(analysis_data, genai, types) 
         else:
-            # Report Logic: 無料会員向け簡易レポート生成
-            ai_report_text = f"【無料会員】最大肩回転: {analysis_data['max_shoulder_rotation']:.1f}度\n詳細なAI診断レポートの生成にはGemini APIキーが必要です。"
-
+            # AIキーがない場合は無料会員相当の簡易レポートを生成
+            ai_report_text = f"【AI診断不可】GEMINI_API_KEYが設定されていません。" # このメッセージをそのまま表示
+            # データは残す
+            
         # 最終レポートを整形
         report_text = f"⛳ GATEスイング診断 ⛳\n"
         report_text += "\n--- [ MediaPipe データ ] ---\n"
@@ -343,4 +345,4 @@ if __name__ == "__main__":
     port = int(os.environ.get('PORT', 8080))
     # Cloud Runの起動安定化
     os.environ['HOME'] = '/tmp'
-    app.run(host='0.0.0.0', port=por
+    app.run(host='0.0.0.0', port=port)
