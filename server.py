@@ -4,6 +4,7 @@ import tempfile
 import ffmpeg # 動画圧縮ライブラリ (メモリ不足回避のため必須)
 import requests
 import numpy as np 
+# ★★★ 修正済み: Google GenAI SDKのインポート形式を修正 ★★★
 from google import genai
 from google.genai import types
 
@@ -147,7 +148,6 @@ def process_video_async(user_id, video_content):
     """
     import requests
     import ffmpeg
-    # Gemini APIクライアントをここでインポート (ModuleNotFoundError回避のため)
     from google import genai
     from google.genai import types
     
@@ -166,9 +166,8 @@ def process_video_async(user_id, video_content):
     # 1.5 動画の自動圧縮とリサイズ処理 (メモリ不足回避のため必須)
     try:
         compressed_video_path = tempfile.NamedTemporaryFile(suffix="_compressed.mp4", delete=False).name
-        # ★★★ 修正: ffmpegの実行パスを絶対パスで試みる（安定化）★★★
+        # 処理遅延の原因となるFFmpeg処理の安定化
         FFMPEG_PATH = '/usr/bin/ffmpeg' if os.path.exists('/usr/bin/ffmpeg') else 'ffmpeg'
-        
         (
             ffmpeg
             .input(original_video_path)
@@ -190,20 +189,14 @@ def process_video_async(user_id, video_content):
         
         # ★★★ AI診断の実行 - サービスロジックの中心 ★★★
         if GEMINI_API_KEY:
+            # Report Logic: 有料会員向けレポート生成
             ai_report_text = generate_full_member_advice(analysis_data, genai, types) 
         else:
-            # AIキーがない場合は無料会員相当の簡易レポートを生成
-            ai_report_text = f"【AI診断不可】GEMINI_API_KEYが設定されていません。" 
+            # ★★★ 無料会員向け: AIを使わず、MediaPipeデータに基づいた「課題提起」を生成 ★★★
+            ai_report_text = generate_free_member_summary(analysis_data)
             
         # 最終レポートを整形
-        report_text = f"⛳ GATEスイング診断 ⛳\n"
-        report_text += "\n--- [ MediaPipe データ ] ---\n"
-        report_text += f"フレーム数: {analysis_data['frame_count']}\n"
-        report_text += f"最大肩回転: {analysis_data['max_shoulder_rotation']:.1f}度\n"
-        report_text += f"最小腰回転: {analysis_data['min_hip_rotation']:.1f}度\n"
-        report_text += f"頭の最大水平ブレ (0.001が最小): {analysis_data['max_head_drift_x']:.4f}\n"
-        report_text += f"最大コック角 (180°が伸びた状態): {analysis_data['max_wrist_cock']:.1f}度\n"
-        report_text += "\n--- [ AI 総合診断 ] ---\n"
+        report_text = f"⛳ GATEスイング診断 ⛳\n\n"
         report_text += ai_report_text
         
     except Exception as e:
@@ -214,7 +207,7 @@ def process_video_async(user_id, video_content):
 
     # 3. 結果をユーザーにPUSH通知で返信 (中略)
     try:
-        completion_message = "✅ 解析が完了しました！\n詳細レポートを送信します。"
+        completion_message = "✅ 解析が完了しました！\nレポートを送信します。"
         line_bot_api.push_message(user_id, TextSendMessage(text=completion_message))
         
         line_bot_api.push_message(
@@ -287,6 +280,44 @@ def generate_full_member_advice(analysis_data, genai, types): # genai, typesを�
         return f"Gemini API呼び出し中にエラーが発生しました: {e}"
 
 # ------------------------------------------------
+# ★★★ 無料会員向け「課題提起」生成関数 (AI不使用) ★★★
+# ------------------------------------------------
+def generate_free_member_summary(analysis_data):
+    """AIを使わず、計測値からロジックで無料会員向けレポートを生成する"""
+    
+    shoulder_rot = analysis_data['max_shoulder_rotation']
+    hip_rot = analysis_data['min_hip_rotation']
+    head_drift = analysis_data['max_head_drift_x']
+    wrist_cock = analysis_data['max_wrist_cock']
+    
+    issues = []
+
+    # 課題提起ロジック (数値を基に問題を特定)
+    # 課題1: 頭の移動が大きい (0.03以上)
+    if head_drift > 0.03:
+        issues.append("①頭の水平方向への移動が大きい (軸の不安定さ)")
+    # 課題2: コックが早くほどける (160度以上)
+    if wrist_cock > 160:
+        issues.append("②手首のコックが早くほどける傾向があります (アーリーリリース)")
+    # 課題3: 上半身の回転不足と腰の開きすぎ (40度以下 and 10度以上)
+    if shoulder_rot < 40 and hip_rot > 10:
+        issues.append("③上半身の回転不足と腰の開きすぎの連鎖が確認されます")
+
+    # 課題リストの整形
+    issue_list = "\n".join(f"* {issue}" for issue in issues) if issues else "* 特に目立った問題は検出されませんでした。"
+
+    # 最終レポート構成
+    report = (
+        f"あなたのスイングを科学的データに基づき解析しました。\n\n"
+        f"**【お客様の改善点（簡易診断）】**\n"
+        f"{issue_list}\n\n"
+        f"**【お客様への応援メッセージ】**\n"
+        f"有料版をご利用いただくと、これらの問題の**詳細な原因、具体的な練習ドリル、最適なクラブフィッティング提案**をご利用いただけます。お客様のゴルフライフが充実したものになることを応援しております。"
+    )
+        
+    return report
+
+# ------------------------------------------------
 # LINE Webhookのメイン処理 (省略)
 # ------------------------------------------------
 @app.route("/callback", methods=['POST'])
@@ -322,7 +353,7 @@ def handle_video(event):
     # 1. ユーザーへの即時応答（LINEの応答タイムアウト回避）
     line_bot_api.reply_message(
         event.reply_token,
-        TextSendMessage(text="動画を受け付けました。AIによるプロレベル詳細解析を開始します。しばらくお待ちください...")
+        TextSendMessage(text="動画を受け付けました。無料の簡易解析を開始します。しばらくお待ちください...")
     )
     
     # 2. 動画コンテンツの取得 (中略)
