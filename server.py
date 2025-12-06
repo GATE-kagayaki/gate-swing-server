@@ -4,7 +4,7 @@ import tempfile
 import ffmpeg # 動画圧縮ライブラリ (メモリ不足回避のため必須)
 import requests
 import numpy as np 
-# ★★★ 修正済み: Google GenAI SDKのインポート形式を修正 ★★★
+# ★★★ 最終修正: google.genai ではなく、新しいGoogle GenAI SDKの推奨形式に修正 ★★★
 from google import genai
 from google.genai import types
 
@@ -168,6 +168,7 @@ def process_video_async(user_id, video_content):
         compressed_video_path = tempfile.NamedTemporaryFile(suffix="_compressed.mp4", delete=False).name
         # 処理遅延の原因となるFFmpeg処理の安定化
         FFMPEG_PATH = '/usr/bin/ffmpeg' if os.path.exists('/usr/bin/ffmpeg') else 'ffmpeg'
+        
         (
             ffmpeg
             .input(original_video_path)
