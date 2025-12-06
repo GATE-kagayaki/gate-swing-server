@@ -1,8 +1,9 @@
-opencv-python
-mediapipe
-numpy
-ffmpeg-python
 flask
 gunicorn
 requests
 line-bot-sdk
+opencv-python
+mediapipe
+numpy
+ffmpeg-python
+google-cloud-aiplatform
