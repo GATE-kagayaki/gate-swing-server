@@ -1,10 +1,9 @@
 import os
 import threading # 非同期処理のため必須 (処理のタイムアウト回避)
 import tempfile 
-# ffmpegは関数内でインポート (起動安定化のため)
+import ffmpeg # 動画圧縮ライブラリ (メモリ不足回避のため必須)
 import requests
 import numpy as np 
-# Gemini APIクライアントのインポート (ModuleNotFoundError対策)
 from google import genai
 from google.genai import types
 
@@ -194,8 +193,7 @@ def process_video_async(user_id, video_content):
             ai_report_text = generate_full_member_advice(analysis_data, genai, types) 
         else:
             # AIキーがない場合は無料会員相当の簡易レポートを生成
-            ai_report_text = f"【AI診断不可】GEMINI_API_KEYが設定されていません。" # このメッセージをそのまま表示
-            # データは残す
+            ai_report_text = f"【AI診断不可】GEMINI_API_KEYが設定されていません。" 
             
         # 最終レポートを整形
         report_text = f"⛳ GATEスイング診断 ⛳\n"
