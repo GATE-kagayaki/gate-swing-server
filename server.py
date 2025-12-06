@@ -4,7 +4,8 @@ import tempfile
 import ffmpeg # 動画圧縮ライブラリ (メモリ不足回避のため必須)
 import requests
 import numpy as np 
-from google import genai
+# ★★★ 修正: google.genai のインポートを修正 ★★★
+import google.genai as genai
 from google.genai import types
 
 from flask import Flask, request, abort
@@ -229,7 +230,8 @@ def process_video_async(user_id, video_content):
 def generate_full_member_advice(analysis_data):
     """MediaPipeの数値結果をGemini APIに渡し、理想の10項目を網羅した詳細レポートを生成させる"""
     
-    from google import genai
+    # ★★★ 修正: google.genai を修正したため、import文を変更 ★★★
+    import google.genai as genai
     from google.genai import types
     
     try:
