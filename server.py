@@ -1,7 +1,12 @@
 import os
-import threading 
+import threading # 非同期処理のため必須 (処理のタイムアウト回避)
 import tempfile 
+import ffmpeg # 動画圧縮ライブラリ (メモリ不足回避のため必須)
+import requests
 import numpy as np 
+from google import genai
+from google.genai import types
+
 from flask import Flask, request, abort
 from linebot import LineBotApi, WebhookHandler
 from linebot.exceptions import InvalidSignatureError, LineBotApiError
@@ -10,7 +15,7 @@ from linebot.models import MessageEvent, TextMessage, TextSendMessage, VideoMess
 # 環境変数の設定 (トップレベルに残す)
 LINE_CHANNEL_ACCESS_TOKEN = os.environ.get('LINE_CHANNEL_ACCESS_TOKEN')
 LINE_CHANNEL_SECRET = os.environ.get('LINE_CHANNEL_SECRET')
-GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY') 
+GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY') # APIキーがここで読み込まれます
 
 if not LINE_CHANNEL_ACCESS_TOKEN or not LINE_CHANNEL_SECRET:
     raise ValueError("LINE_CHANNEL_ACCESS_TOKEN and LINE_CHANNEL_SECRET must be set")
@@ -58,10 +63,6 @@ def analyze_swing(video_path):
 
     frame_count = 0
     
-    # ★★★ 動画の読み込み速度向上のための最適化 ★★★
-    # OpenCVの最適化フラグを設定
-    cap.set(cv2.CAP_PROP_POS_AVI_RATIO, 1)
-
     with mp_pose.Pose(
         min_detection_confidence=0.5,
         min_tracking_confidence=0.5) as pose:
@@ -164,16 +165,14 @@ def process_video_async(user_id, video_content):
     # 1.5 動画の自動圧縮とリサイズ処理 (メモリ不足回避のため必須)
     try:
         compressed_video_path = tempfile.NamedTemporaryFile(suffix="_compressed.mp4", delete=False).name
-        # 処理遅延の原因となるFFmpeg処理の安定化
-        FFMPEG_PATH = '/usr/bin/ffmpeg' if os.path.exists('/usr/bin/ffmpeg') else 'ffmpeg'
         
-        # ★★★ 修正: -vsync 0 を追加し、FPSを維持しつつ安定化を試みる ★★★
+        # ★★★ 修正: FFmpegコマンドを単純な'ffmpeg'呼び出しに戻し、OSにパスを任せる ★★★
         (
             ffmpeg
             .input(original_video_path)
             .output(compressed_video_path, vf='scale=640:-1', crf=28, vcodec='libx264', vsync=0) 
             .overwrite_output()
-            .run(cmd=FFMPEG_PATH, capture_stdout=True, capture_stderr=True) 
+            .run(cmd='ffmpeg', capture_stdout=True, capture_stderr=True) 
         )
         video_to_analyze = compressed_video_path
         
@@ -206,7 +205,7 @@ def process_video_async(user_id, video_content):
 
     # 3. 結果をユーザーにPUSH通知で返信 (中略)
     try:
-        completion_message = "✅ 解析が完了しました！\nレポートを送信します。"
+        completion_message = "✅ 解析が完了しました！\n詳細レポートを送信します。"
         line_bot_api.push_message(user_id, TextSendMessage(text=completion_message))
         
         line_bot_api.push_message(
