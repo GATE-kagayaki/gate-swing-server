@@ -26,6 +26,7 @@ COPY server.py .
 # 5. ポートを設定
 ENV PORT 8080
 
-# ★★★ Gunicornの起動時ワーカー数は1に固定 ★★★
-# 環境変数を削除し、シンプルな起動設定に戻します。
-CMD ["gunicorn", "-w", "1", "-b", "0.0.0.0:8080", "server:app", "--timeout", "900"]
+# 6. アプリケーションを実行
+# ★★★ 修正: python -m gunicorn を使用し、実行パスのエラーを回避 ★★★
+# Python自身にモジュールとしてgunicornを実行させることで、パスの問題を回避します。
+CMD ["python", "-m", "gunicorn", "-w", "1", "-b", "0.0.0.0:8080", "server:app", "--timeout", "900"]
