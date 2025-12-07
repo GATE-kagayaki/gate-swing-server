@@ -506,7 +506,7 @@ def generate_free_member_summary(analysis_data):
     return report
 
 # ------------------------------------------------
-# LINE Webhookのメイン処理 (省略)
+# LINE Webhookのメイン処理 (重複解消済みの最終版)
 # ------------------------------------------------
 @app.route("/callback", methods=['POST'])
 def callback():
@@ -515,6 +515,7 @@ def callback():
     app.logger.info("Request body: " + body)
 
     try:
+        # LINE Bot SDKのハンドラーに処理を委譲
         handler.handle(body, signature)
     except InvalidSignatureError:
         app.logger.error("Invalid signature. Check your channel secret.")
@@ -527,7 +528,7 @@ def callback():
 
 @app.route('/api/report_data', methods=['GET'])
 def get_report_data():
-    """WebレポートのフロントエンドにJSONデータを返すAPIエンドポイント"""
+    """WebレポートのフロントエンドにJSONデータを返すAPIエンドポイント (重複解消済み)"""
     if not db:
         return jsonify({"error": "データベースが初期化されていません。"}), 500
         
@@ -546,7 +547,6 @@ def get_report_data():
         response_data = {
             "timestamp": data.get('timestamp', {}),
             "mediapipe_data": data.get('mediapipe_data', {}),
-            # AIレポートの内容（Web表示用）
             "ai_report_text": data.get('ai_report_text', 'AIレポートがありません。')
         }
         return jsonify(response_data)
@@ -556,18 +556,11 @@ def get_report_data():
         return jsonify({"error": f"レポートデータの取得中にエラーが発生しました: {e}"}), 500
 
 
-# ------------------------------------------------
-# ★★★ 新規エンドポイント: Webレポート表示用 (HTMLテンプレートを返す) ★★★
-# ------------------------------------------------
 @app.route('/report', methods=['GET'])
 def get_report_page():
-    """WebレポートのHTMLテンプレートを返す"""
-    # WebレポートのHTMLテンプレートを直接返します
+    """WebレポートのHTMLテンプレートを返す (重複解消済み)"""
     return HTML_REPORT_TEMPLATE
 
-# ------------------------------------------------
-# メインの解析ロジックを別スレッドで実行する関数 (省略)
-# ------------------------------------------------
 @handler.add(MessageEvent, message=TextMessage)
 def handle_message(event):
     if event.message.text in ["レポート", "テスト"]:
