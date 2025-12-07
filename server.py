@@ -33,7 +33,6 @@ handler = WebhookHandler(LINE_CHANNEL_SECRET)
 try:
     if not firebase_admin._apps:
         cred = credentials.ApplicationDefault()
-        # プロジェクトIDを使ってFirestoreを初期化
         initialize_app(cred, {'projectId': GCP_PROJECT_ID})
     db = firestore.client()
 except Exception as e:
@@ -42,7 +41,6 @@ except Exception as e:
 
 # ------------------------------------------------
 # WebレポートのHTMLテンプレート (Tailwind CSSを使用し、デザインを統合)
-# ... (HTML_REPORT_TEMPLATE は省略) ...
 HTML_REPORT_TEMPLATE = """
 <!DOCTYPE html>
 <html lang="ja">
@@ -190,15 +188,16 @@ HTML_REPORT_TEMPLATE = """
 # ------------------------------------------------
 def analyze_swing(video_path):
     """
-    動画を解析し、スイングの評価レポート（テキスト）を返します。
+    動画を解析し、スイングの評価レポート（テキスト）を返す。
+    この関数は、process_video_async内から呼び出されます。
     """
     # ★★★ 重いライブラリをここでインポートする (関数内インポート) ★★★
     import cv2
     import mediapipe as mp
+    import numpy as np
 
     # 角度計算ヘルパー関数
     def calculate_angle(p1, p2, p3):
-        import numpy as np # 関数内でimport
         p1 = np.array(p1)
         p2 = np.array(p2)
         p3 = np.array(p3)
@@ -264,7 +263,6 @@ def analyze_swing(video_path):
                 r_index = [landmarks[RIGHT_INDEX].x, landmarks[RIGHT_INDEX].y]
 
                 # 計測：最大肩回転
-                import numpy as np # NumPyをここでインポート
                 shoulder_line_angle = np.degrees(np.arctan2(r_ear[1] - r_shoulder[1], r_ear[0] - r_shoulder[0]))
                 if shoulder_line_angle > max_shoulder_rotation:
                     max_shoulder_rotation = shoulder_line_angle
@@ -299,256 +297,6 @@ def analyze_swing(video_path):
         "max_head_drift_x": max_head_drift_x,
         "max_wrist_cock": max_wrist_cock
     }
-
-# ------------------------------------------------
-# メインの解析ロジックを別スレッドで実行する関数
-# ------------------------------------------------
-def process_video_async(user_id, video_content):
-    """
-    動画のダウンロード、圧縮、解析、レポート送信をバックグラウンドで実行します。
-    """
-    import requests
-    import ffmpeg
-    from google import genai
-    from google.genai import types
-    
-    original_video_path = None
-    compressed_video_path = None
-    
-    # 1. オリジナル動画を一時ファイルに保存 (中略)
-    try:
-        with tempfile.NamedTemporaryFile(suffix="_original.mp4", delete=False) as tmp_file:
-            original_video_path = tmp_file.name
-            tmp_file.write(video_content)
-    except Exception as e:
-        app.logger.error(f"動画ファイルの保存に失敗: {e}", exc_info=True)
-        return
-
-    # 1.5 動画の自動圧縮とリサイズ処理 (メモリ不足回避のため必須)
-    try:
-        compressed_video_path = tempfile.NamedTemporaryFile(suffix="_compressed.mp4", delete=False).name
-        # 処理遅延の原因となるFFmpeg処理の安定化
-        FFMPEG_PATH = '/usr/bin/ffmpeg' if os.path.exists('/usr/bin/ffmpeg') else 'ffmpeg'
-        
-        (
-            ffmpeg
-            .input(original_video_path)
-            .output(compressed_video_path, vf='scale=640:-1', crf=28, vcodec='libx264')
-            .overwrite_output()
-            .run(cmd=FFMPEG_PATH, capture_stdout=True, capture_stderr=True) 
-        )
-        video_to_analyze = compressed_video_path
-        
-    except Exception as e:
-        app.logger.error(f"予期せぬ圧縮エラー: {e}", exc_info=True)
-        report_text = f"【動画処理エラー】動画圧縮で問題が発生しました: {str(e)[:100]}..."
-        line_bot_api.push_message(user_id, TextSendMessage(text=report_text))
-        return
-        
-    # 2. 動画の解析を実行
-    try:
-        analysis_data = analyze_swing(video_to_analyze)
-        
-        # ★★★ AI診断の実行 - サービスロジックの中心 ★★★
-        is_premium = False # ダミーロジック: 決済ロジックが未実装のため、常にFalse
-        
-        if GEMINI_API_KEY:
-            ai_report_text = generate_full_member_advice(analysis_data, genai, types) 
-        else:
-            # ★★★ 無料会員向け: AIを使わず、MediaPipeデータに基づいた「課題提起」を生成 ★★★
-            ai_report_text = generate_free_member_summary(analysis_data)
-            
-        # 3. Firestoreに解析結果を保存 (Webレポートの基盤)
-        if db:
-            report_data = {
-                "timestamp": firestore.SERVER_TIMESTAMP,
-                "user_id": user_id,
-                "is_premium": is_premium,
-                "mediapipe_data": analysis_data,
-                "ai_report_text": ai_report_text
-            }
-            # コレクション 'reports' にデータを追加
-            _, doc_ref = db.collection('reports').add(report_data)
-            report_id = doc_ref.id
-            
-            # WebレポートのURLを生成
-            # Cloud RunのサービスURLは環境変数から取得
-            service_url = f"https://{os.environ.get('K_SERVICE')}-{os.environ.get('K_REVISION')}.run.app"
-            report_url = f"{service_url}/report?id={report_id}"
-            
-        else:
-             # DB接続失敗時は、テキストレポートを直接送る
-             report_url = None
-             
-    except Exception as e:
-        report_text = f"【解析エラー】動画解析中に致命的なエラーが発生しました: {e}"
-        line_bot_api.push_message(user_id, TextSendMessage(text=f"【システムエラー】動画の解析中に問題が発生しました。エラーログ: {str(e)}"))
-        app.logger.error(f"解析中の致命的なエラー: {e}", exc_info=True)
-        return
-
-    # 4. LINEにWebレポートのURLを送信
-    try:
-        if report_url:
-            message = (
-                f"✅ 解析が完了しました！\n\n"
-                f"**【GATE AIスイングドクター診断レポート】**\n"
-                f"以下のURLからWebレポート（PDF印刷可能）をご確認ください。\n\n"
-                f"🔗 {report_url}\n\n"
-                f"**現在のステータス: {'都度/月額会員' if is_premium else '無料会員'}"
-            )
-            line_bot_api.push_message(user_id, TextSendMessage(text=message))
-        else:
-            # DB接続失敗時は、テキストレポートを直接送る
-            line_bot_api.push_message(user_id, TextSendMessage(text=ai_report_text))
-
-    except Exception as e:
-        app.logger.error(f"レポート送信中に予期せぬエラーが発生しました: {e}", exc_info=True)
-
-    # 5. 一時ファイルを削除 (中略)
-    if original_video_path and os.path.exists(original_video_path):
-        os.remove(original_video_path)
-    if compressed_video_path and os.path.exists(compressed_video_path):
-        os.remove(compressed_video_path)
-
-# ------------------------------------------------
-# ★★★ Gemini API 呼び出し関数 (全項目網羅版) ★★★
-# ------------------------------------------------
-def generate_full_member_advice(analysis_data, genai, types): # genai, typesを引数で受け取る
-    # ... (Gemini API呼び出しロジックは省略 - 以前のコードと同一) ...
-    try:
-        client = genai.Client(api_key=GEMINI_API_KEY)
-    except Exception as e:
-        return f"Geminiクライアント初期化失敗: {e}"
-    
-    shoulder_rot = analysis_data['max_shoulder_rotation']
-    hip_rot = analysis_data['min_hip_rotation']
-    head_drift = analysis_data['max_head_drift_x']
-    wrist_cock = analysis_data['max_wrist_cock']
-
-    system_prompt = (
-        "あなたは世界トップクラスのゴルフコーチです。提供されたMediaPipeの計測結果に基づき、以下の10項目（02から10まで）の構成を網羅した、プロフェッショナルな診断レポートを生成してください。"
-        "出力は必ずMarkdown形式で行い、各セクションの日本語タイトルは以下の指示に従ってください。\n"
-        "【重要】項目09のフィッティング提案では、具体的な商品名やブランド名を**絶対に出さないで**ください。代わりに、シャフトの特性（調子、トルク、重量）といった専門的なフィッティング要素を提案してください。"
-    )
-
-    user_prompt = (
-        f"ゴルフスイングの解析結果です。対象は初心者〜中級者です。全ての診断は以下の数値データに基づいて行ってください。\n"
-        f"・最大肩回転 (Top of Backswing): {shoulder_rot:.1f}度\n"
-        f"・最小腰回転 (Impact/Follow): {hip_rot:.1f}度\n"
-        f"・頭の最大水平ブレ (Max Head Drift X, 0.001が最小ブレ): {head_drift:.4f}\n"
-        f"・最大コック角 (Max Wrist Cock Angle, 180度が伸びた状態): {wrist_cock:.1f}度\n\n"
-        f"レポート構成の指示:\n"
-        f"02. 頭の安定性 (Head Stability)\n"
-        f"03. 肩の回旋 (Shoulder Rotation)\n"
-        f"04. 腰の回旋 (Hip Rotation)\n"
-        f"05. 手首のメカニクス (Wrist Mechanics) - コック角に基づき、アーリーリリースなどを評価してください。\n"
-        f"06. 手の軌道 (Hand Path) - データが限られているため、回転とコック角の傾向からアウトサイドイン/インサイドアウトを推測してください。\n"
-        f"07. 総合診断 (Key Diagnosis)\n"
-        f"08. 改善戦略とドリル (Improvement Strategy)\n"
-        f"09. フィッティング提案 (Fitting Recommendation) - **商品名なし**で、シャフト特性を提案してください。\n"
-        f"10. エグゼクティブサマリー (Executive Summary)\n"
-        f"この構成で、各項目を詳細に分析してください。"
-    )
-
-    # Gemini API呼び出し
-    try:
-        response = client.models.generate_content(
-            model='gemini-2.5-flash',
-            contents=user_prompt,
-            config=types.GenerateContentConfig(
-                system_instruction=system_prompt
-            )
-        )
-        return response.text
-        
-    except Exception as e:
-        return f"Gemini API呼び出し中にエラーが発生しました: {e}"
-
-# ------------------------------------------------
-# ★★★ 無料会員向け「課題提起」生成関数 (AI不使用) ★★★
-# ------------------------------------------------
-def generate_free_member_summary(analysis_data):
-    """AIを使わず、計測値からロジックで無料会員向けレポートを生成する"""
-    
-    shoulder_rot = analysis_data['max_shoulder_rotation']
-    hip_rot = analysis_data['min_hip_rotation']
-    head_drift = analysis_data['max_head_drift_x']
-    wrist_cock = analysis_data['max_wrist_cock']
-    
-    issues = []
-
-    # 課題提起ロジック (数値を基に問題を特定)
-    # 課題1: 頭の移動が大きい (0.03以上)
-    if head_drift > 0.03:
-        issues.append("頭の水平方向への移動が大きい (軸の不安定さ)")
-    # 課題2: コックが早くほどける (160度以上)
-    if wrist_cock > 160:
-        issues.append("手首のコックが早くほどける傾向があります (アーリーリリース)")
-    # 課題3: 上半身の回転不足と腰の開きすぎ (40度以下 and 10度以上)
-    if shoulder_rot < 40 and hip_rot > 10:
-        issues.append("上半身の回転不足と腰の開きすぎの連鎖が確認されます")
-
-    # 課題リストの整形 (黒丸リストに修正)
-    if not issues:
-        issue_text = "特に目立った問題は検出されませんでした。"
-    else:
-        issue_text = "あなたのスイングには、以下の改善点が見られます。\n"
-        for issue in issues:
-            issue_text += f"・ {issue}\n" # 黒丸「・」で箇条書き
-    
-    # 最終レポート構成
-    report = (
-        f"あなたのスイングをAIによる骨格分析に基づき診断しました。\n\n"
-        f"**【お客様の改善点（簡易診断）】**\n"
-        f"{issue_text}\n\n"
-        f"**【お客様へのメッセージ】**\n"
-        f"有料版をご利用いただくと、これらの問題の**さらに詳しい分析による改善点の抽出**、具体的な練習ドリル、最適なクラブフィッティング提案をご利用いただけます。お客様のゴルフライフが充実したものになることを応援しております。" 
-    )
-        
-    return report
-
-# ------------------------------------------------
-# ★★★ 新規エンドポイント: Webレポート表示用 (APIデータを返す) ★★★
-# ------------------------------------------------
-@app.route('/api/report_data', methods=['GET'])
-def get_report_data():
-    """WebレポートのフロントエンドにJSONデータを返すAPIエンドポイント"""
-    if not db:
-        return jsonify({"error": "データベースが初期化されていません。"}), 500
-        
-    report_id = request.args.get('id')
-    if not report_id:
-        return jsonify({"error": "レポートIDが指定されていません。"}), 400
-    
-    try:
-        doc = db.collection('reports').document(report_id).get()
-        if not doc.exists:
-            return jsonify({"error": "指定されたレポートは見つかりませんでした。"}), 404
-        
-        data = doc.to_dict()
-        
-        # クライアントへの応答として、必要なデータのみをJSON形式で返す
-        response_data = {
-            "timestamp": data.get('timestamp', {}),
-            "mediapipe_data": data.get('mediapipe_data', {}),
-            # AIレポートの内容（Web表示用）
-            "ai_report_text": data.get('ai_report_text', 'AIレポートがありません。')
-        }
-        return jsonify(response_data)
-    
-    except Exception as e:
-        app.logger.error(f"レポート表示APIエラー: {e}", exc_info=True)
-        return jsonify({"error": f"レポートデータの取得中にエラーが発生しました: {e}"}), 500
-
-
-# ------------------------------------------------
-# ★★★ 新規エンドポイント: Webレポート表示用 (HTMLテンプレートを返す) ★★★
-# ------------------------------------------------
-@app.route('/report', methods=['GET'])
-def get_report_page():
-    """WebレポートのHTMLテンプレートを返す"""
-    # WebレポートのHTMLテンプレートを直接返します
-    return HTML_REPORT_TEMPLATE
 
 # ------------------------------------------------
 # メインの解析ロジックを別スレッドで実行する関数
@@ -819,7 +567,6 @@ def get_report_page():
 
 # ------------------------------------------------
 # メインの解析ロジックを別スレッドで実行する関数 (省略)
-# ... (process_video_async 関数は省略。以前のコードと同一) ...
 # ------------------------------------------------
 @handler.add(MessageEvent, message=TextMessage)
 def handle_message(event):
