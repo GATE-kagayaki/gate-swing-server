@@ -4,6 +4,7 @@ import tempfile
 import ffmpeg # 動画圧縮ライブラリ (メモリ不足回避のため必須)
 import requests
 import numpy as np 
+# ★★★ 修正: ModuleNotFoundErrorを解消するため、Gemini APIのインポートを修正 ★★★
 from google import genai
 from google.genai import types
 
@@ -206,7 +207,7 @@ def process_video_async(user_id, video_content):
 
     # 3. 結果をユーザーにPUSH通知で返信 (中略)
     try:
-        completion_message = "✅ 解析が完了しました！\nレポートを送信します。"
+        completion_message = "✅ 解析が完了しました！\n詳細レポートを送信します。"
         line_bot_api.push_message(user_id, TextSendMessage(text=completion_message))
         
         line_bot_api.push_message(
