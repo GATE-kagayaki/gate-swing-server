@@ -1,1 +1,1 @@
-# gate-swing-server
+gate-kagayaki
