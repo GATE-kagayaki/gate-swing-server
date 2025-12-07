@@ -4,7 +4,6 @@ import tempfile
 import ffmpeg # 動画圧縮ライブラリ (メモリ不足回避のため必須)
 import requests
 import numpy as np 
-# ★★★ 修正: ModuleNotFoundErrorを解消するため、Gemini APIのインポートを修正 ★★★
 from google import genai
 from google.genai import types
 
@@ -313,7 +312,7 @@ def generate_free_member_summary(analysis_data):
     
     # 最終レポート構成
     report = (
-        f"あなたのスイングを科学的データに基づき解析しました。\n\n"
+        f"あなたのスイングをAIによる骨格分析に基づき診断しました。\n\n" # ★★★ 修正適用 ★★★
         f"**【お客様の改善点（簡易診断）】**\n"
         f"{issue_text}\n\n"
         f"**【お客様へのメッセージ】**\n"
