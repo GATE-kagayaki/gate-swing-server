@@ -106,18 +106,22 @@ HTML_REPORT_TEMPLATE = """
                     <div class="p-3 bg-gray-100 rounded-lg">
                         <p class="text-2xl font-bold text-gray-800" id="frames"></p>
                         <p class="text-xs text-gray-500">解析フレーム数</p>
+                        <p class="text-xs text-gray-400 mt-1">動画全体で動作を検出したコマ数。</p>
                     </div>
                     <div class="p-3 bg-gray-100 rounded-lg">
                         <p class="text-2xl font-bold text-gray-800" id="shoulder"></p>
                         <p class="text-xs text-gray-500">最大肩回転</p>
+                        <p class="text-xs text-gray-400 mt-1">トップスイングでの上半身の捻転量を示します。</p>
                     </div>
                     <div class="p-3 bg-gray-100 rounded-lg">
                         <p class="text-2xl font-bold text-gray-800" id="hip"></p>
                         <p class="text-xs text-gray-500">最小腰回転</p>
+                        <p class="text-xs text-gray-400 mt-1">インパクト時の腰の開き具合（目標方向への回転）を示します。</p>
                     </div>
                     <div class="p-3 bg-gray-100 rounded-lg">
                         <p class="text-2xl font-bold text-gray-800" id="cock"></p>
                         <p class="text-xs text-gray-500">最大コック角</p>
+                        <p class="text-xs text-gray-400 mt-1">手首のコック（角度）の最大値。タメの度合いを示します。</p>
                     </div>
                 </div>
             </section>
