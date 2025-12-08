@@ -230,17 +230,13 @@ HTML_REPORT_TEMPLATE = """
                 // Markdownのレンダリング (簡易的な表示)
                 const markdownText = data.ai_report_text || data.ai_report_text_free || "AI診断データが利用できません。";
                 
-                // ★★★ 最終修正: Markdown処理の究極の安定化 (すべてのエスケープを強力に解除) ★★★
+                // ★★★ 最終修正: Markdown処理の究極の安定化 (三重引用符による改行エラーを修正) ★★★
                 try {
-                    // 1. まず、文字列として処理する前に、残存している可能性のあるすべての改行を安全なスペースに置換
-                    // これにより、JSエンジンがこの文字列を読み込む際の構文破壊を防ぐ
-                    const cleanedText = markdownText.replace(/[\n\r]/g, ' '); 
-
-                    // 2. クリーンアップされたテキストを安全なJSON文字列として再パース
-                    let processedText = JSON.parse(JSON.stringify(cleanedText));
+                    // 1. JSON.parse(JSON.stringify())でUnicodeエスケープや二重エスケープを安全に解除
+                    let processedText = JSON.parse(JSON.stringify(markdownText));
                     
-                    // 3. 表示のために、スペースから改行に戻す
-                    processedText = processedText.split(' ').join('<br>');
+                    // 2. ★★★ 致命的な修正 ★★★: Pythonの三重引用符内での改行問題を解決するため、JavaScriptの文字列リテラルとして安全な '\\n' を使用
+                    processedText = processedText.split('\\n').join('<br>');
                     
                     document.getElementById('ai-report-markdown').innerHTML = processedText;
                     console.log("Markdown processing successful.");
