@@ -618,6 +618,8 @@ def process_video_async(user_id, video_content):
             tmp_file.write(video_content)
     except Exception as e:
         app.logger.error(f"動画ファイルの保存に失敗: {e}", exc_info=True)
+        # ★★★ 修正: ファイル保存失敗時の通知を追加 ★★★
+        line_bot_api.push_message(user_id, TextSendMessage(text="【システムエラー】動画ファイルの保存に失敗しました。ファイルサイズや形式をご確認ください。"))
         return
 
     # 1.5 動画の自動圧縮とリサイズ処理 (メモリ不足回避のため必須)
@@ -638,8 +640,14 @@ def process_video_async(user_id, video_content):
         
     except Exception as e:
         app.logger.error(f"予期せぬ圧縮エラー: {e}", exc_info=True)
-        report_text = f"【動画処理エラー】動画圧縮で問題が発生しました: {str(e)[:100]}..."
+        # ★★★ 修正: 圧縮失敗時の通知を追加 ★★★
+        report_text = f"【動画処理エラー】動画の圧縮に失敗しました。ファイルが大きすぎる（1分以上など）か、形式がLINEでサポートされていない可能性があります。"
         line_bot_api.push_message(user_id, TextSendMessage(text=report_text))
+        # 失敗時はファイルを削除してからリターン
+        if original_video_path and os.path.exists(original_video_path):
+            os.remove(original_video_path)
+        if compressed_video_path and os.path.exists(compressed_video_path):
+            os.remove(compressed_video_path)
         return
         
     # 2. 動画の解析を実行
@@ -678,9 +686,11 @@ def process_video_async(user_id, video_content):
              report_url = None
              
     except Exception as e:
-        report_text = f"【解析エラー】動画解析中に致命的なエラーが発生しました: {e}"
-        line_bot_api.push_message(user_id, TextSendMessage(text=f"【システムエラー】動画の解析中に問題が発生しました。エラーログ: {str(e)}"))
+        # ★★★ 修正: 解析失敗時の通知を強化 ★★★
         app.logger.error(f"解析中の致命的なエラー: {e}", exc_info=True)
+        # MediaPipe解析が失敗する原因の多くは、動画内に人体が検出されないこと
+        report_text = f"【解析エラー】スイングの骨格検出に失敗しました。動画に全身が写っているか、明るい場所で撮影されているかをご確認ください。エラーログ: {str(e)[:100]}..."
+        line_bot_api.push_message(user_id, TextSendMessage(text=report_text))
         return
 
     # 4. LINEにWebレポートのURLを送信
@@ -725,7 +735,7 @@ def generate_full_member_advice(analysis_data, genai, types): # genai, typesを�
     wrist_cock = analysis_data.get('max_wrist_cock', 0)
     knee_sway = analysis_data.get('max_knee_sway_x', 0)
 
-    # ★★★ 修正: ポジティブな評価と簡潔さ、構造化を指示に追加 ★★★
+    # ★★★ 修正: ポジティブな評価と簡潔さ、構造化を指示に追加 (最終行の追加) ★★★
     system_prompt = (
         "あなたはフレンドリーで経験豊富なプロのゴルフインストラクターです。診断レポートの対象読者は『ゴルフ初心者〜中級者』です。提供されたMediaPipeの計測結果に基づき、以下の9項目（02から10まで）の構成を網羅した、**専門的でありながらも分かりやすく、終始ポジティブで励ますようなトーン**のレポートを生成してください。\n"
         "専門用語は避け、読者が自宅や練習場で試せるような**具体的な行動**に焦点を当ててください。\n"
@@ -735,6 +745,7 @@ def generate_full_member_advice(analysis_data, genai, types): # genai, typesを�
         "2. **08. 改善戦略とドリル (Improvement Strategy)**: 提案する練習ドリルは**3つ**に限定し、それぞれのドリルに関する説明も簡潔に短くまとめること。\n"
         "3. **09. フィッティング提案 (Fitting Recommendation)**: 提案内容が**性別や体格、計測値から推測されるスイングスピード**の違いを反映していることを確認すること。\n"
         "4. **長所と改善点のバランス**: 必ず計測データが示す長所やうまくできている点も特定し、レポートの冒頭で簡潔に触れること。\n"
+        "5. **レポートの最終行**: **必ず**レポートの末尾に、**「お客様のゴルフライフが充実したものになることを応援しております。」**という文言を挿入すること。\n" # ★★★ 追加要件: 有料レポートの最終行に指定の文言を挿入するよう指示 ★★★
         
         "出力は必ずMarkdown形式で行い、各セクションの日本語タイトルは以下の指示に厳密に従ってください。\n"
         "【重要】項目09のフィッティング提案では、具体的な商品名やブランド名を**絶対に出さないで**ください。代わりに、シャフトの特性（調子、トルク、重量）といった専門的なフィッティング要素を提案してください。"
