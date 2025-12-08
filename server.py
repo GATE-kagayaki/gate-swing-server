@@ -579,21 +579,28 @@ def callback():
 @app.route('/api/report_data', methods=['GET'])
 def get_report_data():
     """WebレポートのフロントエンドにJSONデータを返すAPIエンドポイント (重複解消済み)"""
+    # ログを強化し、リクエストがこの関数に到達しているかを確認
+    app.logger.info(f"Report API accessed. Query: {request.query_string.decode('utf-8')}")
+    
     if not db:
         # DB接続が初期化されていない場合のエラー応答
+        app.logger.error("Firestore DB connection is not initialized.")
         return jsonify({"error": "データベースが初期化されていません。サーバーログを確認してください。"}), 500
         
     report_id = request.args.get('id')
     if not report_id:
+        app.logger.warning("Report ID is missing from query.")
         return jsonify({"error": "レポートIDが指定されていません。"}), 400
     
     try:
         # Firestoreからドキュメントを取得
         doc = db.collection('reports').document(report_id).get()
         if not doc.exists:
+            app.logger.warning(f"Report document not found: {report_id}")
             return jsonify({"error": "指定されたレポートは見つかりませんでした。"}), 404
         
         data = doc.to_dict()
+        app.logger.info(f"Successfully retrieved data for report: {report_id}")
         
         # クライアントへの応答として、必要なデータのみをJSON形式で返す
         response_data = {
