@@ -194,13 +194,20 @@ HTML_REPORT_TEMPLATE = """
                 
                 // データの挿入
                 document.getElementById('report-id').textContent = reportId;
-                // FirestoreのTimestampオブジェクトからの変換を試みる
+                
+                // ★★★ 修正箇所 1: タイムスタンプの安全な処理 (try/catchを追加) ★★★
                 let timestamp = 'N/A';
-                if (data.timestamp && data.timestamp._seconds) {
-                    timestamp = new Date(data.timestamp._seconds * 1000).toLocaleString('ja-JP');
-                } else if (data.timestamp) {
-                    // 他の形式のタイムスタンプの場合（例: 文字列）
-                    timestamp = new Date(data.timestamp).toLocaleString('ja-JP');
+                try {
+                    if (data.timestamp && data.timestamp._seconds) {
+                        // Firestore Timestamp Object
+                        timestamp = new Date(data.timestamp._seconds * 1000).toLocaleString('ja-JP');
+                    } else if (data.timestamp) {
+                        // Attempt to parse as a standard string/number
+                        timestamp = new Date(data.timestamp).toLocaleString('ja-JP');
+                    }
+                } catch (e) {
+                    console.error("Timestamp parsing failed:", e);
+                    timestamp = 'データ処理エラー';
                 }
                 document.getElementById('timestamp').textContent = timestamp;
 
@@ -213,13 +220,22 @@ HTML_REPORT_TEMPLATE = """
                 // Markdownのレンダリング (簡易的な表示)
                 const markdownText = data.ai_report_text || data.ai_report_text_free || "AI診断データが利用できません。";
                 
-                // ★★★ 修正: 正規表現エラーを回避するため、split/joinに置換 ★★★
-                // 改行コード(\\n または \n)を<br>に変換
-                const processedText = markdownText.split('\\n').join('<br>').split('\n').join('<br>');
+                // ★★★ 修正箇所 2: Markdown処理の安定化 (decodeURIComponent削除) ★★★
+                try {
+                    // 以前のdecodeURIComponentを削除し、純粋なsplit/joinで改行コードに対応
+                    const processedText = markdownText.split('\\n').join('<br>').split('\n').join('<br>');
 
-                document.getElementById('ai-report-markdown').innerHTML = processedText;
+                    document.getElementById('ai-report-markdown').innerHTML = processedText;
+                    console.log("Markdown processing successful.");
 
-
+                } catch (e) {
+                    // Markdownの処理に失敗した場合、生のテキストを表示し、エラーを出力
+                    console.error("Markdown processing failed:", e);
+                    document.getElementById('ai-report-markdown').innerHTML = 
+                        `<p class="text-red-500 font-bold">【レポート表示失敗】テキスト処理エラー: ${e.message}</p>
+                         <p class="text-sm mt-1">Raw Data: ${markdownText}</p>`;
+                }
+                
                 // ローディングを非表示にし、コンテンツを表示
                 document.getElementById('loading').classList.add('hidden');
                 document.getElementById('report-content').classList.remove('hidden');
