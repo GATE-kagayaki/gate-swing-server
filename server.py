@@ -51,8 +51,8 @@ except Exception as e:
 # 解析ロジック (analyze_swing) - 必須計測項目を全て実装
 # ------------------------------------------------
 def analyze_swing(video_path):
-    # ★★★ 修正: docstringを一行に短縮し、インデントエラーを回避 ★★★
-    '動画を解析し、スイングの評価レポート（テキスト）を返す。'
+    # 動画を解析し、スイングの評価レポート（テキスト）を返す。
+    # この関数は、process_video_async内から呼び出されます。
     import cv2
     import mediapipe as mp
     import numpy as np
@@ -102,7 +102,7 @@ def analyze_swing(video_path):
             frame_count += 1
             
             if results.pose_landmarks:
-                landmarks = results.pose_landmarks.landmark
+                landmarks = results.pose.landmarks.landmark
                 
                 # 必須ランドマークの定義
                 RIGHT_HIP = mp_pose.PoseLandmark.RIGHT_HIP.value
