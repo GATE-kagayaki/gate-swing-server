@@ -19,9 +19,7 @@ from linebot.models import MessageEvent, TextMessage, TextSendMessage, VideoMess
 LINE_CHANNEL_ACCESS_TOKEN = os.environ.get('LINE_CHANNEL_ACCESS_TOKEN')
 LINE_CHANNEL_SECRET = os.environ.get('LINE_CHANNEL_SECRET')
 GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY') 
-# ★★★ 修正: GCPプロジェクトIDを正しい値に修正 ★★★
-# お客様のプロジェクトIDである 'gate-swing-analyzer' を使用します。
-GCP_PROJECT_ID = os.environ.get('GCP_PROJECT_ID', 'gate-swing-analyzer') 
+GCP_PROJECT_ID = os.environ.get('GCP_PROJECT_ID', 'ai-golf-doctor-service') # FirestoreプロジェクトID
 
 if not LINE_CHANNEL_ACCESS_TOKEN or not LINE_CHANNEL_SECRET:
     raise ValueError("LINE_CHANNEL_ACCESS_TOKEN and LINE_CHANNEL_SECRET must be set")
@@ -35,7 +33,6 @@ handler = WebhookHandler(LINE_CHANNEL_SECRET)
 try:
     if not firebase_admin._apps:
         cred = credentials.ApplicationDefault()
-        # ★★★ ここで正しいプロジェクトIDを使用 ★★★
         initialize_app(cred, {'projectId': GCP_PROJECT_ID})
     db = firestore.client()
 except Exception as e:
@@ -43,7 +40,7 @@ except Exception as e:
     db = None
 
 # ------------------------------------------------
-# WebレポートのHTMLテンプレート (省略)
+# WebレポートのHTMLテンプレート (Tailwind CSSを使用し、デザインを統合)
 HTML_REPORT_TEMPLATE = """
 <!DOCTYPE html>
 <html lang="ja">
