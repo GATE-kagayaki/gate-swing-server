@@ -10,7 +10,7 @@ from firebase_admin import credentials, firestore, initialize_app
 from google import genai
 from google.genai import types
 
-from flask import Flask, request, abort, jsonify
+from flask import Flask, request, abort, jsonify, json # jsonモジュールをインポート
 from linebot import LineBotApi, WebhookHandler
 from linebot.exceptions import InvalidSignatureError, LineBotApiError
 from linebot.models import MessageEvent, TextMessage, TextSendMessage, VideoMessage
@@ -32,6 +32,9 @@ if not LINE_CHANNEL_ACCESS_TOKEN or not LINE_CHANNEL_SECRET:
 app = Flask(__name__)
 line_bot_api = LineBotApi(LINE_CHANNEL_ACCESS_TOKEN)
 handler = WebhookHandler(LINE_CHANNEL_SECRET)
+
+# ★★★ 修正: JSON応答時の日本語エスケープを制御 ★★★
+app.config['JSON_AS_ASCII'] = False # 日本語をエスケープせず、そのままJSONに含める
 
 # ★★★ Firestoreクライアントの初期化 ★★★
 try:
@@ -179,7 +182,14 @@ HTML_REPORT_TEMPLATE = """
                     throw new Error(`サーバーエラー。HTTPステータス: ${response.status} (${response.statusText})`);
                 }
                 
-                const data = await response.json();
+                // JSONパースが失敗する可能性があるため、try/catchで保護
+                let data;
+                try {
+                    data = await response.json();
+                } catch (e) {
+                     throw new Error(`JSON解析エラー。応答テキストが不正です: ${e.message}`);
+                }
+                
                 console.log("Data received successfully:", data);
 
                 if (data.error) {
@@ -195,7 +205,7 @@ HTML_REPORT_TEMPLATE = """
                 // データの挿入
                 document.getElementById('report-id').textContent = reportId;
                 
-                // ★★★ 修正箇所 1: タイムスタンプの安全な処理 (try/catchを追加) ★★★
+                // ★★★ タイムスタンプの安全な処理 ★★★
                 let timestamp = 'N/A';
                 try {
                     if (data.timestamp && data.timestamp._seconds) {
@@ -220,10 +230,11 @@ HTML_REPORT_TEMPLATE = """
                 // Markdownのレンダリング (簡易的な表示)
                 const markdownText = data.ai_report_text || data.ai_report_text_free || "AI診断データが利用できません。";
                 
-                // ★★★ 修正箇所 2: Markdown処理の安定化 (decodeURIComponent削除) ★★★
+                // ★★★ Markdown処理の安定化 (再修正: JSON_AS_ASCII=False設定と合わせる) ★★★
                 try {
-                    // 以前のdecodeURIComponentを削除し、純粋なsplit/joinで改行コードに対応
-                    const processedText = markdownText.split('\\n').join('<br>').split('\n').join('<br>');
+                    // サーバー側でエスケープが正しく解除される前提で、改行コードに対応
+                    // JSON_AS_ASCII=Falseにより、二重エスケープは発生しないはず
+                    const processedText = markdownText.split('\n').join('<br>');
 
                     document.getElementById('ai-report-markdown').innerHTML = processedText;
                     console.log("Markdown processing successful.");
@@ -630,7 +641,15 @@ def get_report_data():
             "mediapipe_data": data.get('mediapipe_data', {}),
             "ai_report_text": data.get('ai_report_text', 'AIレポートがありません。')
         }
-        return jsonify(response_data)
+        # ★★★ 修正: Flaskのjsonモジュールを使って、JSON応答を生成 ★★★
+        # Flaskのjsonifyではなく、直接dumpsを使ってレスポンスを生成し、ヘッダーを設定
+        json_output = json.dumps(response_data, ensure_ascii=False)
+        response = app.response_class(
+            response=json_output,
+            status=200,
+            mimetype='application/json'
+        )
+        return response
     
     except Exception as e:
         app.logger.error(f"レポート表示APIエラー: {e}", exc_info=True)
