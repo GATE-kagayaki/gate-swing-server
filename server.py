@@ -33,23 +33,21 @@ app = Flask(__name__)
 line_bot_api = LineBotApi(LINE_CHANNEL_ACCESS_TOKEN)
 handler = WebhookHandler(LINE_CHANNEL_SECRET)
 
-# ★★★ 修正: JSON応答時の日本語エスケープを制御 ★★★
-app.config['JSON_AS_ASCII'] = False # 日本語をエスケープせず、そのままJSONに含める
+# JSON応答時の日本語エスケープを制御
+app.config['JSON_AS_ASCII'] = False 
 
-# ★★★ Firestoreクライアントの初期化 ★★★
+# Firestoreクライアントの初期化
 try:
     if not firebase_admin._apps:
-        # Cloud Run環境ではApplicationDefault認証情報を使用
         cred = credentials.ApplicationDefault()
         initialize_app(cred, {'projectId': GCP_PROJECT_ID})
     db = firestore.client()
 except Exception as e:
-    # 認証情報の設定エラーまたはFirestore初期化エラーをログに出力
     print(f"Error initializing Firestore: {e}")
     db = None
 
 # ------------------------------------------------
-# WebレポートのHTMLテンプレート (Tailwind CSSを使用し、デザインを統合)
+# WebレポートのHTMLテンプレート (デザイン刷新・ページング対応)
 HTML_REPORT_TEMPLATE = """
 <!DOCTYPE html>
 <html lang="ja">
@@ -58,165 +56,350 @@ HTML_REPORT_TEMPLATE = """
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>GATEスイング診断レポート</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <!-- 印刷時の表示を最適化 -->
     <style>
+        /* 印刷時のCSS設定 */
         @media print {
             body { 
                 padding: 0 !important; 
                 margin: 0 !important; 
                 font-size: 10pt;
             }
-            .no-print { display: none; }
+            .no-print { display: none !important; }
             .report-card { 
                 box-shadow: none !important; 
-                border: 1px solid #ccc !important;
+                border: none !important;
                 margin: 0 !important; 
-                padding: 1rem !important;
+                padding: 0 !important;
             }
-            h1 { color: #000 !important; }
+            #sidebar, #header-container { display: none !important; }
+            #main-content { margin-left: 0 !important; width: 100% !important; padding: 0 !important; }
+            .content-page { display: block !important; margin-bottom: 20px; page-break-after: always; }
+        }
+        
+        /* カスタムCSS */
+        .content-page {
+            /* ページングをシミュレートするため、非表示がデフォルト */
+            display: none;
+            min-height: calc(100vh - 80px); /* ヘッダー分を引く */
+        }
+        .content-page.active {
+            display: block;
+        }
+        .prose h2 {
+            font-size: 1.5em; 
+            font-weight: bold;
+            color: #059669;
+            border-bottom: 2px solid #34d399;
+            padding-bottom: 0.25em;
+            margin-top: 1.5em;
+        }
+        .prose strong {
+            color: #10b981;
+        }
+        .nav-item {
+            cursor: pointer;
+            transition: background-color 0.2s;
+            border-left: 4px solid transparent; /* デフォルトの境界線 */
+        }
+        .nav-item:hover {
+            background-color: #f0fdf4;
+        }
+        .nav-item.active {
+            background-color: #d1fae5;
+            color: #059669;
+            font-weight: bold;
+            border-left: 4px solid #10b981;
         }
     </style>
 </head>
-<body class="bg-gray-50 font-sans p-4 md:p-10">
+<body class="bg-gray-100 font-sans">
+    
+    <!-- Loading Spinner -->
+    <div id="loading" class="fixed inset-0 bg-white bg-opacity-75 flex flex-col justify-center items-center z-50">
+        <div class="animate-spin rounded-full h-16 w-16 border-t-4 border-b-4 border-green-500"></div>
+        <p class="mt-4 text-xl text-gray-700 font-semibold">AIレポートを読み込み中...</p>
+    </div>
 
-    <div class="max-w-4xl mx-auto my-6 p-4 report-card bg-white shadow-xl rounded-lg">
-        <header class="pb-4 border-b border-green-200 mb-6">
-            <h1 class="text-3xl font-bold text-gray-800">
-                ⛳ GATE AIスイングドクター診断レポート
+    <!-- メインレイアウト -->
+    <div id="report-container" class="flex min-h-screen max-w-full mx-auto" style="display: none;">
+
+        <!-- サイドバー (ナビゲーション) -->
+        <aside id="sidebar" class="w-64 fixed left-0 top-0 h-full bg-white shadow-xl p-4 overflow-y-auto no-print">
+            <h1 class="text-2xl font-bold text-gray-800 border-b pb-2 mb-4">
+                ⛳ AI診断メニュー
             </h1>
-            <p class="text-gray-500 mt-1">
-                最終診断日: <span id="timestamp"></span> | レポートID: <span id="report-id"></span>
-            </p>
-        </header>
+            <nav id="nav-menu" class="space-y-1 text-gray-600">
+                <!-- ナビゲーション項目はJSで動的に挿入されます -->
+            </nav>
+        </aside>
 
-        <!-- Loading Spinner -->
-        <div id="loading" class="text-center p-12">
-            <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-green-500 mx-auto"></div>
-            <p class="mt-4 text-gray-600">レポートを読み込み中...</p>
-        </div>
+        <!-- メインコンテンツエリア -->
+        <main id="main-content" class="flex-1 transition-all duration-300 ml-64 p-4 md:p-8">
+            
+            <!-- レポートヘッダー -->
+            <div id="header-container" class="bg-white p-4 rounded-lg shadow-md mb-6">
+                <header class="pb-2 border-b border-green-200">
+                    <h1 class="text-3xl font-bold text-gray-800">
+                        GATE AIスイングドクター診断レポート
+                    </h1>
+                    <p class="text-gray-500 mt-1 text-sm">
+                        最終診断日: <span id="timestamp"></span> | レポートID: <span id="report-id"></span>
+                    </p>
+                </header>
+            </div>
+            
+            <!-- ページングされたコンテンツ -->
+            <div id="report-pages" class="bg-white p-6 rounded-lg shadow-md min-h-[70vh]">
+                <!-- 各診断項目（ページ）がここに動的に挿入されます -->
+            </div>
 
-        <!-- Report Content -->
-        <div id="report-content" class="hidden">
-            
-            <section class="mb-8">
-                <h2 class="text-xl font-semibold text-green-600 mb-4 border-l-4 border-green-500 pl-3">
-                    📊 骨格計測データ (MediaPipe)
-                </h2>
-                <div class="grid grid-cols-2 md:grid-cols-4 gap-4 text-center">
-                    <div class="p-3 bg-gray-100 rounded-lg">
-                        <p class="text-2xl font-bold text-gray-800" id="frames"></p>
-                        <p class="text-xs text-gray-500">解析フレーム数</p>
-                        <p class="text-xs text-gray-400 mt-1">動画全体で動作を検出したコマ数。</p>
-                    </div>
-                    <div class="p-3 bg-gray-100 rounded-lg">
-                        <p class="text-2xl font-bold text-gray-800" id="shoulder"></p>
-                        <p class="text-xs text-gray-500">最大肩回転</p>
-                        <p class="text-xs text-gray-400 mt-1">トップスイングでの上半身の捻転量を示します。</p>
-                    </div>
-                    <div class="p-3 bg-gray-100 rounded-lg">
-                        <p class="text-2xl font-bold text-gray-800" id="hip"></p>
-                        <p class="text-xs text-gray-500">最小腰回転</p>
-                        <p class="text-xs text-gray-400 mt-1">インパクト時の腰の開き具合（目標方向への回転）を示します。</p>
-                    </div>
-                    <div class="p-3 bg-gray-100 rounded-lg">
-                        <p class="text-2xl font-bold text-gray-800" id="cock"></p>
-                        <p class="text-xs text-gray-500">最大コック角</p>
-                        <p class="text-xs text-gray-400 mt-1">手首のコック（角度）の最大値。タメの度合いを示します。</p>
-                    </div>
-                </div>
-            </section>
-            
-            <!-- ★★★ 新規追加: 骨格計測データの評価基準セクション ★★★ -->
-            <section class="mb-8">
-                <h2 class="text-xl font-semibold text-green-600 mb-4 border-l-4 border-green-500 pl-3">
-                    📐 骨格計測データの評価基準
-                </h2>
-                <div class="space-y-4 text-sm text-gray-600">
-                    <div class="p-3 bg-white border border-gray-200 rounded-lg shadow-sm">
-                        <h3 class="font-bold text-gray-800">最大肩回転</h3>
-                        <p class="mt-1">
-                            <span class="font-semibold text-green-700">適正範囲の目安:</span> 70°〜90°程度 (ドライバー)。<br>
-                            <span class="text-red-600">マイナス値 (例: -4.8°) :</span> 目標線に対して肩が目標方向の逆側（バックスイング側）を向いていない（オープンになっている）ことを示します。捻転不足や軸の傾きが原因の可能性があります。
-                        </p>
-                    </div>
-                    <div class="p-3 bg-white border border-gray-200 rounded-lg shadow-sm">
-                        <h3 class="font-bold text-gray-800">最小腰回転</h3>
-                        <p class="mt-1">
-                            <span class="font-semibold text-green-700">適正範囲の目安:</span> 30°〜50°程度 (インパクト時)。<br>
-                            <span class="text-red-600">マイナス値 (例: -179.3°) :</span> 腰の開きがほとんどないか、インパクト時に腰が目標方向とは逆の方向を向いていることを示唆します。腰の回転不足やスウェイ（軸ブレ）の可能性。
-                        </p>
-                    </div>
-                    <div class="p-3 bg-white border border-gray-200 rounded-lg shadow-sm">
-                        <h3 class="font-bold text-gray-800">最大コック角</h3>
-                        <p class="mt-1">
-                            <span class="font-semibold text-green-700">適正範囲の目安:</span> 90°〜110°程度 (トップスイング)。<br>
-                            <span class="text-red-600">数値が大きい (160°超) :</span> 手首がほとんどコックされていない状態（手首が伸びた状態）を示し、「アーリーリリース」の可能性が高いです。タメが少なくなり飛距離をロスしやすい傾向があります。
-                        </p>
-                    </div>
-                </div>
-            </section>
-            
-            <!-- AI Generated Report Content (Markdown Rendered Here) -->
-            <section class="mb-8">
-                <div id="ai-report-markdown" class="prose max-w-none">
-                    <!-- Markdown Content will be injected here -->
-                </div>
-            </section>
-
-            <footer class="mt-10 pt-4 border-t border-gray-200 text-center text-sm text-gray-500">
-                <p>このレポートはAIによる骨格分析に基づき診断されています。最終的なクラブフィッティングは専門家にご相談ください。</p>
-                <button onclick="window.print()" class="no-print mt-4 px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 transition duration-150">
-                    PDFとして保存 / 印刷
+            <footer class="mt-8 pt-4 border-t border-gray-300 text-center text-sm text-gray-500 no-print">
+                <p>このレポートはAIによる骨格分析に基づき診断されています。</p>
+                <button onclick="window.print()" class="mt-4 px-6 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 transition duration-150 shadow-lg">
+                    📄 PDFとして保存 / 印刷
                 </button>
             </footer>
-        </div>
+
+        </main>
     </div>
 
     <script>
-        // Firestoreからデータを取得し、レポートをレンダリングするJavaScript
+        // ナビゲーションメニューの定義
+        const NAV_ITEMS = [
+            { id: 'summary', title: '00. レポート概要' },
+            { id: 'mediapipe', title: '01. 骨格計測データ' },
+            { id: 'criteria', title: '02. データ評価基準' },
+            // AIレポートの診断項目はMarkdown解析後に動的に追加されます
+        ];
+
+        // ページの状態を管理する変数
+        let aiReportContent = {};
+        let currentPageId = 'summary';
+
+        function displayFatalError(message, details = null) {
+            const loadingElement = document.getElementById('loading');
+            loadingElement.classList.remove('hidden');
+            loadingElement.innerHTML = `<div class="p-6 bg-red-100 border-l-4 border-red-500 text-red-700 m-8">
+                <p class="font-bold">🚨 致命的なエラーが発生しました</p>
+                <p class="mt-2">${message}</p>`;
+            if (details) {
+                loadingElement.innerHTML += `<p class="mt-2 text-sm">詳細: ${details}</p>`;
+            }
+            loadingElement.innerHTML += `</div>`;
+            document.getElementById('report-container').style.display = 'none';
+        }
+
+        // ナビゲーションとページングの描画
+        function renderPages(markdownContent) {
+            const pagesContainer = document.getElementById('report-pages');
+            const navMenu = document.getElementById('nav-menu');
+            pagesContainer.innerHTML = '';
+            navMenu.innerHTML = '';
+
+            // 1. Markdownコンテンツを分割
+            const sections = markdownContent.split('## ').filter(s => s.trim() !== '');
+            const dynamicNavItems = [];
+            
+            // Markdownのセクションをパースして動的なナビゲーション項目を構築
+            sections.forEach((section, index) => {
+                const titleMatch = section.match(/^([^\\n]+)/);
+                if (titleMatch) {
+                    const fullTitle = titleMatch[1].trim();
+                    const id = 'ai-sec-' + index;
+                    dynamicNavItems.push({ id: id, title: fullTitle });
+                    
+                    // MarkdownをHTMLに変換（改行を<br>に置換）
+                    const content = section.substring(titleMatch[0].length).trim();
+                    aiReportContent[id] = content;
+                }
+            });
+
+            // 2. ナビゲーションメニューを構築
+            const fullNavItems = [...NAV_ITEMS, ...dynamicNavItems];
+            fullNavItems.forEach(item => {
+                const navItem = document.createElement('div');
+                navItem.className = `nav-item p-2 rounded-lg text-sm transition-all duration-150 ${item.id === currentPageId ? 'active' : ''}`;
+                navItem.textContent = item.title;
+                navItem.dataset.pageId = item.id;
+                navItem.onclick = () => showPage(item.id);
+                navMenu.appendChild(navItem);
+            });
+
+            // 3. 固定ページコンテンツの定義
+            const rawDataPage = createRawDataPage();
+            pagesContainer.appendChild(rawDataPage);
+            
+            const criteriaPage = createCriteriaPage();
+            pagesContainer.appendChild(criteriaPage);
+            
+            const summaryPage = createSummaryPage();
+            pagesContainer.appendChild(summaryPage);
+
+            // 4. AI動的ページコンテンツの定義
+            dynamicNavItems.forEach(item => {
+                const page = document.createElement('div');
+                page.id = item.id;
+                page.className = 'content-page p-4';
+                
+                // Markdownの見出しをH2として追加
+                page.innerHTML += `<h2 class="text-2xl font-bold text-green-700 mb-4">${item.title}</h2>`;
+                
+                // 本文を挿入
+                let processedText = aiReportContent[item.id].split('\\n').join('<br>');
+                page.innerHTML += processedText; 
+                
+                pagesContainer.appendChild(page);
+            });
+
+            showPage(currentPageId);
+            document.getElementById('loading').classList.add('hidden');
+            document.getElementById('report-container').style.display = 'flex';
+        }
+        
+        function createRawDataPage() {
+            const page = document.createElement('div');
+            page.id = 'mediapipe';
+            page.className = 'content-page p-4';
+            page.innerHTML = `
+                <h2 class="text-2xl font-bold text-green-700 mb-6">01. 骨格計測データ (MediaPipe)</h2>
+                <section class="mb-8">
+                    <div class="grid grid-cols-2 md:grid-cols-4 gap-4 text-center">
+                        <div class="p-3 bg-gray-100 rounded-lg">
+                            <p class="text-2xl font-bold text-gray-800" id="frames_data"></p>
+                            <p class="text-xs text-gray-500">解析フレーム数</p>
+                            <p class="text-xs text-gray-400 mt-1">動画全体で動作を検出したコマ数。</p>
+                        </div>
+                        <div class="p-3 bg-gray-100 rounded-lg">
+                            <p class="text-2xl font-bold text-gray-800" id="shoulder_data"></p>
+                            <p class="text-xs text-gray-500">最大肩回転</p>
+                            <p class="text-xs text-gray-400 mt-1">トップスイングでの上半身の捻転量を示します。</p>
+                        </div>
+                        <div class="p-3 bg-gray-100 rounded-lg">
+                            <p class="text-2xl font-bold text-gray-800" id="hip_data"></p>
+                            <p class="text-xs text-gray-500">最小腰回転</p>
+                            <p class="text-xs text-gray-400 mt-1">インパクト時の腰の開き具合（目標方向への回転）を示します。</p>
+                        </div>
+                        <div class="p-3 bg-gray-100 rounded-lg">
+                            <p class="text-2xl font-bold text-gray-800" id="cock_data"></p>
+                            <p class="text-xs text-gray-500">最大コック角</p>
+                            <p class="text-xs text-gray-400 mt-1">手首のコック（角度）の最大値。タメの度合いを示します。</p>
+                        </div>
+                        <!-- ★★★ 新規追加: 最大膝ブレのデータ表示エリア ★★★ -->
+                        <div class="p-3 bg-gray-100 rounded-lg">
+                            <p class="text-2xl font-bold text-gray-800" id="knee_sway_data"></p>
+                            <p class="text-xs text-gray-500">最大膝ブレ(Sway)</p>
+                            <p class="text-xs text-gray-400 mt-1">セットアップ時からの膝の水平方向の最大移動。</p>
+                        </div>
+                    </div>
+                </section>
+            `;
+            return page;
+        }
+
+        function createCriteriaPage() {
+            const page = document.createElement('div');
+            page.id = 'criteria';
+            page.className = 'content-page p-4';
+            page.innerHTML = `
+                <h2 class="text-2xl font-bold text-green-700 mb-6">02. データ評価基準</h2>
+                <section class="mb-8">
+                    <div class="space-y-4 text-sm text-gray-600">
+                        <div class="p-3 bg-white border border-gray-200 rounded-lg shadow-sm">
+                            <h3 class="font-bold text-gray-800">最大肩回転</h3>
+                            <p class="mt-1">
+                                <span class="font-semibold text-green-700">適正範囲の目安:</span> 70°〜90°程度 (ドライバー)。<br>
+                                <span class="text-red-600">マイナス値:</span> 目標線に対して肩がオープンになっている（捻転不足）可能性を示します。
+                            </p>
+                        </div>
+                        <div class="p-3 bg-white border border-gray-200 rounded-lg shadow-sm">
+                            <h3 class="font-bold text-gray-800">最小腰回転</h3>
+                            <p class="mt-1">
+                                <span class="font-semibold text-green-700">適正範囲の目安:</span> 30°〜50°程度 (インパクト時)。<br>
+                                <span class="text-red-600">マイナス値:</span> 腰の開きがほとんどないか、目標の逆を向いていることを示唆。回転不足やスウェイ（軸ブレ）の可能性。
+                            </p>
+                        </div>
+                        <div class="p-3 bg-white border border-gray-200 rounded-lg shadow-sm">
+                            <h3 class="font-bold text-gray-800">最大コック角</h3>
+                            <p class="mt-1">
+                                <span class="font-semibold text-green-700">適正範囲の目安:</span> 90°〜110°程度 (トップスイング)。<br>
+                                <span class="text-red-600">数値が大きい (160°超) :</span> 手首のタメが不足し、「アーリーリリース」の可能性が高いです。
+                            </p>
+                        </div>
+                        <!-- ★★★ 新規追加: 最大膝ブレの評価基準 ★★★ -->
+                        <div class="p-3 bg-white border border-gray-200 rounded-lg shadow-sm">
+                            <h3 class="font-bold text-gray-800">最大膝ブレ(Sway)</h3>
+                            <p class="mt-1">
+                                <span class="font-semibold text-green-700">適正範囲の目安:</span> 最小限 (セットアップ時からのブレが少ない)。<br>
+                                <span class="text-red-600">数値が大きい:</span> スイング中に下半身が水平方向に大きく移動している（スウェイ/スライド）ことを示します。軸が不安定になり、ミート率の低下やパワーロスにつながります。
+                            </p>
+                        </div>
+                    </div>
+                </section>
+            `;
+            return page;
+        }
+        
+        function createSummaryPage() {
+             const page = document.createElement('div');
+            page.id = 'summary';
+            page.className = 'content-page p-4';
+            page.innerHTML = `
+                <h2 class="text-2xl font-bold text-green-700 mb-6">00. レポート概要</h2>
+                <div class="text-gray-700 space-y-4">
+                    <p class="font-semibold">このレポートについて:</p>
+                    <p>このレポートは、お客様のスイング動画をAIが骨格レベルで分析し、その計測データに基づいて詳細な診断と改善戦略を提供するものです。左側のメニューから各診断項目を選択して、詳細をご確認ください。</p>
+                    <p class="text-sm text-gray-500 mt-4">
+                        ※ 診断項目01と02は無料版でも表示されます。03以降は有料診断で表示されます。
+                    </p>
+                </div>
+            `;
+            return page;
+        }
+
+        function populateRawData(raw) {
+            document.getElementById('frames_data').textContent = raw.frame_count || 'N/A';
+            document.getElementById('shoulder_data').textContent = (raw.max_shoulder_rotation ? raw.max_shoulder_rotation.toFixed(1) + '°' : 'N/A');
+            document.getElementById('hip_data').textContent = (raw.min_hip_rotation ? raw.min_hip_rotation.toFixed(1) + '°' : 'N/A');
+            document.getElementById('cock_data').textContent = (raw.max_wrist_cock ? raw.max_wrist_cock.toFixed(1) + '°' : 'N/A');
+            document.getElementById('knee_sway_data').textContent = (raw.max_knee_sway_x ? raw.max_knee_sway_x.toFixed(4) : 'N/A');
+        }
+
+        function showPage(pageId) {
+            currentPageId = pageId;
+            document.querySelectorAll('.content-page').forEach(page => {
+                page.classList.remove('active');
+            });
+            document.getElementById(pageId).classList.add('active');
+
+            document.querySelectorAll('.nav-item').forEach(item => {
+                item.classList.remove('active');
+                if (item.dataset.pageId === pageId) {
+                    item.classList.add('active');
+                }
+            });
+        }
+
+
+        // ★★★ メインのデータ取得とレンダリング ★★★
         document.addEventListener('DOMContentLoaded', async () => {
             const params = new URLSearchParams(window.location.search);
             const reportId = params.get('id');
             const baseUrl = window.location.origin;
 
-            console.log("--- Report Loading Started ---");
-            console.log("Report ID:", reportId);
-            console.log("Base URL:", baseUrl);
-
             if (!reportId) {
-                document.getElementById('loading').innerHTML = '<p class="text-red-600">エラー: レポートIDが指定されていません。</p>';
+                displayFatalError('レポートIDが指定されていません。');
                 return;
             }
             
-            const loadingElement = document.getElementById('loading');
-            
-            function displayFatalError(message, details = null) {
-                // ローディングを解除し、エラーメッセージを表示
-                let html = `<div class="p-6 bg-red-100 border-l-4 border-red-500 text-red-700">
-                    <p class="font-bold">🚨 レポート表示エラー (データ取得失敗)</p>
-                    <p class="mt-2">${message}</p>`;
-                if (details) {
-                    html += `<p class="mt-2 text-sm">詳細: ${details}</p>`;
-                }
-                html += `</div>`;
-                loadingElement.innerHTML = html;
-            }
-
             try {
-                // Cloud RunのAPIエンドポイントを呼び出す
                 const api_url = `${baseUrl}/api/report_data?id=${reportId}`;
-                console.log("Fetching data from:", api_url);
-
                 const response = await fetch(api_url);
                 
                 if (!response.ok) {
-                    // HTTPステータスコードが200番台以外の場合
                     const errorText = await response.text();
-                    console.error("Server returned non-OK status:", response.status, response.statusText, errorText.substring(0, 100));
                     throw new Error(`サーバーエラー。HTTPステータス: ${response.status} (${response.statusText})`);
                 }
                 
-                // JSONパースが失敗する可能性があるため、try/catchで保護
                 let data;
                 try {
                     data = await response.json();
@@ -224,29 +407,18 @@ HTML_REPORT_TEMPLATE = """
                      throw new Error(`JSON解析エラー。応答テキストが不正です: ${e.message}`);
                 }
                 
-                console.log("Data received successfully:", data);
-
                 if (data.error) {
-                     // APIがアプリケーションレベルのエラーを返した場合
-                     console.error("API returned application error:", data.error);
                      displayFatalError("APIがエラーを返しました。", data.error);
                      return;
                 }
                 
-                // --- データレンダリング開始 (STEP 2) ---
-                const raw = data.mediapipe_data;
-                
-                // データの挿入
+                // 1. 基本データの挿入
                 document.getElementById('report-id').textContent = reportId;
-                
-                // ★★★ タイムスタンプの安全な処理 ★★★
                 let timestamp = 'N/A';
                 try {
                     if (data.timestamp && data.timestamp._seconds) {
-                        // Firestore Timestamp Object
                         timestamp = new Date(data.timestamp._seconds * 1000).toLocaleString('ja-JP');
                     } else if (data.timestamp) {
-                        // Attempt to parse as a standard string/number
                         timestamp = new Date(data.timestamp).toLocaleString('ja-JP');
                     }
                 } catch (e) {
@@ -254,51 +426,40 @@ HTML_REPORT_TEMPLATE = """
                     timestamp = 'データ処理エラー';
                 }
                 document.getElementById('timestamp').textContent = timestamp;
-
-
-                document.getElementById('frames').textContent = raw.frame_count || 'N/A';
-                document.getElementById('shoulder').textContent = (raw.max_shoulder_rotation ? raw.max_shoulder_rotation.toFixed(1) + '°' : 'N/A');
-                document.getElementById('hip').textContent = (raw.min_hip_rotation ? raw.min_hip_rotation.toFixed(1) + '°' : 'N/A');
-                document.getElementById('cock').textContent = (raw.max_wrist_cock ? raw.max_wrist_cock.toFixed(1) + '°' : 'N/A');
-
-                // Markdownのレンダリング (簡易的な表示)
-                const markdownText = data.ai_report_text || data.ai_report_text_free || "AI診断データが利用できません。";
                 
-                // ★★★ 最終修正: Markdown処理の究極の安定化 (三重引用符による改行エラーを修正) ★★★
-                try {
-                    // 1. JSON.parse(JSON.stringify())でUnicodeエスケープや二重エスケープを安全に解除
-                    let processedText = JSON.parse(JSON.stringify(markdownText));
-                    
-                    // 2. ★★★ 致命的な修正 ★★★: Pythonの三重引用符内での改行問題を解決するため、JavaScriptの文字列リテラルとして安全な '\\n' を使用
-                    processedText = processedText.split('\\n').join('<br>');
-                    
-                    document.getElementById('ai-report-markdown').innerHTML = processedText;
-                    console.log("Markdown processing successful.");
+                // 2. Markdownコンテンツの取得
+                const markdownText = data.ai_report_text || data.ai_report_text_free || "";
+                
+                // 3. ページングレンダリング開始
+                if (markdownText) {
+                    try {
+                        let processedText = JSON.parse(JSON.stringify(markdownText));
+                        
+                        // 致命的な修正: Pythonの三重引用符内での改行問題を解決するため、JavaScriptの文字列リテラルとして安全な '\\n' を使用
+                        processedText = processedText.split('\\n').join('\n'); // ページングのためにまず\nに戻す
+                        
+                        // renderPages関数を呼び出し
+                        renderPages(processedText);
 
-                } catch (e) {
-                    // Markdownの処理に失敗した場合、生のテキストを表示し、エラーを出力
-                    console.error("Markdown processing failed:", e);
-                    document.getElementById('ai-report-markdown').innerHTML = 
-                        `<p class="text-red-500 font-bold">【レポート表示失敗】テキスト処理エラー: ${e.message}</p>
-                         <p class="text-sm mt-1">Raw Data: ${markdownText}</p>`;
+                    } catch (e) {
+                        console.error("Markdown structure parsing failed:", e);
+                         displayFatalError("AIレポートの構造解析中にエラーが発生しました。", e.message);
+                         return;
+                    }
+                } else {
+                    // AIレポートが存在しない場合も、固定ページは表示する
+                    renderPages("");
                 }
-                
-                // ローディングを非表示にし、コンテンツを表示
-                document.getElementById('loading').classList.add('hidden');
-                document.getElementById('report-content').classList.remove('hidden');
-                console.log("--- Report Rendered Successfully ---");
+
+                populateRawData(data.mediapipe_data);
 
             } catch (error) {
-                // 致命的なエラーが発生した場合 (ネットワーク、JSONパースなど)
-                console.error("Critical error during report fetch/render:", error);
-                // displayFatalError 関数を使ってエラーを画面に表示
-                displayFatalError("レポートのデータ取得または解析中に致命的なエラーが発生しました。", error.message);
+                displayFatalError("レポートの初期化中に致命的なエラーが発生しました。", error.message);
             }
         });
     </script>
 </body>
 </html>
-"""
 
 # ------------------------------------------------
 # 解析ロジック (analyze_swing) - 必須計測項目を全て実装
@@ -333,6 +494,9 @@ def analyze_swing(video_path):
     head_start_x = None 
     max_head_drift_x = 0 
     max_wrist_cock = 0  
+    # ★★★ 新規追加: 膝の安定性計測変数 ★★★
+    knee_start_x = None
+    max_knee_sway_x = 0
     
     cap = cv2.VideoCapture(video_path)
     if not cap.isOpened():
@@ -368,6 +532,9 @@ def analyze_swing(video_path):
                 RIGHT_WRIST = mp_pose.PoseLandmark.RIGHT_WRIST.value
                 RIGHT_ELBOW = mp_pose.PoseLandmark.RIGHT_ELBOW.value
                 RIGHT_INDEX = mp_pose.PoseLandmark.RIGHT_INDEX.value
+                # ★★★ 新規追加: 膝のランドマーク ★★★
+                LEFT_KNEE = mp_pose.PoseLandmark.LEFT_KNEE.value
+                RIGHT_KNEE = mp_pose.PoseLandmark.RIGHT_KNEE.value
 
                 # 座標抽出
                 r_shoulder = [landmarks[RIGHT_SHOULDER].x, landmarks[RIGHT_SHOULDER].y]
@@ -378,6 +545,9 @@ def analyze_swing(video_path):
                 r_wrist = [landmarks[RIGHT_WRIST].x, landmarks[RIGHT_WRIST].y]
                 r_elbow = [landmarks[RIGHT_ELBOW].x, landmarks[RIGHT_ELBOW].y]
                 r_index = [landmarks[RIGHT_INDEX].x, landmarks[RIGHT_INDEX].y]
+                r_knee = [landmarks[RIGHT_KNEE].x, landmarks[RIGHT_KNEE].y]
+                l_knee = [landmarks[LEFT_KNEE].x, landmarks[LEFT_KNEE].y]
+
 
                 # 計測：最大肩回転
                 shoulder_line_angle = np.degrees(np.arctan2(r_ear[1] - r_shoulder[1], r_ear[0] - r_shoulder[0]))
@@ -403,6 +573,15 @@ def analyze_swing(video_path):
                     cock_angle = calculate_angle(r_elbow, r_wrist, r_index)
                     if cock_angle > max_wrist_cock:
                          max_wrist_cock = cock_angle
+
+                # ★★★ 新規計測：最大膝ブレ（スウェイ） ★★★
+                # 左右の膝の中間点をブレの基準点とする
+                mid_knee_x = (r_knee[0] + l_knee[0]) / 2
+                if knee_start_x is None:
+                    knee_start_x = mid_knee_x
+                current_knee_sway = abs(mid_knee_x - knee_start_x)
+                if current_knee_sway > max_knee_sway_x:
+                    max_knee_sway_x = current_knee_sway
                 
     cap.release()
     
@@ -412,7 +591,9 @@ def analyze_swing(video_path):
         "max_shoulder_rotation": max_shoulder_rotation,
         "min_hip_rotation": min_hip_rotation,
         "max_head_drift_x": max_head_drift_x,
-        "max_wrist_cock": max_wrist_cock
+        "max_wrist_cock": max_wrist_cock,
+        # ★★★ 新規追加データ ★★★
+        "max_knee_sway_x": max_knee_sway_x 
     }
 
 # ------------------------------------------------
@@ -466,9 +647,10 @@ def process_video_async(user_id, video_content):
         analysis_data = analyze_swing(video_to_analyze)
         
         # ★★★ AI診断の実行 - サービスロジックの中心 ★★★
-        is_premium = False # ダミーロジック: 決済ロジックが未実装のため、常にFalse
+        is_premium = False # GEMINI_API_KEYが存在するかどうかで判断
         
         if GEMINI_API_KEY:
+            is_premium = True
             ai_report_text = generate_full_member_advice(analysis_data, genai, types) 
         else:
             # 無料会員向け: AIを使わず、MediaPipeデータに基づいた「課題提起」を生成
@@ -536,14 +718,25 @@ def generate_full_member_advice(analysis_data, genai, types): # genai, typesを�
     except Exception as e:
         return f"Geminiクライアント初期化失敗: {e}"
     
-    shoulder_rot = analysis_data['max_shoulder_rotation']
-    hip_rot = analysis_data['min_hip_rotation']
-    head_drift = analysis_data['max_head_drift_x']
-    wrist_cock = analysis_data['max_wrist_cock']
+    # データを変数に展開 (新規追加の膝ブレデータを含む)
+    shoulder_rot = analysis_data.get('max_shoulder_rotation', 0)
+    hip_rot = analysis_data.get('min_hip_rotation', 0)
+    head_drift = analysis_data.get('max_head_drift_x', 0)
+    wrist_cock = analysis_data.get('max_wrist_cock', 0)
+    knee_sway = analysis_data.get('max_knee_sway_x', 0)
 
+    # ★★★ 修正: ポジティブな評価と簡潔さ、構造化を指示に追加 ★★★
     system_prompt = (
-        "あなたは世界トップクラスのゴルフコーチです。提供されたMediaPipeの計測結果に基づき、以下の10項目（02から10まで）の構成を網羅した、プロフェッショナルな診断レポートを生成してください。"
-        "出力は必ずMarkdown形式で行い、各セクションの日本語タイトルは以下の指示に従ってください。\n"
+        "あなたはフレンドリーで経験豊富なプロのゴルフインストラクターです。診断レポートの対象読者は『ゴルフ初心者〜中級者』です。提供されたMediaPipeの計測結果に基づき、以下の9項目（02から10まで）の構成を網羅した、**専門的でありながらも分かりやすく、終始ポジティブで励ますようなトーン**のレポートを生成してください。\n"
+        "専門用語は避け、読者が自宅や練習場で試せるような**具体的な行動**に焦点を当ててください。\n"
+        
+        "【コンテンツ構成の厳守事項】\n"
+        "1. **07. 総合診断 (Key Diagnosis)**: 診断結果を箇条書き（リスト形式）で記述し、各項目は最大2行程度に簡潔にまとめること。\n"
+        "2. **08. 改善戦略とドリル (Improvement Strategy)**: 提案する練習ドリルは**3つ**に限定し、それぞれのドリルに関する説明も簡潔に短くまとめること。\n"
+        "3. **09. フィッティング提案 (Fitting Recommendation)**: 提案内容が**性別や体格、計測値から推測されるスイングスピード**の違いを反映していることを確認すること。\n"
+        "4. **長所と改善点のバランス**: 必ず計測データが示す長所やうまくできている点も特定し、レポートの冒頭で簡潔に触れること。\n"
+        
+        "出力は必ずMarkdown形式で行い、各セクションの日本語タイトルは以下の指示に厳密に従ってください。\n"
         "【重要】項目09のフィッティング提案では、具体的な商品名やブランド名を**絶対に出さないで**ください。代わりに、シャフトの特性（調子、トルク、重量）といった専門的なフィッティング要素を提案してください。"
     )
 
@@ -552,16 +745,16 @@ def generate_full_member_advice(analysis_data, genai, types): # genai, typesを�
         f"・最大肩回転 (Top of Backswing): {shoulder_rot:.1f}度\n"
         f"・最小腰回転 (Impact/Follow): {hip_rot:.1f}度\n"
         f"・頭の最大水平ブレ (Max Head Drift X, 0.001が最小ブレ): {head_drift:.4f}\n"
-        f"・最大コック角 (Max Wrist Cock Angle, 180度が伸びた状態): {wrist_cock:.1f}度\n\n"
-        f"レポート構成の指示:\n"
-        f"02. 頭の安定性 (Head Stability)\n"
+        f"・最大コック角 (Max Wrist Cock Angle, 180度が伸びた状態): {wrist_cock:.1f}度\n"
+        f"・最大膝ブレ (Max Knee Sway X, 0.001が最小ブレ): {knee_sway:.4f}\n\n"
+        f"レポート構成の指示 (全9項目):\n"
         f"03. 肩の回旋 (Shoulder Rotation)\n"
         f"04. 腰の回旋 (Hip Rotation)\n"
         f"05. 手首のメカニクス (Wrist Mechanics) - コック角に基づき、アーリーリリースなどを評価してください。\n"
-        f"06. 手の軌道 (Hand Path) - データが限られているため、回転とコック角の傾向からアウトサイドイン/インサイドアウトを推測してください。\n"
-        f"07. 総合診断 (Key Diagnosis)\n"
-        f"08. 改善戦略とドリル (Improvement Strategy)\n"
-        f"09. フィッティング提案 (Fitting Recommendation) - **商品名なし**で、シャフト特性を提案してください。\n"
+        f"06. 下半身の安定性 (Lower Body Stability) - **新しい計測データ (最大膝ブレ) を活用し、スウェイやスライドの有無を診断してください。**\n"
+        f"07. 総合診断 (Key Diagnosis) - **必ず長所と改善点の両方を簡潔な箇条書きでまとめること。**\n"
+        f"08. 改善戦略とドリル (Improvement Strategy) - **提案する練習ドリルは3つに限定し、説明も簡潔にすること。**\n"
+        f"09. フィッティング提案 (Fitting Recommendation) - **性別・スイングスピードを考慮し、シャフト特性を提案してください。**\n"
         f"10. エグゼクティブサマリー (Executive Summary)\n"
         f"この構成で、各項目を詳細に分析してください。"
     )
@@ -586,10 +779,11 @@ def generate_full_member_advice(analysis_data, genai, types): # genai, typesを�
 def generate_free_member_summary(analysis_data):
     """AIを使わず、計測値からロジックで無料会員向けレポートを生成する"""
     
-    shoulder_rot = analysis_data['max_shoulder_rotation']
-    hip_rot = analysis_data['min_hip_rotation']
-    head_drift = analysis_data['max_head_drift_x']
-    wrist_cock = analysis_data['max_wrist_cock']
+    shoulder_rot = analysis_data.get('max_shoulder_rotation', 0)
+    hip_rot = analysis_data.get('min_hip_rotation', 0)
+    head_drift = analysis_data.get('max_head_drift_x', 0)
+    wrist_cock = analysis_data.get('max_wrist_cock', 0)
+    knee_sway = analysis_data.get('max_knee_sway_x', 0)
     
     issues = []
 
@@ -603,6 +797,9 @@ def generate_free_member_summary(analysis_data):
     # 課題3: 上半身の回転不足と腰の開きすぎ (40度以下 and 10度以上)
     if shoulder_rot < 40 and hip_rot > 10:
         issues.append("上半身の回転不足と腰の開きすぎの連鎖が確認されます")
+    # 課題4: 膝のブレが大きい (0.05以上)
+    if knee_sway > 0.05:
+        issues.append("下半身の水平方向へのブレ（スウェイ/スライド）が目立ちます")
 
     # 課題リストの整形 (黒丸リストに修正)
     if not issues:
@@ -633,7 +830,6 @@ def callback():
     app.logger.info("Request body: " + body)
 
     try:
-        # LINE Bot SDKのハンドラーに処理を委譲
         handler.handle(body, signature)
     except InvalidSignatureError:
         app.logger.error("Invalid signature. Check your channel secret.")
@@ -647,11 +843,9 @@ def callback():
 @app.route('/api/report_data', methods=['GET'])
 def get_report_data():
     """WebレポートのフロントエンドにJSONデータを返すAPIエンドポイント (重複解消済み)"""
-    # ログを強化し、リクエストがこの関数に到達しているかを確認
     app.logger.info(f"Report API accessed. Query: {request.query_string.decode('utf-8')}")
     
     if not db:
-        # DB接続が初期化されていない場合のエラー応答
         app.logger.error("Firestore DB connection is not initialized.")
         return jsonify({"error": "データベースが初期化されていません。サーバーログを確認してください。"}), 500
         
@@ -661,7 +855,6 @@ def get_report_data():
         return jsonify({"error": "レポートIDが指定されていません。"}), 400
     
     try:
-        # Firestoreからドキュメントを取得
         doc = db.collection('reports').document(report_id).get()
         if not doc.exists:
             app.logger.warning(f"Report document not found: {report_id}")
@@ -670,15 +863,12 @@ def get_report_data():
         data = doc.to_dict()
         app.logger.info(f"Successfully retrieved data for report: {report_id}")
         
-        # クライアントへの応答として、必要なデータのみをJSON形式で返す
         response_data = {
-            # FirestoreのTimestampオブジェクトはJSONシリアライズできないため、そのまま返す
             "timestamp": data.get('timestamp', {}), 
             "mediapipe_data": data.get('mediapipe_data', {}),
             "ai_report_text": data.get('ai_report_text', 'AIレポートがありません。')
         }
-        # ★★★ 修正: Flaskのjsonモジュールを使って、JSON応答を生成 ★★★
-        # Flaskのjsonifyではなく、直接dumpsを使ってレスポンスを生成し、ヘッダーを設定
+        
         json_output = json.dumps(response_data, ensure_ascii=False)
         response = app.response_class(
             response=json_output,
@@ -710,13 +900,11 @@ def handle_video(event):
     user_id = event.source.user_id
     message_id = event.message.id
 
-    # 1. ユーザーへの即時応答（LINEの応答タイムアウト回避）
     line_bot_api.reply_message(
         event.reply_token,
         TextSendMessage(text="動画を受け付けました。解析を開始します。しばらくお待ちください...")
     )
     
-    # 2. 動画コンテンツの取得
     try:
         message_content = line_bot_api.get_message_content(message_id)
         video_content = message_content.content
@@ -725,7 +913,6 @@ def handle_video(event):
         line_bot_api.push_message(user_id, TextSendMessage(text="【エラー】動画のダウンロードに失敗しました。"))
         return
 
-    # 3. 解析処理を別スレッドで起動（フリーズ回避）
     app.logger.info(f"動画解析を別スレッドで開始します。ユーザーID: {user_id}")
     thread = threading.Thread(target=process_video_async, args=(user_id, video_content))
     thread.start()
