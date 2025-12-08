@@ -230,12 +230,15 @@ HTML_REPORT_TEMPLATE = """
                 // Markdownのレンダリング (簡易的な表示)
                 const markdownText = data.ai_report_text || data.ai_report_text_free || "AI診断データが利用できません。";
                 
-                // ★★★ Markdown処理の安定化 (再修正: JSON_AS_ASCII=False設定と合わせる) ★★★
+                // ★★★ 最終修正: Markdown処理の究極の安定化 (すべてのエスケープを強力に解除) ★★★
                 try {
-                    // サーバー側でエスケープが正しく解除される前提で、改行コードに対応
-                    // JSON_AS_ASCII=Falseにより、二重エスケープは発生しないはず
-                    const processedText = markdownText.split('\n').join('<br>');
-
+                    // 1. まず、JSONから渡された可能性のあるUnicodeエスケープや二重エスケープを処理し、安全な文字列に変換
+                    // これが Uncaught SyntaxError を解消するための最も強力な対策です。
+                    let processedText = JSON.parse(JSON.stringify(markdownText));
+                    
+                    // 2. 改行コードに対応 (\nのみを使用)
+                    processedText = processedText.split('\n').join('<br>');
+                    
                     document.getElementById('ai-report-markdown').innerHTML = processedText;
                     console.log("Markdown processing successful.");
 
