@@ -126,6 +126,36 @@ HTML_REPORT_TEMPLATE = """
                 </div>
             </section>
             
+            <!-- ★★★ 新規追加: 骨格計測データの評価基準セクション ★★★ -->
+            <section class="mb-8">
+                <h2 class="text-xl font-semibold text-green-600 mb-4 border-l-4 border-green-500 pl-3">
+                    📐 骨格計測データの評価基準
+                </h2>
+                <div class="space-y-4 text-sm text-gray-600">
+                    <div class="p-3 bg-white border border-gray-200 rounded-lg shadow-sm">
+                        <h3 class="font-bold text-gray-800">最大肩回転</h3>
+                        <p class="mt-1">
+                            <span class="font-semibold text-green-700">適正範囲の目安:</span> 70°〜90°程度 (ドライバー)。<br>
+                            <span class="text-red-600">マイナス値 (例: -4.8°) :</span> 目標線に対して肩が目標方向の逆側（バックスイング側）を向いていない（オープンになっている）ことを示します。捻転不足や軸の傾きが原因の可能性があります。
+                        </p>
+                    </div>
+                    <div class="p-3 bg-white border border-gray-200 rounded-lg shadow-sm">
+                        <h3 class="font-bold text-gray-800">最小腰回転</h3>
+                        <p class="mt-1">
+                            <span class="font-semibold text-green-700">適正範囲の目安:</span> 30°〜50°程度 (インパクト時)。<br>
+                            <span class="text-red-600">マイナス値 (例: -179.3°) :</span> 腰の開きがほとんどないか、インパクト時に腰が目標方向とは逆の方向を向いていることを示唆します。腰の回転不足やスウェイ（軸ブレ）の可能性。
+                        </p>
+                    </div>
+                    <div class="p-3 bg-white border border-gray-200 rounded-lg shadow-sm">
+                        <h3 class="font-bold text-gray-800">最大コック角</h3>
+                        <p class="mt-1">
+                            <span class="font-semibold text-green-700">適正範囲の目安:</span> 90°〜110°程度 (トップスイング)。<br>
+                            <span class="text-red-600">数値が大きい (160°超) :</span> 手首がほとんどコックされていない状態（手首が伸びた状態）を示し、「アーリーリリース」の可能性が高いです。タメが少なくなり飛距離をロスしやすい傾向があります。
+                        </p>
+                    </div>
+                </div>
+            </section>
+            
             <!-- AI Generated Report Content (Markdown Rendered Here) -->
             <section class="mb-8">
                 <div id="ai-report-markdown" class="prose max-w-none">
