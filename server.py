@@ -232,12 +232,15 @@ HTML_REPORT_TEMPLATE = """
                 
                 // ★★★ 最終修正: Markdown処理の究極の安定化 (すべてのエスケープを強力に解除) ★★★
                 try {
-                    // 1. まず、JSONから渡された可能性のあるUnicodeエスケープや二重エスケープを処理し、安全な文字列に変換
-                    // これが Uncaught SyntaxError を解消するための最も強力な対策です。
-                    let processedText = JSON.parse(JSON.stringify(markdownText));
+                    // 1. まず、文字列として処理する前に、残存している可能性のあるすべての改行を安全なスペースに置換
+                    // これにより、JSエンジンがこの文字列を読み込む際の構文破壊を防ぐ
+                    const cleanedText = markdownText.replace(/[\n\r]/g, ' '); 
+
+                    // 2. クリーンアップされたテキストを安全なJSON文字列として再パース
+                    let processedText = JSON.parse(JSON.stringify(cleanedText));
                     
-                    // 2. 改行コードに対応 (\nのみを使用)
-                    processedText = processedText.split('\n').join('<br>');
+                    // 3. 表示のために、スペースから改行に戻す
+                    processedText = processedText.split(' ').join('<br>');
                     
                     document.getElementById('ai-report-markdown').innerHTML = processedText;
                     console.log("Markdown processing successful.");
