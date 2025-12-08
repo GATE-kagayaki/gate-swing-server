@@ -10,7 +10,7 @@ from firebase_admin import credentials, firestore, initialize_app
 from google import genai
 from google.genai import types
 
-from flask import Flask, request, abort, jsonify, json # jsonモジュールをインポート
+from flask import Flask, request, abort, jsonify, json 
 from linebot import LineBotApi, WebhookHandler
 from linebot.exceptions import InvalidSignatureError, LineBotApiError
 from linebot.models import MessageEvent, TextMessage, TextSendMessage, VideoMessage
@@ -19,9 +19,7 @@ from linebot.models import MessageEvent, TextMessage, TextSendMessage, VideoMess
 LINE_CHANNEL_ACCESS_TOKEN = os.environ.get('LINE_CHANNEL_ACCESS_TOKEN')
 LINE_CHANNEL_SECRET = os.environ.get('LINE_CHANNEL_SECRET')
 GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY') 
-# 動作が確認された正しいプロジェクトIDを直接設定
-GCP_PROJECT_ID = 'gate-swing-analyzer' # FirestoreプロジェクトID (確定)
-# Cloud RunのホストURLを環境変数から取得。未設定の場合は、ユーザーが提供した正しいホストをデフォルトとして使用
+GCP_PROJECT_ID = 'gate-swing-analyzer'
 SERVICE_HOST_URL = os.environ.get('SERVICE_HOST_URL', 'https://gate-kagayaki-562867875402.asia-northeast2.run.app')
 
 
@@ -33,7 +31,6 @@ app = Flask(__name__)
 line_bot_api = LineBotApi(LINE_CHANNEL_ACCESS_TOKEN)
 handler = WebhookHandler(LINE_CHANNEL_SECRET)
 
-# JSON応答時の日本語エスケープを制御
 app.config['JSON_AS_ASCII'] = False 
 
 # Firestoreクライアントの初期化
@@ -47,7 +44,8 @@ except Exception as e:
     db = None
 
 # ------------------------------------------------
-# WebレポートのHTMLテンプレート (デザイン刷新・ページング対応)
+# WebレポートのHTMLテンプレート (デザインとページング)
+# ------------------------------------------------
 HTML_REPORT_TEMPLATE = """
 <!DOCTYPE html>
 <html lang="ja">
@@ -59,18 +57,8 @@ HTML_REPORT_TEMPLATE = """
     <style>
         /* 印刷時のCSS設定 */
         @media print {
-            body { 
-                padding: 0 !important; 
-                margin: 0 !important; 
-                font-size: 10pt;
-            }
+            body { padding: 0 !important; margin: 0 !important; font-size: 10pt; }
             .no-print { display: none !important; }
-            .report-card { 
-                box-shadow: none !important; 
-                border: none !important;
-                margin: 0 !important; 
-                padding: 0 !important;
-            }
             #sidebar, #header-container { display: none !important; }
             #main-content { margin-left: 0 !important; width: 100% !important; padding: 0 !important; }
             .content-page { display: block !important; margin-bottom: 20px; page-break-after: always; }
@@ -78,9 +66,8 @@ HTML_REPORT_TEMPLATE = """
         
         /* カスタムCSS */
         .content-page {
-            /* ページングをシミュレートするため、非表示がデフォルト */
             display: none;
-            min-height: calc(100vh - 80px); /* ヘッダー分を引く */
+            min-height: calc(100vh - 80px);
         }
         .content-page.active {
             display: block;
@@ -99,7 +86,7 @@ HTML_REPORT_TEMPLATE = """
         .nav-item {
             cursor: pointer;
             transition: background-color 0.2s;
-            border-left: 4px solid transparent; /* デフォルトの境界線 */
+            border-left: 4px solid transparent; 
         }
         .nav-item:hover {
             background-color: #f0fdf4;
@@ -169,10 +156,8 @@ HTML_REPORT_TEMPLATE = """
             { id: 'summary', title: '00. レポート概要' },
             { id: 'mediapipe', title: '01. 骨格計測データ' },
             { id: 'criteria', title: '02. データ評価基準' },
-            // AIレポートの診断項目はMarkdown解析後に動的に追加されます
         ];
 
-        // ページの状態を管理する変数
         let aiReportContent = {};
         let currentPageId = 'summary';
 
@@ -189,18 +174,15 @@ HTML_REPORT_TEMPLATE = """
             document.getElementById('report-container').style.display = 'none';
         }
 
-        // ナビゲーションとページングの描画
         function renderPages(markdownContent) {
             const pagesContainer = document.getElementById('report-pages');
             const navMenu = document.getElementById('nav-menu');
             pagesContainer.innerHTML = '';
             navMenu.innerHTML = '';
 
-            // 1. Markdownコンテンツを分割
             const sections = markdownContent.split('## ').filter(s => s.trim() !== '');
             const dynamicNavItems = [];
             
-            // Markdownのセクションをパースして動的なナビゲーション項目を構築
             sections.forEach((section, index) => {
                 const titleMatch = section.match(/^([^\\n]+)/);
                 if (titleMatch) {
@@ -208,13 +190,11 @@ HTML_REPORT_TEMPLATE = """
                     const id = 'ai-sec-' + index;
                     dynamicNavItems.push({ id: id, title: fullTitle });
                     
-                    // MarkdownをHTMLに変換（改行を<br>に置換）
                     const content = section.substring(titleMatch[0].length).trim();
                     aiReportContent[id] = content;
                 }
             });
 
-            // 2. ナビゲーションメニューを構築
             const fullNavItems = [...NAV_ITEMS, ...dynamicNavItems];
             fullNavItems.forEach(item => {
                 const navItem = document.createElement('div');
@@ -225,7 +205,6 @@ HTML_REPORT_TEMPLATE = """
                 navMenu.appendChild(navItem);
             });
 
-            // 3. 固定ページコンテンツの定義
             const rawDataPage = createRawDataPage();
             pagesContainer.appendChild(rawDataPage);
             
@@ -235,16 +214,13 @@ HTML_REPORT_TEMPLATE = """
             const summaryPage = createSummaryPage();
             pagesContainer.appendChild(summaryPage);
 
-            // 4. AI動的ページコンテンツの定義
             dynamicNavItems.forEach(item => {
                 const page = document.createElement('div');
                 page.id = item.id;
                 page.className = 'content-page p-4';
                 
-                // Markdownの見出しをH2として追加
                 page.innerHTML += `<h2 class="text-2xl font-bold text-green-700 mb-4">${item.title}</h2>`;
                 
-                // 本文を挿入
                 let processedText = aiReportContent[item.id].split('\\n').join('<br>');
                 page.innerHTML += processedText; 
                 
@@ -284,7 +260,6 @@ HTML_REPORT_TEMPLATE = """
                             <p class="text-xs text-gray-500">最大コック角</p>
                             <p class="text-xs text-gray-400 mt-1">手首のコック（角度）の最大値。タメの度合いを示します。</p>
                         </div>
-                        <!-- ★★★ 新規追加: 最大膝ブレのデータ表示エリア ★★★ -->
                         <div class="p-3 bg-gray-100 rounded-lg">
                             <p class="text-2xl font-bold text-gray-800" id="knee_sway_data"></p>
                             <p class="text-xs text-gray-500">最大膝ブレ(Sway)</p>
@@ -325,7 +300,6 @@ HTML_REPORT_TEMPLATE = """
                                 <span class="text-red-600">数値が大きい (160°超) :</span> 手首のタメが不足し、「アーリーリリース」の可能性が高いです。
                             </p>
                         </div>
-                        <!-- ★★★ 新規追加: 最大膝ブレの評価基準 ★★★ -->
                         <div class="p-3 bg-white border border-gray-200 rounded-lg shadow-sm">
                             <h3 class="font-bold text-gray-800">最大膝ブレ(Sway)</h3>
                             <p class="mt-1">
@@ -380,7 +354,7 @@ HTML_REPORT_TEMPLATE = """
         }
 
 
-        // ★★★ メインのデータ取得とレンダリング ★★★
+        // メインのデータ取得とレンダリング
         document.addEventListener('DOMContentLoaded', async () => {
             const params = new URLSearchParams(window.location.search);
             const reportId = params.get('id');
@@ -435,10 +409,9 @@ HTML_REPORT_TEMPLATE = """
                     try {
                         let processedText = JSON.parse(JSON.stringify(markdownText));
                         
-                        // 致命的な修正: Pythonの三重引用符内での改行問題を解決するため、JavaScriptの文字列リテラルとして安全な '\\n' を使用
-                        processedText = processedText.split('\\n').join('\n'); // ページングのためにまず\nに戻す
+                        // Pythonの三重引用符内での改行問題を解決
+                        processedText = processedText.split('\\n').join('\n'); 
                         
-                        // renderPages関数を呼び出し
                         renderPages(processedText);
 
                     } catch (e) {
@@ -447,7 +420,6 @@ HTML_REPORT_TEMPLATE = """
                          return;
                     }
                 } else {
-                    // AIレポートが存在しない場合も、固定ページは表示する
                     renderPages("");
                 }
 
@@ -469,7 +441,6 @@ def analyze_swing(video_path):
     動画を解析し、スイングの評価レポート（テキスト）を返す。
     この関数は、process_video_async内から呼び出されます。
     """
-    # ★★★ 重いライブラリをここでインポートする (関数内インポート) ★★★
     import cv2
     import mediapipe as mp
     import numpy as np
@@ -484,7 +455,6 @@ def analyze_swing(video_path):
         cosine_angle = np.dot(v1, v2) / (np.linalg.norm(v1) * np.linalg.norm(v2))
         angle = np.arccos(np.clip(cosine_angle, -1.0, 1.0))
         return np.degrees(angle)
-    # ----------------------------------------------
     
     mp_pose = mp.solutions.pose
     
@@ -494,7 +464,6 @@ def analyze_swing(video_path):
     head_start_x = None 
     max_head_drift_x = 0 
     max_wrist_cock = 0  
-    # ★★★ 新規追加: 膝の安定性計測変数 ★★★
     knee_start_x = None
     max_knee_sway_x = 0
     
@@ -532,7 +501,6 @@ def analyze_swing(video_path):
                 RIGHT_WRIST = mp_pose.PoseLandmark.RIGHT_WRIST.value
                 RIGHT_ELBOW = mp_pose.PoseLandmark.RIGHT_ELBOW.value
                 RIGHT_INDEX = mp_pose.PoseLandmark.RIGHT_INDEX.value
-                # ★★★ 新規追加: 膝のランドマーク ★★★
                 LEFT_KNEE = mp_pose.PoseLandmark.LEFT_KNEE.value
                 RIGHT_KNEE = mp_pose.PoseLandmark.RIGHT_KNEE.value
 
@@ -574,8 +542,7 @@ def analyze_swing(video_path):
                     if cock_angle > max_wrist_cock:
                          max_wrist_cock = cock_angle
 
-                # ★★★ 新規計測：最大膝ブレ（スウェイ） ★★★
-                # 左右の膝の中間点をブレの基準点とする
+                # 計測：最大膝ブレ（スウェイ）
                 mid_knee_x = (r_knee[0] + l_knee[0]) / 2
                 if knee_start_x is None:
                     knee_start_x = mid_knee_x
@@ -592,7 +559,6 @@ def analyze_swing(video_path):
         "min_hip_rotation": min_hip_rotation,
         "max_head_drift_x": max_head_drift_x,
         "max_wrist_cock": max_wrist_cock,
-        # ★★★ 新規追加データ ★★★
         "max_knee_sway_x": max_knee_sway_x 
     }
 
@@ -618,17 +584,14 @@ def process_video_async(user_id, video_content):
             tmp_file.write(video_content)
     except Exception as e:
         app.logger.error(f"動画ファイルの保存に失敗: {e}", exc_info=True)
-        # ★★★ 修正: ファイル保存失敗時の通知を追加 ★★★
         line_bot_api.push_message(user_id, TextSendMessage(text="【システムエラー】動画ファイルの保存に失敗しました。ファイルサイズや形式をご確認ください。"))
         return
 
-    # 1.5 動画の自動圧縮とリサイズ処理 (メモリ不足回避のため必須)
+    # 1.5 動画の自動圧縮とリサイズ処理
     try:
         compressed_video_path = tempfile.NamedTemporaryFile(suffix="_compressed.mp4", delete=False).name
-        # 処理遅延の原因となるFFmpeg処理の安定化
         FFMPEG_PATH = '/usr/bin/ffmpeg' if os.path.exists('/usr/bin/ffmpeg') else 'ffmpeg'
         
-        # 圧縮とリサイズを実行
         (
             ffmpeg
             .input(original_video_path)
@@ -640,10 +603,9 @@ def process_video_async(user_id, video_content):
         
     except Exception as e:
         app.logger.error(f"予期せぬ圧縮エラー: {e}", exc_info=True)
-        # ★★★ 修正: 圧縮失敗時の通知を追加 ★★★
         report_text = f"【動画処理エラー】動画の圧縮に失敗しました。ファイルが大きすぎる（1分以上など）か、形式がLINEでサポートされていない可能性があります。"
         line_bot_api.push_message(user_id, TextSendMessage(text=report_text))
-        # 失敗時はファイルを削除してからリターン
+        
         if original_video_path and os.path.exists(original_video_path):
             os.remove(original_video_path)
         if compressed_video_path and os.path.exists(compressed_video_path):
@@ -654,17 +616,15 @@ def process_video_async(user_id, video_content):
     try:
         analysis_data = analyze_swing(video_to_analyze)
         
-        # ★★★ AI診断の実行 - サービスロジックの中心 ★★★
-        is_premium = False # GEMINI_API_KEYが存在するかどうかで判断
+        is_premium = False 
         
         if GEMINI_API_KEY:
             is_premium = True
             ai_report_text = generate_full_member_advice(analysis_data, genai, types) 
         else:
-            # 無料会員向け: AIを使わず、MediaPipeデータに基づいた「課題提起」を生成
             ai_report_text = generate_free_member_summary(analysis_data)
             
-        # 3. Firestoreに解析結果を保存 (Webレポートの基盤)
+        # 3. Firestoreに解析結果を保存
         if db:
             report_data = {
                 "timestamp": firestore.SERVER_TIMESTAMP,
@@ -673,22 +633,17 @@ def process_video_async(user_id, video_content):
                 "mediapipe_data": analysis_data,
                 "ai_report_text": ai_report_text
             }
-            # コレクション 'reports' にデータを追加
             _, doc_ref = db.collection('reports').add(report_data)
             report_id = doc_ref.id
             
-            # WebレポートのURLを生成 (正しいホストURLを使用)
             service_url = SERVICE_HOST_URL.rstrip('/')
             report_url = f"{service_url}/report?id={report_id}"
             
         else:
-             # DB接続失敗時は、テキストレポートを直接送る
              report_url = None
              
     except Exception as e:
-        # ★★★ 修正: 解析失敗時の通知を強化 ★★★
         app.logger.error(f"解析中の致命的なエラー: {e}", exc_info=True)
-        # MediaPipe解析が失敗する原因の多くは、動画内に人体が検出されないこと
         report_text = f"【解析エラー】スイングの骨格検出に失敗しました。動画に全身が写っているか、明るい場所で撮影されているかをご確認ください。エラーログ: {str(e)[:100]}..."
         line_bot_api.push_message(user_id, TextSendMessage(text=report_text))
         return
@@ -705,7 +660,6 @@ def process_video_async(user_id, video_content):
             )
             line_bot_api.push_message(user_id, TextSendMessage(text=message))
         else:
-            # DB接続失敗時は、テキストレポートを直接送る
             line_bot_api.push_message(user_id, TextSendMessage(text=ai_report_text))
 
     except Exception as e:
@@ -718,9 +672,9 @@ def process_video_async(user_id, video_content):
         os.remove(compressed_video_path)
 
 # ------------------------------------------------
-# ★★★ Gemini API 呼び出し関数 (全項目網羅版) ★★★
+# Gemini API 呼び出し関数 (有料会員向け詳細レポート)
 # ------------------------------------------------
-def generate_full_member_advice(analysis_data, genai, types): # genai, typesを引数で受け取る
+def generate_full_member_advice(analysis_data, genai, types): 
     """MediaPipeの数値結果をGemini APIに渡し、理想の10項目を網羅した詳細レポートを生成させる"""
     
     try:
@@ -728,49 +682,45 @@ def generate_full_member_advice(analysis_data, genai, types): # genai, typesを�
     except Exception as e:
         return f"Geminiクライアント初期化失敗: {e}"
     
-    # データを変数に展開 (新規追加の膝ブレデータを含む)
     shoulder_rot = analysis_data.get('max_shoulder_rotation', 0)
     hip_rot = analysis_data.get('min_hip_rotation', 0)
     head_drift = analysis_data.get('max_head_drift_x', 0)
     wrist_cock = analysis_data.get('max_wrist_cock', 0)
     knee_sway = analysis_data.get('max_knee_sway_x', 0)
 
-    # ★★★ 修正: ポジティブな評価と簡潔さ、構造化を指示に追加 (最終行の追加) ★★★
+    # システムプロンプト: 簡潔さ、構造、行動への焦点を徹底
     system_prompt = (
-        "あなたはフレンドリーで経験豊富なプロのゴルフインストラクターです。診断レポートの対象読者は『ゴルフ初心者〜中級者』です。提供されたMediaPipeの計測結果に基づき、以下の9項目（02から10まで）の構成を網羅した、**専門的でありながらも分かりやすく、終始ポジティブで励ますようなトーン**のレポートを生成してください。\n"
-        "専門用語は避け、読者が自宅や練習場で試せるような**具体的な行動**に焦点を当ててください。\n"
+        "あなたは経験豊富なプロのゴルフインストラクターです。提供された計測結果に基づき、以下の10項目の構成を網羅した、**専門的でありながらも分かりやすく、ポジティブで行動に焦点を当てたトーン**のレポートを生成してください。\n"
         
         "【コンテンツ構成の厳守事項】\n"
-        "1. **07. 総合診断 (Key Diagnosis)**: 診断結果を箇条書き（リスト形式）で記述し、各項目は最大2行程度に簡潔にまとめること。\n"
-        "2. **08. 改善戦略とドリル (Improvement Strategy)**: 提案する練習ドリルは**3つ**に限定し、それぞれのドリルに関する説明も簡潔に短くまとめること。\n"
-        "3. **09. フィッティング提案 (Fitting Recommendation)**: 提案内容が**性別や体格、計測値から推測されるスイングスピード**の違いを反映していることを確認すること。\n"
-        "4. **長所と改善点のバランス**: 必ず計測データが示す長所やうまくできている点も特定し、レポートの冒頭で簡潔に触れること。\n"
-        "5. **レポートの最終行**: **必ず**レポートの末尾に、**「お客様のゴルフライフが充実したものになることを応援しております。」**という文言を挿入すること。\n" # ★★★ 追加要件: 有料レポートの最終行に指定の文言を挿入するよう指示 ★★★
+        "1. **レポートの長所と改善点のバランス**を必ず取ること。\n"
+        "2. **07. 総合診断**: 診断結果を箇条書きで簡潔にまとめること。\n"
+        "3. **08. 改善戦略とドリル**: 提案する練習ドリルは**3つ**に限定し、説明も簡潔にすること。\n"
+        "4. **09. フィッティング提案**: 具体的な商品名を出さず、シャフトの特性（調子、トルク、重量）といった専門的なフィッティング要素を提案すること。\n"
+        "5. **10. エグゼクティブサマリー**: お客様の目標達成への確固たる基盤である旨を力強く宣言し、**「お客様のゴルフライフが充実したものになることを応援しております。」**という文言で締めくくること。\n"
         
-        "出力は必ずMarkdown形式で行い、各セクションの日本語タイトルは以下の指示に厳密に従ってください。\n"
-        "【重要】項目09のフィッティング提案では、具体的な商品名やブランド名を**絶対に出さないで**ください。代わりに、シャフトの特性（調子、トルク、重量）といった専門的なフィッティング要素を提案してください。"
+        "出力は必ずMarkdown形式で行い、各セクションの日本語タイトルは以下の指示に厳密に従ってください。"
     )
 
     user_prompt = (
-        f"ゴルフスイングの解析結果です。対象は初心者〜中級者です。全ての診断は以下の数値データに基づいて行ってください。\n"
+        f"ゴルフスイングの解析結果です。全ての診断は以下の数値データに基づいて行ってください。\n"
         f"・最大肩回転 (Top of Backswing): {shoulder_rot:.1f}度\n"
         f"・最小腰回転 (Impact/Follow): {hip_rot:.1f}度\n"
         f"・頭の最大水平ブレ (Max Head Drift X, 0.001が最小ブレ): {head_drift:.4f}\n"
         f"・最大コック角 (Max Wrist Cock Angle, 180度が伸びた状態): {wrist_cock:.1f}度\n"
         f"・最大膝ブレ (Max Knee Sway X, 0.001が最小ブレ): {knee_sway:.4f}\n\n"
-        f"レポート構成の指示 (全9項目):\n"
+        f"レポート構成の指示 (全10項目を網羅すること):\n"
         f"03. 肩の回旋 (Shoulder Rotation)\n"
         f"04. 腰の回旋 (Hip Rotation)\n"
-        f"05. 手首のメカニクス (Wrist Mechanics) - コック角に基づき、アーリーリリースなどを評価してください。\n"
-        f"06. 下半身の安定性 (Lower Body Stability) - **新しい計測データ (最大膝ブレ) を活用し、スウェイやスライドの有無を診断してください。**\n"
-        f"07. 総合診断 (Key Diagnosis) - **必ず長所と改善点の両方を簡潔な箇条書きでまとめること。**\n"
-        f"08. 改善戦略とドリル (Improvement Strategy) - **提案する練習ドリルは3つに限定し、説明も簡潔にすること。**\n"
-        f"09. フィッティング提案 (Fitting Recommendation) - **性別・スイングスピードを考慮し、シャフト特性を提案してください。**\n"
+        f"05. 手首のメカニクス (Wrist Mechanics)\n"
+        f"06. 下半身の安定性 (Lower Body Stability)\n"
+        f"07. 総合診断 (Key Diagnosis)\n"
+        f"08. 改善戦略とドリル (Improvement Strategy)\n"
+        f"09. フィッティング提案 (Fitting Recommendation)\n"
         f"10. エグゼクティブサマリー (Executive Summary)\n"
         f"この構成で、各項目を詳細に分析してください。"
     )
 
-    # Gemini API呼び出し
     try:
         response = client.models.generate_content(
             model='gemini-2.5-flash',
@@ -785,7 +735,7 @@ def generate_full_member_advice(analysis_data, genai, types): # genai, typesを�
         return f"Gemini API呼び出し中にエラーが発生しました: {e}"
 
 # ------------------------------------------------
-# ★★★ 無料会員向け「課題提起」生成関数 (AI不使用) ★★★
+# 無料会員向け「課題提起」生成関数 (AI不使用)
 # ------------------------------------------------
 def generate_free_member_summary(analysis_data):
     """AIを使わず、計測値からロジックで無料会員向けレポートを生成する"""
@@ -799,28 +749,22 @@ def generate_free_member_summary(analysis_data):
     issues = []
 
     # 課題提起ロジック (数値を基に問題を特定)
-    # 課題1: 頭の移動が大きい (0.03以上)
     if head_drift > 0.03:
         issues.append("頭の水平方向への移動が大きい (軸の不安定さ)")
-    # 課題2: コックが早くほどける (160度以上)
     if wrist_cock > 160:
         issues.append("手首のコックが早くほどける傾向があります (アーリーリリース)")
-    # 課題3: 上半身の回転不足と腰の開きすぎ (40度以下 and 10度以上)
     if shoulder_rot < 40 and hip_rot > 10:
         issues.append("上半身の回転不足と腰の開きすぎの連鎖が確認されます")
-    # 課題4: 膝のブレが大きい (0.05以上)
     if knee_sway > 0.05:
         issues.append("下半身の水平方向へのブレ（スウェイ/スライド）が目立ちます")
 
-    # 課題リストの整形 (黒丸リストに修正)
     if not issues:
         issue_text = "特に目立った問題は検出されませんでした。"
     else:
         issue_text = "あなたのスイングには、以下の改善点が見られます。\n"
         for issue in issues:
-            issue_text += f"・ {issue}\n" # 黒丸「・」で箇条書き
+            issue_text += f"・ {issue}\n" 
     
-    # 最終レポート構成
     report = (
         f"あなたのスイングをAIによる骨格分析に基づき診断しました。\n\n"
         f"**【お客様の改善点（簡易診断）】**\n"
@@ -832,7 +776,7 @@ def generate_free_member_summary(analysis_data):
     return report
 
 # ------------------------------------------------
-# LINE Webhookのメイン処理 (重複解消済みの最終版)
+# LINE Webhookのメイン処理
 # ------------------------------------------------
 @app.route("/callback", methods=['POST'])
 def callback():
@@ -853,7 +797,7 @@ def callback():
 
 @app.route('/api/report_data', methods=['GET'])
 def get_report_data():
-    """WebレポートのフロントエンドにJSONデータを返すAPIエンドポイント (重複解消済み)"""
+    """WebレポートのフロントエンドにJSONデータを返すAPIエンドポイント"""
     app.logger.info(f"Report API accessed. Query: {request.query_string.decode('utf-8')}")
     
     if not db:
@@ -862,7 +806,7 @@ def get_report_data():
         
     report_id = request.args.get('id')
     if not report_id:
-        app.logger.warning("Report ID is missing from query.")
+        app.warning("Report ID is missing from query.")
         return jsonify({"error": "レポートIDが指定されていません。"}), 400
     
     try:
@@ -895,7 +839,7 @@ def get_report_data():
 
 @app.route('/report', methods=['GET'])
 def get_report_page():
-    """WebレポートのHTMLテンプレートを返す (重複解消済み)"""
+    """WebレポートのHTMLテンプレートを返す"""
     return HTML_REPORT_TEMPLATE
 
 @handler.add(MessageEvent, message=TextMessage)
