@@ -102,7 +102,7 @@ def analyze_swing(video_path):
             frame_count += 1
             
             if results.pose_landmarks:
-                landmarks = results.pose.landmarks.landmark
+                landmarks = results.pose_landmarks.landmark
                 
                 # 必須ランドマークの定義
                 RIGHT_HIP = mp_pose.PoseLandmark.RIGHT_HIP.value
