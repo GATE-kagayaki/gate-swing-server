@@ -19,7 +19,12 @@ from linebot.models import MessageEvent, TextMessage, TextSendMessage, VideoMess
 LINE_CHANNEL_ACCESS_TOKEN = os.environ.get('LINE_CHANNEL_ACCESS_TOKEN')
 LINE_CHANNEL_SECRET = os.environ.get('LINE_CHANNEL_SECRET')
 GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY') 
-GCP_PROJECT_ID = os.environ.get('GCP_PROJECT_ID', 'ai-golf-doctor-service') # FirestoreプロジェクトID
+# 動作が確認された正しいプロジェクトIDを直接設定
+GCP_PROJECT_ID = 'gate-swing-analyzer' # FirestoreプロジェクトID (確定)
+# Cloud RunのホストURLを環境変数から取得。未設定の場合は、ユーザーが提供した正しいホストをデフォルトとして使用
+# (お客様の正確なホストをデフォルト値に設定します)
+SERVICE_HOST_URL = os.environ.get('SERVICE_HOST_URL', 'https://gate-kagayaki-562867875402.asia-northeast2.run.app')
+
 
 if not LINE_CHANNEL_ACCESS_TOKEN or not LINE_CHANNEL_SECRET:
     raise ValueError("LINE_CHANNEL_ACCESS_TOKEN and LINE_CHANNEL_SECRET must be set")
@@ -370,7 +375,8 @@ def process_video_async(user_id, video_content):
             report_id = doc_ref.id
             
             # WebレポートのURLを生成
-            service_url = f"https://{os.environ.get('K_SERVICE')}-{os.environ.get('K_REVISION')}.run.app"
+            # 正しいホストURLを使用
+            service_url = SERVICE_HOST_URL.rstrip('/')
             report_url = f"{service_url}/report?id={report_id}"
             
         else:
