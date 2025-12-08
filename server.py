@@ -212,8 +212,13 @@ HTML_REPORT_TEMPLATE = """
 
                 // Markdownのレンダリング (簡易的な表示)
                 const markdownText = data.ai_report_text || data.ai_report_text_free || "AI診断データが利用できません。";
-                // Markdownの改行を<br>に変換
-                document.getElementById('ai-report-markdown').innerHTML = markdownText.replace(/\n/g, '<br>');
+                
+                // ★★★ 修正: 正規表現エラーを回避するため、split/joinに置換 ★★★
+                // 改行コード(\\n または \n)を<br>に変換
+                const processedText = markdownText.split('\\n').join('<br>').split('\n').join('<br>');
+
+                document.getElementById('ai-report-markdown').innerHTML = processedText;
+
 
                 // ローディングを非表示にし、コンテンツを表示
                 document.getElementById('loading').classList.add('hidden');
