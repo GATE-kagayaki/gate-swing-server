@@ -62,15 +62,10 @@ except Exception as e:
     app.logger.error(f"Error initializing Firestore: {e}")
     # dbがNoneのままになるため、Firestore関連関数内でdbのNoneチェックが必要
 
-# Cloud Tasks クライアントの初期化
+# Cloud Tasks クライアントの初期化 (グローバル変数は保持し、初期化ロジックは下に移動)
 task_client = None
-try:
-    if GCP_PROJECT_ID: # GCP_PROJECT_IDがNoneでない場合のみ初期化を試行
-        task_client = tasks_v2.CloudTasksClient()
-        task_queue_path = task_client.queue_path(GCP_PROJECT_ID, TASK_QUEUE_LOCATION, TASK_QUEUE_NAME)
-except Exception as e:
-    app.logger.error(f"Cloud Tasks Client initialization failed: {e}")
-    task_client = None
+task_queue_path = None
+# ------------------------------------------------
 
 # ------------------------------------------------
 # ★★★ Firestore連携関数 ★★★
@@ -292,10 +287,18 @@ def create_cloud_task(report_id, video_url, user_id):
     """
     Cloud Tasksに動画解析タスクを作成し、Cloud Run Workerをトリガーする
     """
-    # 必須認証情報が設定されているかチェック
-    if not task_client:
-        app.logger.error("Cloud Tasks client is not initialized.")
-        return None
+    # ★★★ 修正: 必須クライアント初期化をローカルでチェック ★★★
+    global task_client, task_queue_path
+
+    if task_client is None:
+        # 初期化エラーの場合、ここで再度試行し、失敗したらNoneを返す
+        try:
+            task_client = tasks_v2.CloudTasksClient()
+            task_queue_path = task_client.queue_path(GCP_PROJECT_ID, TASK_QUEUE_LOCATION, TASK_QUEUE_NAME)
+        except Exception as e:
+            app.logger.error(f"Cloud Tasks client initialization failed in runtime: {e}")
+            return None # クライアント初期化失敗
+
     if not TASK_SA_EMAIL:
         app.logger.error("TASK_SA_EMAIL is missing. Cannot authenticate Cloud Task.")
         return None
@@ -382,10 +385,10 @@ def handle_video_message(event):
     
     app.logger.info(f"Received video message. User ID: {user_id}, Message ID: {message_id}")
 
-    # 必須環境変数の再々々チェック
-    if not SERVICE_HOST_URL or not TASK_SA_EMAIL or not task_client:
+    # 必須環境変数の再々々チェックは create_cloud_task内で処理。ここでは clientの状態のみチェック
+    if not SERVICE_HOST_URL or not TASK_SA_EMAIL:
         error_msg = ("システムエラー: 環境設定が不完全です。"
-                     "管理者にお問い合わせください。 (原因: SERVICE_HOST_URL, TASK_SA_EMAIL, または Cloud Tasks Client の未設定)")
+                     "管理者にお問い合わせください。 (原因: SERVICE_HOST_URL, TASK_SA_EMAILが未設定)")
         app.logger.error(error_msg)
         line_bot_api.reply_message(event.reply_token, TextSendMessage(text=error_msg))
         return 'OK'
@@ -402,7 +405,11 @@ def handle_video_message(event):
             'raw_data': {},
         }
         if not save_report_to_firestore(user_id, report_id, initial_data):
-            raise Exception("Failed to save initial report to Firestore.")
+            # Firestoreの初期化に失敗している可能性
+            error_msg = ("システムエラー: データベース接続に失敗しました。管理者にお問い合わせください。")
+            app.logger.error(error_msg)
+            line_bot_api.reply_message(event.reply_token, TextSendMessage(text=error_msg))
+            return 'OK'
 
         # 2. Cloud Tasksにジョブを登録
         task_name = create_cloud_task(report_id, initial_data['video_url'], user_id)
@@ -649,4 +656,4 @@ def get_report_web(report_id):
 if __name__ == "__main__":
     # ローカル実行時には、環境変数でポートを指定する
     port = int(os.environ.get("PORT", 8080))
-    app.run(host="0.0.0.0", port=port, debug=True)
+    app.run(host="0.0.0.0", port=port, deb
