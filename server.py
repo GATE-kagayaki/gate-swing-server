@@ -26,19 +26,24 @@ from linebot.models import MessageEvent, TextMessage, TextSendMessage, VideoMess
 LINE_CHANNEL_ACCESS_TOKEN = os.environ.get('LINE_CHANNEL_ACCESS_TOKEN')
 LINE_CHANNEL_SECRET = os.environ.get('LINE_CHANNEL_SECRET')
 GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY') 
-GCP_PROJECT_ID = os.environ.get('GCP_PROJECT_ID', 'your-gcp-project-id') 
-TASK_SA_EMAIL = os.environ.get('TASK_SA_EMAIL', '') 
+# GCP_PROJECT_IDにデフォルト値を持たせないことで、未設定時にエラーとする
+GCP_PROJECT_ID = os.environ.get('GCP_PROJECT_ID') 
+TASK_SA_EMAIL = os.environ.get('TASK_SA_EMAIL') 
 SERVICE_HOST_URL = os.environ.get('SERVICE_HOST_URL')
 TASK_QUEUE_LOCATION = os.environ.get('TASK_QUEUE_LOCATION', 'asia-northeast2') 
 TASK_QUEUE_NAME = 'video-analysis-queue'
 TASK_HANDLER_PATH = '/worker/process_video'
 
+# 環境変数の必須チェックを強化
 if not LINE_CHANNEL_ACCESS_TOKEN or not LINE_CHANNEL_SECRET:
     raise ValueError("LINE_CHANNEL_ACCESS_TOKEN and LINE_CHANNEL_SECRET must be set")
 if not SERVICE_HOST_URL:
     raise ValueError("SERVICE_HOST_URL must be set (e.g., https://<service-name>-<hash>.<region>.run.app)")
+if not GCP_PROJECT_ID:
+    raise ValueError("GCP_PROJECT_ID must be set.")
+# TASK_SA_EMAILは認証エラーの原因となるため、未設定の場合は警告のみ
 if not TASK_SA_EMAIL:
-    print("WARNING: TASK_SA_EMAIL environment variable is not set. Cloud Tasks will likely fail to authenticate.")
+    print("WARNING: TASK_SA_EMAIL environment variable is not set. Cloud Tasks will likely fail to authenticate with 404/403 errors.")
 
 # FlaskアプリとLINE Bot APIの設定
 app = Flask(__name__)
@@ -64,6 +69,42 @@ try:
 except Exception as e:
     app.logger.error(f"Cloud Tasks Client initialization failed: {e}")
     task_client = None
+
+# ------------------------------------------------
+# ★★★ Firestore連携関数 (最上位に移動し、定義済みエラーを解消) ★★★
+# ------------------------------------------------
+
+def save_report_to_firestore(user_id, report_id, report_data):
+    """診断レポートをFirestoreに保存する"""
+    if db is None:
+        app.logger.error("Firestore client is not initialized.")
+        return False
+    try:
+        doc_ref = db.collection('reports').document(report_id)
+        report_data['user_id'] = user_id
+        report_data['timestamp'] = firestore.SERVER_TIMESTAMP
+        doc_ref.set(report_data)
+        return True
+    except Exception as e:
+        app.logger.error(f"Error saving report to Firestore: {e}")
+        return False
+
+def get_report_from_firestore(report_id):
+    """Firestoreからレポートを取得する"""
+    if db is None:
+        app.logger.error("Firestore client is not initialized.")
+        return None
+    try:
+        doc_ref = db.collection('reports').document(report_id)
+        doc = doc_ref.get()
+        if doc.exists:
+            return doc.to_dict()
+        else:
+            return None
+    except Exception as e:
+        app.logger.error(f"Error getting report from Firestore: {e}")
+        return None
+
 
 # ------------------------------------------------
 # WebレポートのHTMLテンプレート (report.htmlの内容を安全に再挿入)
@@ -641,6 +682,11 @@ def create_cloud_task(report_id, video_url, user_id):
         return None
 
     # Cloud Run WorkerのエンドポイントURLを構築
+    # SERVICE_HOST_URLが設定されていない場合は、タスク投入を中止
+    if not SERVICE_HOST_URL:
+        app.logger.error("SERVICE_HOST_URL is missing. Cannot create Cloud Task.")
+        return None
+        
     full_url = f"{SERVICE_HOST_URL}{TASK_HANDLER_PATH}"
 
     # タスクに含めるペイロード (JSON形式)
