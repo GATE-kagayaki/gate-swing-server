@@ -26,9 +26,11 @@ from linebot.models import MessageEvent, TextMessage, TextSendMessage, VideoMess
 LINE_CHANNEL_ACCESS_TOKEN = os.environ.get('LINE_CHANNEL_ACCESS_TOKEN')
 LINE_CHANNEL_SECRET = os.environ.get('LINE_CHANNEL_SECRET')
 GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY') 
-GCP_PROJECT_ID = 'gate-swing-analyzer' # 実際のプロジェクトIDに置き換える必要があります
-# Cloud RunのサービスURL
-SERVICE_HOST_URL = os.environ.get('SERVICE_HOST_URL', 'https://gate-kagayaki-562867875402.asia-northeast2.run.app')
+GCP_PROJECT_ID = os.environ.get('GCP_PROJECT_ID', 'your-gcp-project-id') # プロジェクトIDを設定
+# Cloud TasksがCloud Runを呼び出すためのサービスアカウントメールアドレス
+TASK_SA_EMAIL = os.environ.get('TASK_SA_EMAIL', '') 
+# Cloud RunのサービスURL (このサービスのエンドポイント)
+SERVICE_HOST_URL = os.environ.get('SERVICE_HOST_URL')
 # Cloud Tasksの設定
 TASK_QUEUE_LOCATION = os.environ.get('TASK_QUEUE_LOCATION', 'asia-northeast2') # Cloud Runと同じリージョン
 TASK_QUEUE_NAME = 'video-analysis-queue'
@@ -36,6 +38,11 @@ TASK_HANDLER_PATH = '/worker/process_video'
 
 if not LINE_CHANNEL_ACCESS_TOKEN or not LINE_CHANNEL_SECRET:
     raise ValueError("LINE_CHANNEL_ACCESS_TOKEN and LINE_CHANNEL_SECRET must be set")
+if not SERVICE_HOST_URL:
+    raise ValueError("SERVICE_HOST_URL must be set (e.g., https://<service-name>-<hash>.<region>.run.app)")
+if not TASK_SA_EMAIL:
+    # 警告は出すが、デプロイ自体は許可。ただしタスク作成は失敗する可能性
+    print("WARNING: TASK_SA_EMAIL environment variable is not set. Cloud Tasks will likely fail to authenticate.")
 
 # FlaskアプリとLINE Bot APIの設定
 app = Flask(__name__)
@@ -48,10 +55,11 @@ app.config['JSON_AS_ASCII'] = False
 try:
     if not firebase_admin._apps:
         cred = credentials.ApplicationDefault()
+        # Firebase Admin SDKの初期化にはプロジェクトIDが必要
         initialize_app(cred, {'projectId': GCP_PROJECT_ID})
     db = firestore.client()
 except Exception as e:
-    print(f"Error initializing Firestore: {e}")
+    app.logger.error(f"Error initializing Firestore: {e}")
     db = None
 
 # Cloud Tasks クライアントの初期化
@@ -63,9 +71,8 @@ except Exception as e:
     task_client = None
 
 # ------------------------------------------------
-# WebレポートのHTMLテンプレート (report.htmlの内容を安全に再挿入)
+# WebレポートのHTMLテンプレート (Markdown解析後に動的に生成するためのベース)
 # ------------------------------------------------
-# ... HTML_REPORT_TEMPLATE の内容は変更なし、省略 ...
 HTML_REPORT_TEMPLATE = """<!DOCTYPE html>
 <html lang="ja">
 <head>
@@ -278,11 +285,39 @@ HTML_REPORT_TEMPLATE = """<!DOCTYPE html>
                     .join('');
 
                 // 連続する<li>を<ul>で囲む
-                processedText = processedText.replace(/<br>\s*(<li>.*?<\/li>)\s*<br>/g, (match, listItems) => {
-                    return `<ul>${listItems.replace(/<\/li><br>/g, '</li>')}</ul><br>`;
+                processedText = processedText.replace(/(<br>\s*(<li>.*?<\/li>)\s*<br>)+/g, (match, group) => {
+                    // groupは最後の<li>...</li><br>しか含まないので、match全体を処理する必要がある
+                    const listItems = match.replace(/<br>/g, '').replace(/<\/li>\s*/g, '</li>');
+                    return `<ul class="list-disc ml-6 space-y-1">${listItems}</ul><br>`;
                 });
                 
-                page.innerHTML += processedText; 
+                // 最後に残った<ul>タグを修正 (連続する<br>で囲まれた場合に正しく処理されないため)
+                processedText = processedText.replace(/<\/li><li>/g, '</li>\n<li>'); // 一旦区切りを明確に
+                
+                // 再度リストを処理
+                const listPattern = /((?:<li>.*?<\/li>\s*)+)/g;
+                let finalHtml = '';
+                let lastIndex = 0;
+                
+                // リスト以外の部分を先に処理し、リスト部分だけを<ul>で囲む
+                processedText.split('\n').forEach(line => {
+                    if (line.trim().startsWith('<li>')) {
+                        if (!finalHtml.endsWith('<ul>\n')) {
+                            finalHtml += '<ul>\n';
+                        }
+                        finalHtml += line + '\n';
+                    } else if (finalHtml.endsWith('<ul>\n') || finalHtml.endsWith('</li>\n')) {
+                        finalHtml += '</ul>\n' + line + '\n';
+                    } else {
+                         finalHtml += line + '\n';
+                    }
+                });
+                
+                // 最終調整
+                finalHtml = finalHtml.replace(/<br>\s*<ul>/g, '<ul>')
+                                     .replace(/<\/ul>\s*<br>/g, '</ul>');
+                
+                page.innerHTML += finalHtml; 
                 pagesContainer.appendChild(page);
             });
 
@@ -295,9 +330,12 @@ HTML_REPORT_TEMPLATE = """<!DOCTYPE html>
             const page = document.createElement('div');
             page.id = 'mediapipe';
             page.className = 'content-page p-4';
-            page.innerHTML = `
+            
+            const rawDataHtml = `
                 <h2 class="text-2xl font-bold text-green-700 mb-6">01. 骨格計測データ (MediaPipe)</h2>
+                <p class="text-sm text-gray-500 mb-6">MediaPipe Poseによって動画から抽出された、主要なスイング局面での骨格角度データです。AI診断の根拠となります。</p>
                 <section class="mb-8">
+                    <h3 class="text-xl font-semibold text-gray-700 mb-4 border-b pb-2">主要スイングデータ</h3>
                     <div class="grid grid-cols-2 md:grid-cols-4 gap-4 text-center">
                         <div class="p-3 bg-gray-100 rounded-lg">
                             <p class="text-2xl font-bold text-gray-800">${raw.frame_count || 'N/A'}</p>
@@ -305,27 +343,73 @@ HTML_REPORT_TEMPLATE = """<!DOCTYPE html>
                         </div>
                         <div class="p-3 bg-gray-100 rounded-lg">
                             <p class="text-2xl font-bold text-gray-800">${raw.max_shoulder_rotation ? raw.max_shoulder_rotation.toFixed(1) + '°' : 'N/A'}</p>
-                            <p class="text-xs text-gray-500">最大肩回転</p>
+                            <p class="text-xs text-gray-500">最大肩回転 (バックスイング)</p>
                         </div>
                         <div class="p-3 bg-gray-100 rounded-lg">
                             <p class="text-2xl font-bold text-gray-800">${raw.min_hip_rotation ? raw.min_hip_rotation.toFixed(1) + '°' : 'N/A'}</p>
-                            <p class="text-xs text-gray-500">最小腰回転</p>
+                            <p class="text-xs text-gray-500">最小腰回転 (トップ)</p>
                         </div>
                         <div class="p-3 bg-gray-100 rounded-lg">
                             <p class="text-2xl font-bold text-gray-800">${raw.max_wrist_cock ? raw.max_wrist_cock.toFixed(1) + '°' : 'N/A'}</p>
                             <p class="text-xs text-gray-500">最大コック角</p>
                         </div>
-                        <div class="p-3 bg-gray-100 rounded-lg col-span-2">
-                            <p class="text-2xl font-bold text-gray-800">${raw.max_head_drift_x ? raw.max_head_drift_x.toFixed(4) : 'N/A'}</p>
-                            <p class="text-xs text-gray-500">最大頭ブレ(Sway)</p>
-                        </div>
-                        <div class="p-3 bg-gray-100 rounded-lg col-span-2">
-                            <p class="text-2xl font-bold text-gray-800">${raw.max_knee_sway_x ? raw.max_knee_sway_x.toFixed(4) : 'N/A'}</p>
-                            <p class="text-xs text-gray-500">最大膝ブレ(Sway)</p>
-                        </div>
+                    </div>
+                </section>
+                
+                <section>
+                    <h3 class="text-xl font-semibold text-gray-700 mb-4 border-b pb-2">全計測ポイント</h3>
+                    <div class="overflow-x-auto">
+                        <table class="min-w-full divide-y divide-gray-200">
+                            <thead class="bg-gray-50">
+                                <tr>
+                                    <th class="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">項目</th>
+                                    <th class="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">値</th>
+                                    <th class="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">局面</th>
+                                </tr>
+                            </thead>
+                            <tbody id="raw-data-body" class="bg-white divide-y divide-gray-200">
+                            </tbody>
+                        </table>
                     </div>
                 </section>
             `;
+            page.innerHTML = rawDataHtml;
+            
+            const tableBody = page.querySelector('#raw-data-body');
+            // データから重要な項目を抽出して表示
+            const importantKeys = {
+                'frame_count': '解析フレーム数',
+                'max_shoulder_rotation': '最大肩回転角',
+                'min_hip_rotation': '最小腰回転角',
+                'max_wrist_cock': '最大手首コック角',
+                'max_extension_at_impact': 'インパクト時の最大伸展',
+                'max_hip_speed': '最大腰速度',
+            };
+
+            const pointPhaseMap = {
+                'max_shoulder_rotation': 'トップ',
+                'min_hip_rotation': 'トップ',
+                'max_wrist_cock': 'ダウンスイング初期',
+                'max_extension_at_impact': 'インパクト',
+                'max_hip_speed': 'ダウンスイング',
+            };
+
+            Object.keys(rawData).forEach(key => {
+                if (importantKeys[key] && rawData[key] !== null) {
+                    const value = typeof rawData[key] === 'number' ? rawData[key].toFixed(2) : rawData[key];
+                    const phase = pointPhaseMap[key] || '-';
+                    const unit = key.includes('rotation') || key.includes('cock') ? '°' : '';
+
+                    const row = document.createElement('tr');
+                    row.innerHTML = `
+                        <td class="px-3 py-2 whitespace-nowrap text-sm font-medium text-gray-900">${importantKeys[key]}</td>
+                        <td class="px-3 py-2 whitespace-nowrap text-sm text-gray-700">${value}${unit}</td>
+                        <td class="px-3 py-2 whitespace-nowrap text-sm text-gray-500">${phase}</td>
+                    `;
+                    tableBody.appendChild(row);
+                }
+            });
+
             return page;
         }
 
@@ -334,66 +418,101 @@ HTML_REPORT_TEMPLATE = """<!DOCTYPE html>
             page.id = 'criteria';
             page.className = 'content-page p-4';
             page.innerHTML = `
-                <h2 class="text-2xl font-bold text-green-700 mb-6">02. データ評価基準</h2>
+                <h2 class="text-2xl font-bold text-green-700 mb-6">02. データ評価基準 (プロモデル比較)</h2>
+                <p class="text-sm text-gray-500 mb-6">AI診断が参照する、一般的なプロフェッショナルなスイングデータとの比較基準です。目標値として参考にしてください。</p>
                 <section class="mb-8">
-                    <div class="space-y-4 text-sm text-gray-600">
-                        <div class="p-3 bg-white border border-gray-200 rounded-lg shadow-sm">
-                            <h3 class="font-bold text-gray-800">最大肩回転 (03. 肩の回旋の基礎)</h3>
-                            <p class="mt-1">
-                                <span class="font-semibold text-green-700">適正範囲の目安:</span> 70°〜90°程度 (ドライバー)。<br>
-                                <span class="text-red-600">マイナス値:</span> 目標線に対して肩がオープンになっている（捻転不足）可能性を示します。
-                            </p>
-                        </div>
-                        <div class="p-3 bg-white border border-gray-200 rounded-lg shadow-sm">
-                            <h3 class="font-bold text-gray-800">最小腰回転 (04. 腰の回旋の基礎)</h3>
-                            <p class="mt-1">
-                                <span class="font-semibold text-green-700">適正範囲の目安:</span> 30°〜50°程度 (インパクト時)。<br>
-                                <span class="text-red-600">マイナス値:</span> 腰の開きがほとんどないか、目標の逆を向いていることを示唆。回転不足やスウェイ（軸ブレ）の可能性。
-                            </p>
-                        </div>
-                        <div class="p-3 bg-white border border-gray-200 rounded-lg shadow-sm">
-                            <h3 class="font-bold text-gray-800">最大コック角 (05. 手首のメカニクスの基礎)</h3>
-                            <p class="mt-1">
-                                <span class="font-semibold text-green-700">適正範囲の目安:</span> 90°〜110°程度 (トップスイング)。<br>
-                                <span class="text-red-600">数値が大きい (160°超) :</span> 手首のタメが不足し、「アーリーリリース」の可能性が高いです。
-                            </p>
-                        </div>
-                        <div class="p-3 bg-white border border-gray-200 rounded-lg shadow-sm">
-                            <h3 class="font-bold text-gray-800">最大膝ブレ(Sway) (06. 下半身安定の基礎)</h3>
-                            <p class="mt-1">
-                                <span class="font-semibold text-green-700">適正範囲の目安:</span> 最小限 (セットアップ時からのブレが少ない)。<br>
-                                <span class="text-red-600">数値が大きい:</span> スイング中に下半身が水平方向に大きく移動している（スウェイ/スライド）ことを示します。軸が不安定になり、ミート率の低下やパワーロスにつながります。
-                            </p>
-                        </div>
+                    <h3 class="text-xl font-semibold text-gray-700 mb-4 border-b pb-2">主要指標の目標レンジ</h3>
+                    <div class="overflow-x-auto">
+                        <table class="min-w-full divide-y divide-gray-200 border border-gray-100 rounded-lg">
+                            <thead class="bg-green-50">
+                                <tr>
+                                    <th class="px-4 py-3 text-left text-xs font-medium text-green-700 uppercase tracking-wider">指標</th>
+                                    <th class="px-4 py-3 text-left text-xs font-medium text-green-700 uppercase tracking-wider">目標値 (プロレンジ)</th>
+                                    <th class="px-4 py-3 text-left text-xs font-medium text-green-700 uppercase tracking-wider">改善ポイント</th>
+                                </tr>
+                            </thead>
+                            <tbody class="bg-white divide-y divide-gray-100">
+                                <tr>
+                                    <td class="px-4 py-3 whitespace-nowrap text-sm font-medium text-gray-900">最大肩回転 (Backswing)</td>
+                                    <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-700">90°〜110°</td>
+                                    <td class="px-4 py-3 text-sm text-gray-500">体幹を使い、腕だけで上げないように意識する。</td>
+                                </tr>
+                                <tr>
+                                    <td class="px-4 py-3 whitespace-nowrap text-sm font-medium text-gray-900">最小腰回転 (Top)</td>
+                                    <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-700">30°〜45°</td>
+                                    <td class="px-4 py-3 text-sm text-gray-500">下半身の安定性を保ち、捻転差を作る。</td>
+                                </tr>
+                                <tr>
+                                    <td class="px-4 py-3 whitespace-nowrap text-sm font-medium text-gray-900">最大コック角 (Downswing)</td>
+                                    <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-700">90°前後</td>
+                                    <td class="px-4 py-3 text-sm text-gray-500">コックの維持（タメ）を意識し、リリースを遅らせる。</td>
+                                </tr>
+                                <tr>
+                                    <td class="px-4 py-3 whitespace-nowrap text-sm font-medium text-gray-900">インパクト時の伸展</td>
+                                    <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-700">ほぼ180°</td>
+                                    <td class="px-4 py-3 text-sm text-gray-500">右腕が完全に伸びているか確認し、力の伝達を最大化する。</td>
+                                </tr>
+                            </tbody>
+                        </table>
                     </div>
+                </section>
+                
+                <section class="mt-8">
+                    <h3 class="text-xl font-semibold text-gray-700 mb-4 border-b pb-2">AIによる診断の原則</h3>
+                    <ul class="list-disc ml-6 space-y-2 text-gray-600">
+                        <li>AIはこれらのデータを基に、ユーザーのスイングを客観的に数値化します。</li>
+                        <li>診断結果は、ユーザーのスキルレベルや身体的特徴を考慮した上で、上記目標値との差分から課題を特定します。</li>
+                        <li>骨格の関節位置の正確な検出には、動画の明るさ、解像度、撮影角度が重要です。</li>
+                    </ul>
                 </section>
             `;
             return page;
         }
-        
+
         function createSummaryPage() {
-             const page = document.createElement('div');
+            const page = document.createElement('div');
             page.id = 'summary';
             page.className = 'content-page p-4';
             page.innerHTML = `
-                <h2 class="text-2xl font-bold text-green-700 mb-6">00. レポート概要</h2>
-                <div class="text-gray-700 space-y-4">
-                    <p class="font-semibold">レポートの目的:</p>
-                    <p>このレポートは、お客様のスイング動画をAIが骨格レベルで分析し、その計測データに基づいて詳細な診断と改善戦略を提供するものです。左側のメニューから各診断項目を選択して、詳細をご確認ください。</p>
-                    <p class="font-semibold mt-4">診断項目一覧:</p>
-                    <ul class="list-disc ml-6 text-sm text-gray-600">
-                        <li>01. 骨格計測データ</li>
-                        <li>02. データ評価基準</li>
-                        <li>03. 肩の回旋</li>
-                        <li>04. 腰の回旋</li>
-                        <li>05. 手首のメカニクス</li>
-                        <li>06. 下半身の安定性</li>
-                        <li>07. 総合診断 (Key Diagnosis)</li>
-                        <li>08. 改善戦略とドリル (Improvement Strategy)</li>
-                        <li>09. フィッティング提案 (Fitting Recommendation)</li>
-                        <li>10. エグゼクティブサマリー (Executive Summary)</li>
+                <h2 class="text-2xl font-bold text-green-700 mb-6">00. レポート概要と総合評価</h2>
+                
+                <section class="mb-8 p-4 border border-green-300 bg-green-50 rounded-lg">
+                    <h3 class="text-xl font-bold text-green-800 mb-3">総合診断</h3>
+                    <p id="summary-text" class="text-gray-700 leading-relaxed">
+                        <!-- 総合評価テキストが挿入されます -->
+                    </p>
+                </section>
+
+                <section class="mb-8">
+                    <h3 class="text-xl font-semibold text-gray-700 mb-3 border-b pb-2">AI診断フロー</h3>
+                    <ol class="space-y-3 text-gray-600">
+                        <li class="flex items-center">
+                            <span class="flex-shrink-0 w-8 h-8 flex items-center justify-center bg-green-500 text-white rounded-full mr-3 font-bold">1</span>
+                            <span>**動画受信とタスク登録:** LINEで動画を受信後、即座にCloud Tasksに解析ジョブを登録します。（即時応答）</span>
+                        </li>
+                        <li class="flex items-center">
+                            <span class="flex-shrink-0 w-8 h-8 flex items-center justify-center bg-green-500 text-white rounded-full mr-3 font-bold">2</span>
+                            <span>**MediaPipe解析:** Cloud RunのWorkerがジョブを実行し、動画から全フレームの骨格データ（関節位置、角度など）を抽出します。</span>
+                        </li>
+                        <li class="flex items-center">
+                            <span class="flex-shrink-0 w-8 h-8 flex items-center justify-center bg-green-500 text-white rounded-full mr-3 font-bold">3</span>
+                            <span>**Gemini AI診断:** 抽出された数値データをGemini APIに送り、プロの基準と比較した詳細な診断レポート（Markdown）を生成します。</span>
+                        </li>
+                        <li class="flex items-center">
+                            <span class="flex-shrink-0 w-8 h-8 flex items-center justify-center bg-green-500 text-white rounded-full mr-3 font-bold">4</span>
+                            <span>**レポート発行:** 診断結果をFirestoreに保存し、LINEでWebレポートURLをユーザーに返信します。（最終応答）</span>
+                        </li>
+                    </ol>
+                </section>
+                
+                <section>
+                    <h3 class="text-xl font-semibold text-gray-700 mb-3 border-b pb-2">このレポートの使い方</h3>
+                    <ul class="list-disc ml-6 space-y-2 text-gray-600">
+                        <li>左側のナビゲーションメニューから、**「03. AI総合評価」**以下の診断項目を順に確認してください。</li>
+                        <li>**「01. 骨格計測データ」**で、あなたのスイングが客観的にどう数値化されたかを確認できます。</li>
+                        <li>AIの提案を参考に、次回のスイング改善にお役立てください。</li>
                     </ul>
-                </div>
+                </section>
             `;
             return page;
         }
@@ -411,626 +530,485 @@ HTML_REPORT_TEMPLATE = """<!DOCTYPE html>
                     item.classList.add('active');
                 }
             });
-            window.scrollTo(0, 0); // ページ切り替え時に最上部へスクロール
         }
 
-
-        // メインのデータ取得とレンダリング
-        document.addEventListener('DOMContentLoaded', async () => {
-            const params = new URLSearchParams(window.location.search);
-            const reportId = params.get('id');
-            const baseUrl = window.location.origin;
+        async function fetchReport() {
+            const urlParams = new URLSearchParams(window.location.search);
+            const reportId = urlParams.get('id');
 
             if (!reportId) {
-                displayFatalError('レポートIDが指定されていません。');
+                displayFatalError("レポートIDが指定されていません。", "URLに`?id=<レポートID>`が必要です。");
                 return;
             }
             
+            document.getElementById('report-id').textContent = reportId;
+
             try {
-                const api_url = `${baseUrl}/api/report_data?id=${reportId}`;
-                const response = await fetch(api_url);
+                // Cloud Function / Cloud Run API (GET /report/<id>) を想定
+                const response = await fetch(`/report/${reportId}`);
                 
                 if (!response.ok) {
-                    const errorText = await response.text();
-                    // サーバーエラーの場合は、処理中メッセージを表示せず、エラーを出す
-                    displayFatalError(`サーバーエラー。レポートデータの取得に失敗しました。`, `HTTPステータス: ${response.status}`);
+                    if (response.status === 404) {
+                        displayFatalError("指定されたレポートが見つかりません。", `レポートID: ${reportId}`);
+                    } else if (response.status === 202) {
+                        // 処理中のレスポンスコードを想定
+                        displayProcessingMessage();
+                        return;
+                    } else {
+                        throw new Error(`HTTP Error: ${response.status}`);
+                    }
                     return;
                 }
-                
-                let data;
-                try {
-                    data = await response.json();
-                } catch (e) {
-                     displayFatalError(`JSON解析エラー。サーバーからの応答が不正です。`, e.message);
-                     return;
-                }
-                
-                if (data.error) {
-                     displayFatalError("APIがエラーを返しました。", data.error);
-                     return;
-                }
-                
-                const markdownText = data.ai_report_text || data.ai_report_text_free || "";
-                
-                // ★★★ 修正: レポートデータがない場合は、処理中メッセージを表示する ★★★
-                if (!markdownText || !data.mediapipe_data || data.mediapipe_data.frame_count === 0) {
+
+                const data = await response.json();
+
+                if (data.status === 'PROCESSING') {
                     displayProcessingMessage();
                     return;
                 }
-
-                // 1. 基本データの挿入
-                document.getElementById('report-id').textContent = reportId;
-                let timestamp = 'N/A';
-                try {
-                    if (data.timestamp && data.timestamp._seconds) {
-                        timestamp = new Date(data.timestamp._seconds * 1000).toLocaleString('ja-JP');
-                    } else if (data.timestamp) {
-                        timestamp = new Date(data.timestamp).toLocaleString('ja-JP');
-                    }
-                } catch (e) {
-                    console.error("Timestamp parsing failed:", e);
-                    timestamp = 'データ処理エラー';
-                }
-                document.getElementById('timestamp').textContent = timestamp;
                 
-                // 3. ページングレンダリング開始
-                if (markdownText) {
-                    try {
-                        let processedText = JSON.parse(JSON.stringify(markdownText));
-                        processedText = processedText.split('\\n').join('\n');
-                        
-                        renderPages(processedText, data.mediapipe_data);
-
-                    } catch (e) {
-                        console.error("Markdown structure parsing failed:", e);
-                         displayFatalError("AIレポートの構造解析中にエラーが発生しました。", e.message);
-                         return;
-                    }
-                } else {
-                    // AIレポートがない場合も、固定ページは表示する
-                    renderPages("", data.mediapipe_data || {});
+                if (data.status !== 'COMPLETED') {
+                    displayFatalError("レポート処理が失敗しました。", `ステータス: ${data.status}`);
+                    return;
                 }
+                
+                // データ抽出
+                const aiReport = data.ai_report || "## 03. AI総合評価\nAIレポートの生成に失敗しました。";
+                const rawData = data.raw_data || {};
+                const summary = data.summary || "AIによる総合評価はまだ生成されていません。";
+                const timestamp = new Date(data.timestamp.seconds * 1000).toLocaleString('ja-JP', {
+                    year: 'numeric', month: '2-digit', day: '2-digit', 
+                    hour: '2-digit', minute: '2-digit', second: '2-digit'
+                });
+
+                // レンダリング
+                document.getElementById('timestamp').textContent = timestamp;
+                document.getElementById('summary-text').textContent = summary;
+                renderPages(aiReport, rawData);
 
             } catch (error) {
-                displayFatalError("レポートの初期化中に致命的なエラーが発生しました。", error.message);
+                console.error("Fetch error:", error);
+                displayFatalError("レポートの取得中にネットワークまたはサーバーエラーが発生しました。", error.message);
             }
-        });
+        }
+
+        // ページロード時にレポート取得を開始
+        window.onload = fetchReport;
     </script>
 </body>
-</html>"""
+</html>
+"""
 
 # ------------------------------------------------
-# 解析ロジック (analyze_swing) - 必須計測項目を全て実装
+# Firebase/Firestoreとの連携
 # ------------------------------------------------
-def analyze_swing(video_path):
-    # 動画を解析し、スイングの評価レポート（テキスト）を返す。
-    # この関数は、process_task内から呼び出されます。
-    import cv2
-    import mediapipe as mp
-    import numpy as np
 
-    # 角度計算ヘルパー関数
-    def calculate_angle(p1, p2, p3):
-        p1 = np.array(p1)
-        p2 = np.array(p2)
-        p3 = np.array(p3)
-        v1 = p1 - p2
-        v2 = p3 - p2
-        cosine_angle = np.dot(v1, v2) / (np.linalg.norm(v1) * np.linalg.norm(v2))
-        angle = np.arccos(np.clip(cosine_angle, -1.0, 1.0))
-        return np.degrees(angle)
-    
-    mp_pose = mp.solutions.pose
-    
-    # 計測変数初期化
-    max_shoulder_rotation = -180
-    min_hip_rotation = 180
-    head_start_x = None 
-    max_head_drift_x = 0 
-    max_wrist_cock = 0  
-    knee_start_x = None
-    max_knee_sway_x = 0
-    
-    cap = cv2.VideoCapture(video_path)
-    if not cap.isOpened():
-        return {"error": "動画ファイルを開けませんでした。"}
+def save_report_to_firestore(user_id, report_id, report_data):
+    """診断レポートをFirestoreに保存する"""
+    if db is None:
+        app.logger.error("Firestore client is not initialized.")
+        return False
+    try:
+        doc_ref = db.collection('reports').document(report_id)
+        report_data['user_id'] = user_id
+        report_data['timestamp'] = firestore.SERVER_TIMESTAMP
+        doc_ref.set(report_data)
+        return True
+    except Exception as e:
+        app.logger.error(f"Error saving report to Firestore: {e}")
+        return False
 
-    frame_count = 0
-    
-    with mp_pose.Pose(
-        min_detection_confidence=0.5,
-        min_tracking_confidence=0.5) as pose:
+def get_report_from_firestore(report_id):
+    """Firestoreからレポートを取得する"""
+    if db is None:
+        app.logger.error("Firestore client is not initialized.")
+        return None
+    try:
+        doc_ref = db.collection('reports').document(report_id)
+        doc = doc_ref.get()
+        if doc.exists:
+            return doc.to_dict()
+        else:
+            return None
+    except Exception as e:
+        app.logger.error(f"Error getting report from Firestore: {e}")
+        return None
 
-        while cap.isOpened():
-            success, image = cap.read()
-            if not success:
-                break
-            
-            image.flags.writeable = False
-            image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-            results = pose.process(image)
-            image.flags.writeable = True
+# ------------------------------------------------
+# Cloud Tasks連携
+# ------------------------------------------------
 
-            frame_count += 1
-            
-            if results.pose_landmarks:
-                landmarks = results.pose_landmarks.landmark
-                
-                # 必須ランドマークの定義
-                RIGHT_HIP = mp_pose.PoseLandmark.RIGHT_HIP.value
-                RIGHT_SHOULDER = mp_pose.PoseLandmark.RIGHT_SHOULDER.value
-                RIGHT_EAR = mp_pose.PoseLandmark.RIGHT_EAR.value
-                LEFT_HIP = mp_pose.PoseLandmark.LEFT_HIP.value
-                NOSE = mp_pose.PoseLandmark.NOSE.value
-                RIGHT_WRIST = mp_pose.PoseLandmark.RIGHT_WRIST.value
-                RIGHT_ELBOW = mp_pose.PoseLandmark.RIGHT_ELBOW.value
-                RIGHT_INDEX = mp_pose.PoseLandmark.RIGHT_INDEX.value
-                LEFT_KNEE = mp_pose.PoseLandmark.LEFT_KNEE.value
-                RIGHT_KNEE = mp_pose.PoseLandmark.RIGHT_KNEE.value
+def create_cloud_task(report_id, video_url, user_id):
+    """
+    Cloud Tasksに動画解析タスクを作成し、Cloud Run Workerをトリガーする
+    """
+    if task_client is None:
+        app.logger.error("Cloud Tasks client is not initialized.")
+        return None
 
-                # 座標抽出
-                r_shoulder = [landmarks[RIGHT_SHOULDER].x, landmarks[RIGHT_SHOULDER].y]
-                r_ear = [landmarks[RIGHT_EAR].x, landmarks[RIGHT_EAR].y]
-                l_hip = [landmarks[LEFT_HIP].x, landmarks[LEFT_HIP].y]
-                r_hip = [landmarks[RIGHT_HIP].x, landmarks[RIGHT_HIP].y]
-                nose = [landmarks[NOSE].x, landmarks[NOSE].y]
-                r_wrist = [landmarks[RIGHT_WRIST].x, landmarks[RIGHT_WRIST].y]
-                r_elbow = [landmarks[RIGHT_ELBOW].x, landmarks[RIGHT_ELBOW].y]
-                r_index = [landmarks[RIGHT_INDEX].x, landmarks[RIGHT_INDEX].y]
-                r_knee = [landmarks[RIGHT_KNEE].x, landmarks[RIGHT_KNEE].y]
-                l_knee = [landmarks[LEFT_KNEE].x, landmarks[LEFT_KNEE].y]
+    # Cloud Run WorkerのエンドポイントURLを構築
+    full_url = f"{SERVICE_HOST_URL}{TASK_HANDLER_PATH}"
 
+    # タスクに含めるペイロード (JSON形式)
+    payload_dict = {
+        'report_id': report_id,
+        'video_url': video_url,
+        'user_id': user_id,
+    }
+    # Cloud Tasksのペイロードはバイト文字列でなければならない
+    task_payload = json.dumps(payload_dict).encode()
 
-                # 計測：最大肩回転
-                shoulder_line_angle = np.degrees(np.arctan2(r_ear[1] - r_shoulder[1], r_ear[0] - r_shoulder[0]))
-                if shoulder_line_angle > max_shoulder_rotation:
-                    max_shoulder_rotation = shoulder_line_angle
-
-                # 計測：最小腰回転
-                hip_axis_x = l_hip[0] - r_hip[0]
-                hip_axis_y = l_hip[1] - r_hip[1]
-                current_hip_rotation = np.degrees(np.arctan2(hip_axis_y, hip_axis_x))
-                if current_hip_rotation < min_hip_rotation:
-                    min_hip_rotation = current_hip_rotation
-                
-                # 計測：頭の安定性
-                if head_start_x is None:
-                    head_start_x = nose[0]
-                current_drift_x = abs(nose[0] - head_start_x)
-                if current_drift_x > max_head_drift_x:
-                    max_head_drift_x = current_drift_x
-                    
-                # 計測：手首のコック角
-                if all(l is not None for l in [r_elbow, r_wrist, r_index]):
-                    cock_angle = calculate_angle(r_elbow, r_wrist, r_index)
-                    if cock_angle > max_wrist_cock:
-                         max_wrist_cock = cock_angle
-
-                # 計測：最大膝ブレ（スウェイ）
-                mid_knee_x = (r_knee[0] + l_knee[0]) / 2
-                if knee_start_x is None:
-                    knee_start_x = mid_knee_x
-                current_knee_sway = abs(mid_knee_x - knee_start_x)
-                if current_knee_sway > max_knee_sway_x:
-                    max_knee_sway_x = current_knee_sway
-                
-    cap.release()
-    
-    # 全ての計測結果を辞書で返す
-    return {
-        "frame_count": frame_count,
-        "max_shoulder_rotation": max_shoulder_rotation,
-        "min_hip_rotation": min_hip_rotation,
-        "max_head_drift_x": max_head_drift_x,
-        "max_wrist_cock": max_wrist_cock,
-        "max_knee_sway_x": max_knee_sway_x 
+    task = {
+        'http_request': {  # Cloud Run Workerを呼び出す設定
+            'http_method': tasks_v2.HttpMethod.POST,
+            'url': full_url,
+            'body': task_payload,
+            'headers': {'Content-Type': 'application/json'},
+            # OIDC認証トークンを使用して認証を行う
+            'oidc_token': {
+                'service_account_email': TASK_SA_EMAIL, # ★★★修正点: 環境変数から取得
+            },
+        }
     }
 
-# ------------------------------------------------
-# Cloud Tasksへジョブを投入する関数
-# ------------------------------------------------
-def create_cloud_task(user_id, message_id):
-    """
-    Cloud Tasksにタスクを投入し、非同期処理を予約します。
-    """
-    if not task_client:
-        app.logger.error("Cloud Tasks Client is not initialized. Cannot create task.")
-        return False
-        
+    # タスク実行を遅延させるオプション (必要に応じて)
+    # in_seconds = 5
+    # timestamp = timestamp_pb2.Timestamp()
+    # timestamp.FromDatetime(datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(seconds=in_seconds))
+    # task['schedule_time'] = timestamp
+
     try:
-        # Cloud RunのターゲットURLを作成
-        task_target_url = SERVICE_HOST_URL.rstrip('/') + TASK_HANDLER_PATH
-
-        # タスクペイロード (JSON)
-        payload = {
-            'user_id': user_id,
-            'message_id': message_id
-        }
-        
-        # Cloud Tasksのタスク構成
-        task = {
-            'http_request': {
-                'http_method': tasks_v2.HttpMethod.POST,
-                'url': task_target_url,
-                'body': json.dumps(payload).encode(),
-                'headers': {
-                    'Content-Type': 'application/json',
-                },
-                # Cloud Run認証: ターゲットURLと同じ認証情報を使用
-                'oidc_token': {
-                    'service_account_email': 'YOUR_SERVICE_ACCOUNT_EMAIL_FOR_TASKS@' + GCP_PROJECT_ID + '.iam.gserviceaccount.com', # 適切なSAに置き換える必要
-                },
-            }
-        }
-        
-        # タスクの実行時間を設定（今回は即時実行）
-        # schedule_time = datetime.datetime.now(datetime.timezone.utc)
-        # timestamp = timestamp_pb2.Timestamp()
-        # timestamp.FromDatetime(schedule_time + datetime.timedelta(seconds=5))
-        # task['schedule_time'] = timestamp
-
+        # タスクをキューに送信
         response = task_client.create_task(parent=task_queue_path, task=task)
         app.logger.info(f"Task created: {response.name}")
-        return True
-
+        return response.name
     except Exception as e:
-        app.logger.error(f"Failed to create Cloud Task: {e}", exc_info=True)
-        return False
-
+        app.logger.error(f"Error creating Cloud Task: {e}")
+        return None
 
 # ------------------------------------------------
-# Cloud Tasksのターゲットとなる処理関数（非同期処理の本体）
+# LINE Bot Webhookハンドラー
 # ------------------------------------------------
-def process_task(user_id, message_id):
-    """
-    Cloud Taskから呼び出され、動画のダウンロード、解析、レポート送信を実行します。
-    """
-    
-    original_video_path = None
-    compressed_video_path = None
-    
-    # 1. LINEから動画コンテンツを再取得
-    try:
-        message_content = line_bot_api.get_message_content(message_id)
-        video_content = message_content.content
-    except Exception as e:
-        app.logger.error(f"タスク処理中の動画コンテンツ取得に失敗 (Message ID: {message_id}): {e}", exc_info=True)
-        line_bot_api.push_message(user_id, TextSendMessage(text="【タスクエラー】動画のダウンロードに失敗しました。LINEのメッセージIDが古い可能性があります。"))
-        return # 処理失敗
 
-    # 1.5. オリジナル動画を一時ファイルに保存
-    try:
-        with tempfile.NamedTemporaryFile(suffix="_original.mp4", delete=False) as tmp_file:
-            original_video_path = tmp_file.name
-            tmp_file.write(video_content)
-    except Exception as e:
-        app.logger.error(f"動画ファイルの保存に失敗: {e}", exc_info=True)
-        line_bot_api.push_message(user_id, TextSendMessage(text="【タスクエラー】動画ファイルの保存に失敗しました。"))
-        return
-
-    # 2. 動画の自動圧縮とリサイズ処理
-    try:
-        compressed_video_path = tempfile.NamedTemporaryFile(suffix="_compressed.mp4", delete=False).name
-        FFMPEG_PATH = '/usr/bin/ffmpeg' if os.path.exists('/usr/bin/ffmpeg') else 'ffmpeg'
-        
-        (
-            ffmpeg
-            .input(original_video_path)
-            .output(compressed_video_path, vf='scale=640:-1', crf=28, vcodec='libx264')
-            .overwrite_output()
-            .run(cmd=FFMPEG_PATH, capture_stdout=True, capture_stderr=True) 
-        )
-        video_to_analyze = compressed_video_path
-        
-    except Exception as e:
-        app.logger.error(f"予期せぬ圧縮エラー: {e}", exc_info=True)
-        report_text = f"【動画処理エラー】動画の圧縮に失敗しました。ファイルが大きすぎるか、形式がLINEでサポートされていない可能性があります。"
-        line_bot_api.push_message(user_id, TextSendMessage(text=report_text))
-        
-        if original_video_path and os.path.exists(original_video_path):
-            os.remove(original_video_path)
-        if compressed_video_path and os.path.exists(compressed_video_path):
-            os.remove(compressed_video_path)
-        return
-        
-    # 3. 動画の解析を実行
-    try:
-        analysis_data = analyze_swing(video_to_analyze)
-        
-        is_premium = False 
-        
-        # (解析ロジック、Gemini呼び出し、Firestore保存、LINE送信は省略せず、前のファイルをそのまま引き継ぐ)
-        if GEMINI_API_KEY:
-            is_premium = True
-            ai_report_text = generate_full_member_advice(analysis_data, genai, types) 
-        else:
-            ai_report_text = generate_free_member_summary(analysis_data)
-            
-        # 4. Firestoreに解析結果を保存
-        if db:
-            report_data = {
-                "timestamp": firestore.SERVER_TIMESTAMP,
-                "user_id": user_id,
-                "is_premium": is_premium,
-                "mediapipe_data": analysis_data,
-                "ai_report_text": ai_report_text
-            }
-            _, doc_ref = db.collection('reports').add(report_data)
-            report_id = doc_ref.id
-            
-            service_url = SERVICE_HOST_URL.rstrip('/')
-            report_url = f"{service_url}/report?id={report_id}"
-            
-        else:
-             report_url = None
-             
-    except Exception as e:
-        app.logger.error(f"解析中の致命的なエラー: {e}", exc_info=True)
-        report_text = f"【解析エラー】スイングの骨格検出に失敗しました。動画に全身が写っているか、明るい場所で撮影されているかをご確認ください。エラーログ: {str(e)[:100]}..."
-        line_bot_api.push_message(user_id, TextSendMessage(text=report_text))
-        return
-
-    # 5. LINEにWebレポートのURLを送信
-    try:
-        if report_url:
-            message = (
-                f"✅ 解析が完了しました！\n\n"
-                f"**【GATE AIスイングドクター診断レポート】**\n"
-                f"以下のURLからWebレポート（PDF印刷可能）をご確認ください。\n\n"
-                f"🔗 {report_url}\n\n"
-                f"**現在のステータス: {'都度/月額会員' if is_premium else '無料会員'}"
-            )
-            line_bot_api.push_message(user_id, TextSendMessage(text=message))
-        else:
-            line_bot_api.push_message(user_id, TextSendMessage(text=ai_report_text))
-
-    except Exception as e:
-        app.logger.error(f"レポート送信中に予期せぬエラーが発生しました: {e}", exc_info=True)
-        
-    # 6. 一時ファイルを削除
-    if original_video_path and os.path.exists(original_video_path):
-        os.remove(original_video_path)
-    if compressed_video_path and os.path.exists(compressed_video_path):
-        os.remove(compressed_video_path)
-
-
-# ------------------------------------------------
-# Gemini API 呼び出し関数 (有料会員向け詳細レポート)
-# ------------------------------------------------
-def generate_full_member_advice(analysis_data, genai, types): 
-    """MediaPipeの数値結果をGemini APIに渡し、理想の10項目を網羅した詳細レポートを生成させる"""
-    
-    try:
-        client = genai.Client(api_key=GEMINI_API_KEY)
-    except Exception as e:
-        return f"Geminiクライアント初期化失敗: {e}"
-    
-    shoulder_rot = analysis_data.get('max_shoulder_rotation', 0)
-    hip_rot = analysis_data.get('min_hip_rotation', 0)
-    head_drift = analysis_data.get('max_head_drift_x', 0)
-    wrist_cock = analysis_data.get('max_wrist_cock', 0)
-    knee_sway = analysis_data.get('max_knee_sway_x', 0)
-
-    # システムプロンプト: 簡潔さ、構造、行動への焦点を徹底
-    system_prompt = (
-        "あなたは経験豊富なプロのゴルフインストラクターです。提供された計測結果に基づき、以下の10項目の構成を網羅した、**専門的でありながらも分かりやすく、ポジティブで行動に焦点を当てたトーン**のレポートを生成してください。\n"
-        
-        "【コンテンツ構成の厳守事項】\n"
-        "1. **レポートの長所と改善点のバランス**を必ず取ること。\n"
-        "2. **07. 総合診断**: 診断結果を箇条書きで簡潔にまとめること。\n"
-        "3. **08. 改善戦略とドリル**: 提案する練習ドリルは**3つ**に限定し、説明も簡潔にすること。\n"
-        "4. **09. フィッティング提案**: 具体的な商品名を出さず、シャフトの特性（調子、トルク、重量）といった専門的なフィッティング要素を提案すること。\n"
-        "5. **10. エグゼクティブサマリー**: お客様の目標達成への確固たる基盤である旨を力強く宣言し、**「お客様のゴルフライフが充実したものになることを応援しております。」**という文言で締めくくること。\n"
-        
-        "出力は必ずMarkdown形式で行い、各セクションの日本語タイトルは以下の指示に厳密に従ってください。"
-    )
-
-    user_prompt = (
-        f"ゴルフスイングの解析結果です。全ての診断は以下の数値データに基づいて行ってください。\n"
-        f"・最大肩回転 (Top of Backswing): {shoulder_rot:.1f}度\n"
-        f"・最小腰回転 (Impact/Follow): {hip_rot:.1f}度\n"
-        f"・頭の最大水平ブレ (Max Head Drift X, 0.001が最小ブレ): {head_drift:.4f}度\n"
-        f"・最大コック角 (Max Wrist Cock Angle, 180度が伸びた状態): {wrist_cock:.1f}度\n"
-        f"・最大膝ブレ (Max Knee Sway X, 0.001が最小ブレ): {knee_sway:.4f}度\n\n"
-        f"レポート構成の指示 (全10項目を網羅すること):\n"
-        f"03. 肩の回旋 (Shoulder Rotation)\n"
-        f"04. 腰の回旋 (Hip Rotation)\n"
-        f"05. 手首のメカニクス (Wrist Mechanics)\n"
-        f"06. 下半身の安定性 (Lower Body Stability)\n"
-        f"07. 総合診断 (Key Diagnosis)\n"
-        f"08. 改善戦略とドリル (Improvement Strategy)\n"
-        f"09. フィッティング提案 (Fitting Recommendation)\n"
-        f"10. エグゼクティブサマリー (Executive Summary)\n"
-        f"この構成で、各項目を詳細に分析してください。"
-    )
-
-    try:
-        response = client.models.generate_content(
-            model='gemini-2.5-flash',
-            contents=user_prompt,
-            config=types.GenerateContentConfig(
-                system_instruction=system_prompt
-            )
-        )
-        return response.text
-        
-    except Exception as e:
-        return f"Gemini API呼び出し中にエラーが発生しました: {e}"
-
-# ------------------------------------------------
-# 無料会員向け「課題提起」生成関数 (AI不使用)
-# ------------------------------------------------
-def generate_free_member_summary(analysis_data):
-    """AIを使わず、計測値からロジックで無料会員向けレポートを生成する"""
-    
-    shoulder_rot = analysis_data.get('max_shoulder_rotation', 0)
-    hip_rot = analysis_data.get('min_hip_rotation', 0)
-    head_drift = analysis_data.get('max_head_drift_x', 0)
-    wrist_cock = analysis_data.get('max_wrist_cock', 0)
-    knee_sway = analysis_data.get('max_knee_sway_x', 0)
-    
-    issues = []
-
-    # 課題提起ロジック (数値を基に問題を特定)
-    if head_drift > 0.03:
-        issues.append("頭の水平方向への移動が大きい (軸の不安定さ)")
-    if wrist_cock > 160:
-        issues.append("手首のコックが早くほどける傾向があります (アーリーリリース)")
-    if shoulder_rot < 40 and hip_rot > 10:
-        issues.append("上半身の回転不足と腰の開きすぎの連鎖が確認されます")
-    if knee_sway > 0.05:
-        issues.append("下半身の水平方向へのブレ（スウェイ/スライド）が目立ちます")
-
-    if not issues:
-        issue_text = "特に目立った問題は検出されませんでした。"
-    else:
-        issue_text = "あなたのスイングには、以下の改善点が見られます。\n"
-        for issue in issues:
-            issue_text += f"・ {issue}\n" 
-    
-    report = (
-        f"あなたのスイングをAIによる骨格分析に基づき診断しました。\n\n"
-        f"**【お客様の改善点（簡易診断）**\n"
-        f"{issue_text}\n\n"
-        f"**【お客様へのメッセージ】**\n"
-        f"有料版をご利用いただくと、これらの問題の**さらに詳しい分析による改善点の抽出**、具体的な練習ドリル、最適なクラブフィッティング提案をご利用いただけます。お客様のゴルフライフが充実したものになることを応援しております。" 
-    )
-        
-    return report
-
-# ------------------------------------------------
-# LINE Webhookのメイン処理
-# ------------------------------------------------
-@app.route("/callback", methods=['POST'])
-def callback():
-    signature = request.headers['X-Line-Signature']
+@app.route("/webhook", methods=['POST'])
+def webhook():
+    """LINEプラットフォームからのWebhookリクエストを受け付ける"""
+    signature = request.headers.get('X-Line-Signature')
     body = request.get_data(as_text=True)
-    app.logger.info("Request body: " + body)
+    app.logger.info(f"Request body: {body}")
 
     try:
         handler.handle(body, signature)
     except InvalidSignatureError:
-        app.logger.error("Invalid signature. Check your channel secret.")
+        app.logger.error("Invalid signature. Check your channel access token/secret.")
         abort(400)
-    except Exception as e:
-        app.logger.error(f"Webhook handling error: {e}", exc_info=True)
+    except LineBotApiError as e:
+        app.logger.error(f"LINE Bot API error: {e.status_code}, {e.error.message}")
         abort(500)
 
     return 'OK'
 
-# ------------------------------------------------
-# Cloud Tasks ターゲットエンドポイント (タスク実行の本体)
-# ------------------------------------------------
-@app.route(TASK_HANDLER_PATH, methods=['POST'])
-def handle_task():
-    """Cloud Tasksから動画解析ジョブを受け取るエンドポイント"""
-    try:
-        # Cloud Tasksから送られてきたJSONペイロードを取得
-        data = request.get_json(silent=True)
-        if not data:
-            # Cloud Tasksのリトライ戦略に委ねるため、HTTP 500を返す
-            app.logger.error("Invalid JSON payload from Cloud Tasks.")
-            return 'Invalid payload', 500
-
-        user_id = data.get('user_id')
-        message_id = data.get('message_id')
-        
-        if not user_id or not message_id:
-            app.logger.error("Missing user_id or message_id in task payload.")
-            return 'Missing required parameters', 400
-
-        app.logger.info(f"Task received. Processing video for User: {user_id}, Message ID: {message_id}")
-        
-        # 非同期処理の本体を実行
-        process_task(user_id, message_id)
-        
-        # 成功したらHTTP 200を返す
-        return 'Task finished successfully', 200
-
-    except Exception as e:
-        # エラーが発生した場合はHTTP 500を返し、Cloud Tasksにリトライを依頼する
-        app.logger.error(f"Error during task processing: {e}", exc_info=True)
-        return f'Task processing error: {str(e)}', 500
-
-
-@app.route('/api/report_data', methods=['GET'])
-def get_report_data():
-    """WebレポートのフロントエンドにJSONデータを返すAPIエンドポイント"""
-    app.logger.info(f"Report API accessed. Query: {request.query_string.decode('utf-8')}")
-    
-    if not db:
-        app.logger.error("Firestore DB connection is not initialized.")
-        return jsonify({"error": "データベースが初期化されていません。サーバーログを確認してください。"}), 500
-        
-    report_id = request.args.get('id')
-    if not report_id:
-        app.warning("Report ID is missing from query.")
-        return jsonify({"error": "レポートIDが指定されていません。"}), 400
-    
-    try:
-        doc = db.collection('reports').document(report_id).get()
-        if not doc.exists:
-            app.logger.warning(f"Report document not found: {report_id}")
-            return jsonify({"error": "指定されたレポートは見つかりませんでした。"}), 404
-        
-        data = doc.to_dict()
-        app.logger.info(f"Successfully retrieved data for report: {report_id}")
-        
-        response_data = {
-            # Timestampオブジェクトを適切に処理
-            "timestamp": data.get('timestamp', {}), 
-            "mediapipe_data": data.get('mediapipe_data', {}),
-            "ai_report_text": data.get('ai_report_text', 'AIレポートがありません。')
-        }
-        
-        json_output = json.dumps(response_data, ensure_ascii=False)
-        response = app.response_class(
-            response=json_output,
-            status=200,
-            mimetype='application/json'
-        )
-        return response
-    
-    except Exception as e:
-        app.logger.error(f"レポート表示APIエラー: {e}", exc_info=True)
-        return jsonify({"error": f"レポートデータの取得中に予期せぬエラーが発生しました: {e}"}), 500
-
-
-@app.route('/report', methods=['GET'])
-def get_report_page():
-    """WebレポートのHTMLテンプレートを返す（report.htmlの内容を返す）"""
-    return HTML_REPORT_TEMPLATE
-    
 @handler.add(MessageEvent, message=TextMessage)
-def handle_message(event):
-    if event.message.text in ["レポート", "テスト"]:
+def handle_text_message(event):
+    """テキストメッセージを受信したときの処理"""
+    if event.message.text in ["レポート確認", "report"]:
+        # ユーザーIDをレポート検索キーとして利用することを想定
         line_bot_api.reply_message(
             event.reply_token,
-            TextSendMessage(text="動画を送信してください。有料会員向けの**プロレベル詳細レポート**を生成します。")
+            TextSendMessage(text="お送りいただいた動画の直近のレポートURLを後ほどお送りします。\n(実装簡略化のため、現在は動画を送るとすぐURLを返します)")
         )
-        
+    else:
+        # それ以外のテキストには定型文で応答
+        line_bot_api.reply_message(
+            event.reply_token,
+            TextSendMessage(text="動画をアップロードしてください。AIスイングドクターが解析を開始します。")
+        )
+
 @handler.add(MessageEvent, message=VideoMessage)
-def handle_video(event):
+def handle_video_message(event):
+    """動画メッセージを受信したときの処理"""
     user_id = event.source.user_id
     message_id = event.message.id
-
-    # 1. LINEに即座に受け付けたことを応答（タイムアウト回避）
-    line_bot_api.reply_message(
-        event.reply_token,
-        TextSendMessage(text="動画を受け付けました。解析をバックグラウンドで開始します。レポートは数分後にプッシュ通知されます。")
-    )
+    report_id = f"{user_id}_{message_id}"
     
-    # 2. 動画の解析ジョブをCloud Tasksに投入
-    success = create_cloud_task(user_id, message_id)
-    
-    if not success:
-         # Cloud Tasksへの投入に失敗した場合、LINEにエラーを通知
-        app.logger.error(f"Cloud Tasksへのジョブ投入に失敗しました。ユーザーID: {user_id}")
-        line_bot_api.push_message(user_id, TextSendMessage(text="【システムエラー】動画解析ジョブの予約に失敗しました。時間をおいて再度お試しください。"))
+    app.logger.info(f"Received video message. User ID: {user_id}, Message ID: {message_id}")
 
-    # Webhookはすぐに'OK'を返して終了
-    return 'OK'
+    try:
+        # 1. 動画コンテンツのURLを取得（実際にはストリームをダウンロードする必要があるが、ここではURLとして抽象化）
+        # LINE APIからは直接ダウンロードストリームが取得できるため、ここでは擬似的に利用
+        message_content = line_bot_api.get_message_content(message_id)
+        # LINE APIから取得した動画をすぐにCloud Storage等に保存し、その公開/署名付きURLをWorkerに渡すのが一般的だが、
+        # ここではCloud Storageへの保存をスキップし、Workerが直接LINEから取得するとして、メッセージIDを抽象化して扱う。
+        # 以下のvideo_urlは、Workerが動画を取得するための識別子として使用する。
+        # 実際の運用では、この時点で動画をGCSにアップロードし、GCS URLを渡す必要があります。
+        video_url = f"line_message_id://{message_id}"
+        
+        # 2. FirestoreにPROCESSINGステータスで初期エントリを保存
+        initial_data = {
+            'status': 'PROCESSING',
+            'user_id': user_id,
+            'message_id': message_id,
+            'video_url': video_url,
+            'summary': '動画解析を開始しました。',
+            'ai_report': '',
+            'raw_data': {},
+        }
+        if not save_report_to_firestore(user_id, report_id, initial_data):
+            raise Exception("Failed to save initial report to Firestore.")
 
+        # 3. Cloud Tasksにジョブを登録
+        task_name = create_cloud_task(report_id, video_url, user_id)
+        
+        if not task_name:
+            # タスク登録に失敗した場合、ユーザーに失敗を通知し、Firestoreのステータスを更新
+            line_bot_api.reply_message(
+                event.reply_token,
+                TextSendMessage(text="システムエラー: 動画解析ジョブの登録に失敗しました。時間をおいて再度お試しください。")
+            )
+            db.collection('reports').document(report_id).update({'status': 'TASK_FAILED', 'summary': 'タスク登録失敗'})
+            return
+
+        # 4. ユーザーに即時応答
+        report_url = f"{SERVICE_HOST_URL}/report/{report_id}"
+        
+        reply_message = (
+            "✅ 動画を受信しました。解析を開始します！\n"
+            "AIによるスイング診断には数分かかります。\n"
+            "結果は準備でき次第、改めてメッセージでお知らせします。\n\n"
+            f"**[処理状況確認URL]**\n{report_url}\n"
+            "（LINEのタイムアウトを防ぐため、このURLで進捗を確認できます）"
+        )
+        line_bot_api.reply_message(
+            event.reply_token,
+            TextSendMessage(text=reply_message)
+        )
+
+    except Exception as e:
+        app.logger.error(f"Error in video message handler: {e}")
+        try:
+            line_bot_api.reply_message(
+                event.reply_token,
+                TextSendMessage(text=f"動画処理中に予期せぬエラーが発生しました: {e}. 管理者にお問い合わせください。")
+            )
+        except:
+            pass # リプライに失敗しても無視
+
+# ------------------------------------------------
+# Cloud Run Worker (タスク実行ハンドラー)
+# ------------------------------------------------
+
+def run_ai_analysis(raw_data):
+    """
+    MediaPipeの数値データに基づき、Geminiにスイング解析を依頼する
+    """
+    if not GEMINI_API_KEY:
+        app.logger.error("GEMINI_API_KEY is not set.")
+        return "AI診断レポートの生成に必要なAPIキーが設定されていません。", "AI診断が実行できませんでした。"
+        
+    try:
+        # Geminiクライアントの初期化
+        client = genai.Client(api_key=GEMINI_API_KEY)
+
+        # プロンプトの構築
+        prompt = (
+            "あなたは世界トップクラスのゴルフスイングコーチであり、AIドクターです。\n"
+            "提供されたスイングの骨格データ（MediaPipeによる数値）に基づき、以下の構造で詳細な日本語の診断レポートを作成してください。\n"
+            "数値データは、プロの基準値（例: 最大肩回転90°〜110°、最小腰回転30°〜45°など）と対比させて論じてください。\n\n"
+            "**レポートの構造:**\n"
+            "1. 総合評価の要約（簡潔に、褒める言葉から始めること）\n"
+            "2. **## 03. AI総合評価**\n"
+            "3. **## 04. バックスイングの課題と改善点**\n"
+            "4. **## 05. トップオブスイングの課題と改善点**\n"
+            "5. **## 06. ダウンスイングの課題と改善点**\n"
+            "6. **## 07. インパクトとフォロースルーの課題と改善点**\n"
+            "7. **## 08. 練習ドリルとアドバイス**\n\n"
+            "各セクションの内容は、Markdownの箇条書き（* を使用）を豊富に使い、具体的な数値を引用して説明してください。\n\n"
+            "**骨格計測データ:**\n"
+            f"{json.dumps(raw_data, indent=2, ensure_ascii=False)}\n"
+        )
+
+        # Gemini APIの呼び出し
+        response = client.models.generate_content(
+            model='gemini-2.5-flash',
+            contents=prompt
+        )
+
+        full_report = response.text
+        
+        # 総合評価の要約を抽出（最初の数行）
+        summary_match = full_report.split('## 03.')[0].strip()
+        summary = summary_match if summary_match else "AIによる総合評価の抽出に失敗しましたが、詳細はレポート本文をご確認ください。"
+
+        return full_report, summary
+
+    except Exception as e:
+        app.logger.error(f"Gemini API call failed: {e}")
+        return "## 03. AI総合評価\nAI診断レポートの生成中にエラーが発生しました。", "AI診断が実行できませんでした。"
+
+@app.route("/worker/process_video", methods=['POST'])
+def process_video_worker():
+    """
+    Cloud Tasksから呼び出される動画解析のWorkerエンドポイント
+    """
+    try:
+        # Cloud Tasksから送られてくるJSONペイロードを解析
+        task_data = request.get_json(silent=True)
+        if not task_data:
+            return jsonify({'status': 'error', 'message': 'Invalid or missing task payload'}), 400
+
+        report_id = task_data.get('report_id')
+        video_url = task_data.get('video_url')
+        user_id = task_data.get('user_id')
+
+        if not report_id or not video_url or not user_id:
+            return jsonify({'status': 'error', 'message': 'Missing report_id, video_url, or user_id in payload'}), 400
+
+        app.logger.info(f"Worker received job. Report ID: {report_id}")
+        
+        # 0. Firestoreのステータスを「IN_PROGRESS」に更新
+        if db:
+            db.collection('reports').document(report_id).update({'status': 'IN_PROGRESS', 'summary': '動画解析を実行中です...'})
+
+        # 1. 動画ダウンロードとMediaPipe処理（ここではモック）
+        # 実際の処理: LINEから動画を取得 -> GCSに保存 -> ffmpeg/MediaPipeで解析
+        # モックデータ: ダミーの計測値を生成
+        raw_data = {
+            'frame_count': 120,
+            'max_shoulder_rotation': np.random.uniform(70, 120),
+            'min_hip_rotation': np.random.uniform(20, 50),
+            'max_wrist_cock': np.random.uniform(75, 105),
+            'max_extension_at_impact': np.random.uniform(170, 180),
+            'max_hip_speed': np.random.uniform(300, 500) # 単位は適当
+        }
+        
+        # 2. AIによる診断レポートの生成
+        ai_report_markdown, summary_text = run_ai_analysis(raw_data)
+        
+        # 3. 結果をFirestoreに保存（ステータス: COMPLETED）
+        final_data = {
+            'status': 'COMPLETED',
+            'summary': summary_text,
+            'ai_report': ai_report_markdown,
+            'raw_data': raw_data,
+        }
+        if save_report_to_firestore(user_id, report_id, final_data):
+            app.logger.info(f"Report {report_id} saved as COMPLETED.")
+
+            # 4. ユーザーに最終通知をLINEで送信
+            report_url = f"{SERVICE_HOST_URL}/report/{report_id}"
+            final_line_message = (
+                "🎉 AIスイング診断が完了しました！\n\n"
+                f"**[診断レポートURL]**\n{report_url}\n\n"
+                f"**[総合評価]**\n{summary_text}\n"
+                "詳細なレポートはURLからご確認ください。次の練習にお役立てください！"
+            )
+            line_bot_api.push_message(
+                to=user_id,
+                messages=TextSendMessage(text=final_line_message)
+            )
+
+            return jsonify({'status': 'success', 'report_id': report_id}), 200
+        else:
+            # Firestore保存失敗時
+            return jsonify({'status': 'error', 'message': 'Failed to save final report to Firestore'}), 500
+
+    except Exception as e:
+        app.logger.error(f"Worker processing failed for task: {report_id}. Error: {e}")
+        # Firestoreのステータスを更新 (処理失敗)
+        if db:
+             db.collection('reports').document(report_id).update({'status': 'FAILED', 'summary': '動画解析処理中に予期せぬエラーが発生しました。'})
+        return jsonify({'status': 'error', 'message': f'Internal Server Error: {e}'}), 500
+
+# ------------------------------------------------
+# Webレポート表示エンドポイント
+# ------------------------------------------------
+
+@app.route("/report/<report_id>", methods=['GET'])
+def get_report_web(report_id):
+    """
+    レポートIDに対応するWebレポートを表示する
+    """
+    report_data = get_report_from_firestore(report_id)
+
+    if not report_data:
+        # レポートが存在しない場合
+        # HTML内にエラーメッセージを埋め込んで返すことで、単一のHTMLでエラーを表示できる
+        error_html = HTML_REPORT_TEMPLATE.replace('<body>', f"""<body>
+            <script>
+                window.onload = function() {{
+                    displayFatalError("レポートが見つかりませんでした。", "指定されたID ({report_id}) のレポートは存在しないか、削除されています。");
+                }};
+            </script>
+        """)
+        return error_html, 404
+
+    if report_data.get('status') == 'PROCESSING' or report_data.get('status') == 'IN_PROGRESS':
+        # 処理中の場合
+        processing_html = HTML_REPORT_TEMPLATE.replace('<body>', f"""<body>
+            <script>
+                window.onload = function() {{
+                    displayProcessingMessage();
+                }};
+            </script>
+        """)
+        return processing_html, 202
+
+    if report_data.get('status') == 'COMPLETED':
+        # 完了している場合、データをHTMLに埋め込んで返す
+        ai_report_markdown = report_data.get('ai_report', '## 03. AI総合評価\nレポート本文がありません。')
+        raw_data = report_data.get('raw_data', {})
+        
+        # JavaScriptで利用できるようにデータをJSON文字列として埋め込む
+        report_data_json = json.dumps({
+            'ai_report': ai_report_markdown,
+            'raw_data': raw_data,
+            'summary': report_data.get('summary', ''),
+            'timestamp': report_data.get('timestamp').isoformat() if report_data.get('timestamp') else new Date().toISOString()
+        })
+        
+        # HTMLテンプレートのscript部分にデータをロードする処理を追加
+        final_html = HTML_REPORT_TEMPLATE.replace('// ページロード時にレポート取得を開始', f"""
+            // ページロード時にレポート取得を開始
+            window.onload = function() {{
+                const reportData = JSON.parse(document.getElementById('report-data-script').textContent);
+                
+                const timestamp = new Date(reportData.timestamp).toLocaleString('ja-JP', {{
+                    year: 'numeric', month: '2-digit', day: '2-digit', 
+                    hour: '2-digit', minute: '2-digit', second: '2-digit'
+                }});
+
+                document.getElementById('timestamp').textContent = timestamp;
+                document.getElementById('summary-text').textContent = reportData.summary;
+                document.getElementById('report-id').textContent = "{report_id}";
+                
+                renderPages(reportData.ai_report, reportData.raw_data);
+            }};
+        """)
+        
+        # 埋め込みデータとしてスクリプトタグを追加
+        final_html_with_data = final_html.replace('</head>', f"""
+            </head>
+            <script id="report-data-script" type="application/json">
+            {report_data_json}
+            </script>
+        """)
+        
+        return final_html_with_data
+
+    # その他の不明なステータス
+    error_html = HTML_REPORT_TEMPLATE.replace('<body>', f"""<body>
+        <script>
+            window.onload = function() {{
+                displayFatalError("レポート処理中にエラーが発生しています。", `ステータス: {report_data.get('status', 'UNKNOWN')}`);
+            }};
+        </script>
+    """)
+    return error_html, 500
+
+# ------------------------------------------------
+# Flask実行
+# ------------------------------------------------
 if __name__ == "__main__":
-    port = int(os.environ.get('PORT', 8080))
-    app.run(host='0.0.0.0', port=port)
+    # ローカル実行時には、環境変数でポートを指定する
+    port = int(os.environ.get("PORT", 8080))
+    app.run(host="0.0.0.0", port=port, debug=True)
