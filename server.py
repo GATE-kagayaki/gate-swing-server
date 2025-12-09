@@ -1,9 +1,14 @@
 import os
-import threading 
 import tempfile 
 import ffmpeg 
 import requests
 import numpy as np 
+import json
+import datetime
+# Cloud Tasksに必要なインポート
+from google.cloud import tasks_v2
+from google.protobuf import timestamp_pb2
+from google.cloud import firestore
 # Firebase/Firestoreのインポート (Webレポート保存に必須)
 import firebase_admin
 from firebase_admin import credentials, firestore, initialize_app
@@ -15,13 +20,19 @@ from linebot import LineBotApi, WebhookHandler
 from linebot.exceptions import InvalidSignatureError, LineBotApiError
 from linebot.models import MessageEvent, TextMessage, TextSendMessage, VideoMessage
 
-# 環境変数の設定
+# ------------------------------------------------
+# 環境変数の設定と定数定義
+# ------------------------------------------------
 LINE_CHANNEL_ACCESS_TOKEN = os.environ.get('LINE_CHANNEL_ACCESS_TOKEN')
 LINE_CHANNEL_SECRET = os.environ.get('LINE_CHANNEL_SECRET')
 GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY') 
-GCP_PROJECT_ID = 'gate-swing-analyzer'
+GCP_PROJECT_ID = 'gate-swing-analyzer' # 実際のプロジェクトIDに置き換える必要があります
+# Cloud RunのサービスURL
 SERVICE_HOST_URL = os.environ.get('SERVICE_HOST_URL', 'https://gate-kagayaki-562867875402.asia-northeast2.run.app')
-
+# Cloud Tasksの設定
+TASK_QUEUE_LOCATION = os.environ.get('TASK_QUEUE_LOCATION', 'asia-northeast2') # Cloud Runと同じリージョン
+TASK_QUEUE_NAME = 'video-analysis-queue'
+TASK_HANDLER_PATH = '/worker/process_video'
 
 if not LINE_CHANNEL_ACCESS_TOKEN or not LINE_CHANNEL_SECRET:
     raise ValueError("LINE_CHANNEL_ACCESS_TOKEN and LINE_CHANNEL_SECRET must be set")
@@ -43,9 +54,18 @@ except Exception as e:
     print(f"Error initializing Firestore: {e}")
     db = None
 
+# Cloud Tasks クライアントの初期化
+try:
+    task_client = tasks_v2.CloudTasksClient()
+    task_queue_path = task_client.queue_path(GCP_PROJECT_ID, TASK_QUEUE_LOCATION, TASK_QUEUE_NAME)
+except Exception as e:
+    app.logger.error(f"Cloud Tasks Client initialization failed: {e}")
+    task_client = None
+
 # ------------------------------------------------
 # WebレポートのHTMLテンプレート (report.htmlの内容を安全に再挿入)
 # ------------------------------------------------
+# ... HTML_REPORT_TEMPLATE の内容は変更なし、省略 ...
 HTML_REPORT_TEMPLATE = """<!DOCTYPE html>
 <html lang="ja">
 <head>
@@ -178,6 +198,23 @@ HTML_REPORT_TEMPLATE = """<!DOCTYPE html>
             loadingElement.innerHTML += `</div>`;
             document.getElementById('report-container').style.display = 'none';
         }
+        
+        function displayProcessingMessage() {
+            const pagesContainer = document.getElementById('report-pages');
+            pagesContainer.innerHTML = `
+                <div class="flex flex-col items-center justify-center p-12 bg-white rounded-lg min-h-[50vh]">
+                    <div class="animate-spin rounded-full h-16 w-16 border-t-4 border-b-4 border-green-500 mb-6"></div>
+                    <h2 class="text-2xl font-bold text-gray-700 mb-4">解析処理を実行中です...</h2>
+                    <p class="text-gray-500 text-center">
+                        動画解析とAI診断は、数分かかる場合があります。<br>
+                        このページは自動では更新されません。しばらく経ってからページを再読み込みしてください。
+                    </p>
+                </div>
+            `;
+            document.getElementById('loading').classList.add('hidden');
+            document.getElementById('report-container').style.display = 'flex';
+        }
+
 
         // Markdownコンテンツを解析し、ページを構築する関数
         function renderPages(markdownContent, rawData) {
@@ -395,14 +432,17 @@ HTML_REPORT_TEMPLATE = """<!DOCTYPE html>
                 
                 if (!response.ok) {
                     const errorText = await response.text();
-                    throw new Error(`サーバーエラー。HTTPステータス: ${response.status} (${response.statusText})`);
+                    // サーバーエラーの場合は、処理中メッセージを表示せず、エラーを出す
+                    displayFatalError(`サーバーエラー。レポートデータの取得に失敗しました。`, `HTTPステータス: ${response.status}`);
+                    return;
                 }
                 
                 let data;
                 try {
                     data = await response.json();
                 } catch (e) {
-                     throw new Error(`JSON解析エラー。応答テキストが不正です: ${e.message}`);
+                     displayFatalError(`JSON解析エラー。サーバーからの応答が不正です。`, e.message);
+                     return;
                 }
                 
                 if (data.error) {
@@ -410,6 +450,14 @@ HTML_REPORT_TEMPLATE = """<!DOCTYPE html>
                      return;
                 }
                 
+                const markdownText = data.ai_report_text || data.ai_report_text_free || "";
+                
+                // ★★★ 修正: レポートデータがない場合は、処理中メッセージを表示する ★★★
+                if (!markdownText || !data.mediapipe_data || data.mediapipe_data.frame_count === 0) {
+                    displayProcessingMessage();
+                    return;
+                }
+
                 // 1. 基本データの挿入
                 document.getElementById('report-id').textContent = reportId;
                 let timestamp = 'N/A';
@@ -424,9 +472,6 @@ HTML_REPORT_TEMPLATE = """<!DOCTYPE html>
                     timestamp = 'データ処理エラー';
                 }
                 document.getElementById('timestamp').textContent = timestamp;
-                
-                // 2. Markdownコンテンツの取得
-                const markdownText = data.ai_report_text || data.ai_report_text_free || "";
                 
                 // 3. ページングレンダリング開始
                 if (markdownText) {
@@ -459,7 +504,7 @@ HTML_REPORT_TEMPLATE = """<!DOCTYPE html>
 # ------------------------------------------------
 def analyze_swing(video_path):
     # 動画を解析し、スイングの評価レポート（テキスト）を返す。
-    # この関数は、process_video_async内から呼び出されます。
+    # この関数は、process_task内から呼び出されます。
     import cv2
     import mediapipe as mp
     import numpy as np
@@ -582,31 +627,88 @@ def analyze_swing(video_path):
     }
 
 # ------------------------------------------------
-# メインの解析ロジックを別スレッドで実行する関数
+# Cloud Tasksへジョブを投入する関数
 # ------------------------------------------------
-def process_video_async(user_id, video_content):
+def create_cloud_task(user_id, message_id):
     """
-    動画のダウンロード、圧縮、解析、レポート送信をバックグラウンドで実行します。
+    Cloud Tasksにタスクを投入し、非同期処理を予約します。
     """
-    import requests
-    import ffmpeg
-    from google import genai
-    from google.genai import types
+    if not task_client:
+        app.logger.error("Cloud Tasks Client is not initialized. Cannot create task.")
+        return False
+        
+    try:
+        # Cloud RunのターゲットURLを作成
+        task_target_url = SERVICE_HOST_URL.rstrip('/') + TASK_HANDLER_PATH
+
+        # タスクペイロード (JSON)
+        payload = {
+            'user_id': user_id,
+            'message_id': message_id
+        }
+        
+        # Cloud Tasksのタスク構成
+        task = {
+            'http_request': {
+                'http_method': tasks_v2.HttpMethod.POST,
+                'url': task_target_url,
+                'body': json.dumps(payload).encode(),
+                'headers': {
+                    'Content-Type': 'application/json',
+                },
+                # Cloud Run認証: ターゲットURLと同じ認証情報を使用
+                'oidc_token': {
+                    'service_account_email': 'YOUR_SERVICE_ACCOUNT_EMAIL_FOR_TASKS@' + GCP_PROJECT_ID + '.iam.gserviceaccount.com', # 適切なSAに置き換える必要
+                },
+            }
+        }
+        
+        # タスクの実行時間を設定（今回は即時実行）
+        # schedule_time = datetime.datetime.now(datetime.timezone.utc)
+        # timestamp = timestamp_pb2.Timestamp()
+        # timestamp.FromDatetime(schedule_time + datetime.timedelta(seconds=5))
+        # task['schedule_time'] = timestamp
+
+        response = task_client.create_task(parent=task_queue_path, task=task)
+        app.logger.info(f"Task created: {response.name}")
+        return True
+
+    except Exception as e:
+        app.logger.error(f"Failed to create Cloud Task: {e}", exc_info=True)
+        return False
+
+
+# ------------------------------------------------
+# Cloud Tasksのターゲットとなる処理関数（非同期処理の本体）
+# ------------------------------------------------
+def process_task(user_id, message_id):
+    """
+    Cloud Taskから呼び出され、動画のダウンロード、解析、レポート送信を実行します。
+    """
     
     original_video_path = None
     compressed_video_path = None
     
-    # 1. オリジナル動画を一時ファイルに保存
+    # 1. LINEから動画コンテンツを再取得
+    try:
+        message_content = line_bot_api.get_message_content(message_id)
+        video_content = message_content.content
+    except Exception as e:
+        app.logger.error(f"タスク処理中の動画コンテンツ取得に失敗 (Message ID: {message_id}): {e}", exc_info=True)
+        line_bot_api.push_message(user_id, TextSendMessage(text="【タスクエラー】動画のダウンロードに失敗しました。LINEのメッセージIDが古い可能性があります。"))
+        return # 処理失敗
+
+    # 1.5. オリジナル動画を一時ファイルに保存
     try:
         with tempfile.NamedTemporaryFile(suffix="_original.mp4", delete=False) as tmp_file:
             original_video_path = tmp_file.name
             tmp_file.write(video_content)
     except Exception as e:
         app.logger.error(f"動画ファイルの保存に失敗: {e}", exc_info=True)
-        line_bot_api.push_message(user_id, TextSendMessage(text="【システムエラー】動画ファイルの保存に失敗しました。ファイルサイズや形式をご確認ください。"))
+        line_bot_api.push_message(user_id, TextSendMessage(text="【タスクエラー】動画ファイルの保存に失敗しました。"))
         return
 
-    # 1.5 動画の自動圧縮とリサイズ処理
+    # 2. 動画の自動圧縮とリサイズ処理
     try:
         compressed_video_path = tempfile.NamedTemporaryFile(suffix="_compressed.mp4", delete=False).name
         FFMPEG_PATH = '/usr/bin/ffmpeg' if os.path.exists('/usr/bin/ffmpeg') else 'ffmpeg'
@@ -622,7 +724,7 @@ def process_video_async(user_id, video_content):
         
     except Exception as e:
         app.logger.error(f"予期せぬ圧縮エラー: {e}", exc_info=True)
-        report_text = f"【動画処理エラー】動画の圧縮に失敗しました。ファイルが大きすぎる（1分以上など）か、形式がLINEでサポートされていない可能性があります。"
+        report_text = f"【動画処理エラー】動画の圧縮に失敗しました。ファイルが大きすぎるか、形式がLINEでサポートされていない可能性があります。"
         line_bot_api.push_message(user_id, TextSendMessage(text=report_text))
         
         if original_video_path and os.path.exists(original_video_path):
@@ -631,19 +733,20 @@ def process_video_async(user_id, video_content):
             os.remove(compressed_video_path)
         return
         
-    # 2. 動画の解析を実行
+    # 3. 動画の解析を実行
     try:
         analysis_data = analyze_swing(video_to_analyze)
         
         is_premium = False 
         
+        # (解析ロジック、Gemini呼び出し、Firestore保存、LINE送信は省略せず、前のファイルをそのまま引き継ぐ)
         if GEMINI_API_KEY:
             is_premium = True
             ai_report_text = generate_full_member_advice(analysis_data, genai, types) 
         else:
             ai_report_text = generate_free_member_summary(analysis_data)
             
-        # 3. Firestoreに解析結果を保存
+        # 4. Firestoreに解析結果を保存
         if db:
             report_data = {
                 "timestamp": firestore.SERVER_TIMESTAMP,
@@ -667,7 +770,7 @@ def process_video_async(user_id, video_content):
         line_bot_api.push_message(user_id, TextSendMessage(text=report_text))
         return
 
-    # 4. LINEにWebレポートのURLを送信
+    # 5. LINEにWebレポートのURLを送信
     try:
         if report_url:
             message = (
@@ -683,12 +786,13 @@ def process_video_async(user_id, video_content):
 
     except Exception as e:
         app.logger.error(f"レポート送信中に予期せぬエラーが発生しました: {e}", exc_info=True)
-
-    # 5. 一時ファイルを削除
+        
+    # 6. 一時ファイルを削除
     if original_video_path and os.path.exists(original_video_path):
         os.remove(original_video_path)
     if compressed_video_path and os.path.exists(compressed_video_path):
         os.remove(compressed_video_path)
+
 
 # ------------------------------------------------
 # Gemini API 呼び出し関数 (有料会員向け詳細レポート)
@@ -786,7 +890,7 @@ def generate_free_member_summary(analysis_data):
     
     report = (
         f"あなたのスイングをAIによる骨格分析に基づき診断しました。\n\n"
-        f"**【お客様の改善点（簡易診断）】**\n"
+        f"**【お客様の改善点（簡易診断）**\n"
         f"{issue_text}\n\n"
         f"**【お客様へのメッセージ】**\n"
         f"有料版をご利用いただくと、これらの問題の**さらに詳しい分析による改善点の抽出**、具体的な練習ドリル、最適なクラブフィッティング提案をご利用いただけます。お客様のゴルフライフが充実したものになることを応援しております。" 
@@ -814,6 +918,41 @@ def callback():
 
     return 'OK'
 
+# ------------------------------------------------
+# Cloud Tasks ターゲットエンドポイント (タスク実行の本体)
+# ------------------------------------------------
+@app.route(TASK_HANDLER_PATH, methods=['POST'])
+def handle_task():
+    """Cloud Tasksから動画解析ジョブを受け取るエンドポイント"""
+    try:
+        # Cloud Tasksから送られてきたJSONペイロードを取得
+        data = request.get_json(silent=True)
+        if not data:
+            # Cloud Tasksのリトライ戦略に委ねるため、HTTP 500を返す
+            app.logger.error("Invalid JSON payload from Cloud Tasks.")
+            return 'Invalid payload', 500
+
+        user_id = data.get('user_id')
+        message_id = data.get('message_id')
+        
+        if not user_id or not message_id:
+            app.logger.error("Missing user_id or message_id in task payload.")
+            return 'Missing required parameters', 400
+
+        app.logger.info(f"Task received. Processing video for User: {user_id}, Message ID: {message_id}")
+        
+        # 非同期処理の本体を実行
+        process_task(user_id, message_id)
+        
+        # 成功したらHTTP 200を返す
+        return 'Task finished successfully', 200
+
+    except Exception as e:
+        # エラーが発生した場合はHTTP 500を返し、Cloud Tasksにリトライを依頼する
+        app.logger.error(f"Error during task processing: {e}", exc_info=True)
+        return f'Task processing error: {str(e)}', 500
+
+
 @app.route('/api/report_data', methods=['GET'])
 def get_report_data():
     """WebレポートのフロントエンドにJSONデータを返すAPIエンドポイント"""
@@ -838,6 +977,7 @@ def get_report_data():
         app.logger.info(f"Successfully retrieved data for report: {report_id}")
         
         response_data = {
+            # Timestampオブジェクトを適切に処理
             "timestamp": data.get('timestamp', {}), 
             "mediapipe_data": data.get('mediapipe_data', {}),
             "ai_report_text": data.get('ai_report_text', 'AIレポートがありません。')
@@ -874,22 +1014,22 @@ def handle_video(event):
     user_id = event.source.user_id
     message_id = event.message.id
 
+    # 1. LINEに即座に受け付けたことを応答（タイムアウト回避）
     line_bot_api.reply_message(
         event.reply_token,
-        TextSendMessage(text="動画を受け付けました。解析を開始します。しばらくお待ちください...")
+        TextSendMessage(text="動画を受け付けました。解析をバックグラウンドで開始します。レポートは数分後にプッシュ通知されます。")
     )
     
-    try:
-        message_content = line_bot_api.get_message_content(message_id)
-        video_content = message_content.content
-    except Exception as e:
-        app.logger.error(f"動画コンテンツの取得に失敗: {e}", exc_info=True)
-        line_bot_api.push_message(user_id, TextSendMessage(text="【エラー】動画のダウンロードに失敗しました。"))
-        return
+    # 2. 動画の解析ジョブをCloud Tasksに投入
+    success = create_cloud_task(user_id, message_id)
+    
+    if not success:
+         # Cloud Tasksへの投入に失敗した場合、LINEにエラーを通知
+        app.logger.error(f"Cloud Tasksへのジョブ投入に失敗しました。ユーザーID: {user_id}")
+        line_bot_api.push_message(user_id, TextSendMessage(text="【システムエラー】動画解析ジョブの予約に失敗しました。時間をおいて再度お試しください。"))
 
-    app.logger.info(f"動画解析を別スレッドで開始します。ユーザーID: {user_id}")
-    thread = threading.Thread(target=process_video_async, args=(user_id, video_content))
-    thread.start()
+    # Webhookはすぐに'OK'を返して終了
+    return 'OK'
 
 if __name__ == "__main__":
     port = int(os.environ.get('PORT', 8080))
