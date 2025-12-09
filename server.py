@@ -67,7 +67,6 @@ except Exception as e:
 
 # ------------------------------------------------
 # WebレポートのHTMLテンプレート (report.htmlの内容を安全に再挿入)
-# [HTML_REPORT_TEMPLATEは、行数が多いため省略。前回送信された最終バージョンを使用]
 # ------------------------------------------------
 HTML_REPORT_TEMPLATE = """<!DOCTYPE html>
 <html lang="ja">
@@ -595,131 +594,39 @@ HTML_REPORT_TEMPLATE = """<!DOCTYPE html>
 </html>"""
 
 # ------------------------------------------------
-# 解析ロジック (analyze_swing) - 必須計測項目を全て実装
+# Firebase/Firestoreとの連携
 # ------------------------------------------------
-def analyze_swing(video_path):
-    # 動画を解析し、スイングの評価レポート（テキスト）を返す。
-    # この関数は、process_task内から呼び出されます。
-    import cv2
-    import mediapipe as mp
-    import numpy as np
 
-    # 角度計算ヘルパー関数
-    def calculate_angle(p1, p2, p3):
-        p1 = np.array(p1)
-        p2 = np.array(p2)
-        p3 = np.array(p3)
-        v1 = p1 - p2
-        v2 = p3 - p2
-        cosine_angle = np.dot(v1, v2) / (np.linalg.norm(v1) * np.linalg.norm(v2))
-        angle = np.arccos(np.clip(cosine_angle, -1.0, 1.0))
-        return np.degrees(angle)
-    
-    mp_pose = mp.solutions.pose
-    
-    # 計測変数初期化
-    max_shoulder_rotation = -180
-    min_hip_rotation = 180
-    head_start_x = None 
-    max_head_drift_x = 0 
-    max_wrist_cock = 0  
-    knee_start_x = None
-    max_knee_sway_x = 0
-    
-    cap = cv2.VideoCapture(video_path)
-    if not cap.isOpened():
-        return {"error": "動画ファイルを開けませんでした。"}
+def save_report_to_firestore(user_id, report_id, report_data):
+    """診断レポートをFirestoreに保存する"""
+    if db is None:
+        app.logger.error("Firestore client is not initialized.")
+        return False
+    try:
+        doc_ref = db.collection('reports').document(report_id)
+        report_data['user_id'] = user_id
+        report_data['timestamp'] = firestore.SERVER_TIMESTAMP
+        doc_ref.set(report_data)
+        return True
+    except Exception as e:
+        app.logger.error(f"Error saving report to Firestore: {e}")
+        return False
 
-    frame_count = 0
-    
-    with mp_pose.Pose(
-        min_detection_confidence=0.5,
-        min_tracking_confidence=0.5) as pose:
-
-        while cap.isOpened():
-            success, image = cap.read()
-            if not success:
-                break
-            
-            image.flags.writeable = False
-            image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-            results = pose.process(image)
-            image.flags.writeable = True
-
-            frame_count += 1
-            
-            if results.pose_landmarks:
-                landmarks = results.pose_landmarks.landmark
-                
-                # 必須ランドマークの定義
-                RIGHT_HIP = mp_pose.PoseLandmark.RIGHT_HIP.value
-                RIGHT_SHOULDER = mp_pose.PoseLandmark.RIGHT_SHOULDER.value
-                RIGHT_EAR = mp_pose.PoseLandmark.RIGHT_EAR.value
-                LEFT_HIP = mp_pose.PoseLandmark.LEFT_HIP.value
-                NOSE = mp_pose.PoseLandmark.NOSE.value
-                RIGHT_WRIST = mp_pose.PoseLandmark.RIGHT_WRIST.value
-                RIGHT_ELBOW = mp_pose.PoseLandmark.RIGHT_ELBOW.value
-                RIGHT_INDEX = mp_pose.PoseLandmark.RIGHT_INDEX.value
-                LEFT_KNEE = mp_pose.PoseLandmark.LEFT_KNEE.value
-                RIGHT_KNEE = mp_pose.PoseLandmark.RIGHT_KNEE.value
-
-                # 座標抽出
-                r_shoulder = [landmarks[RIGHT_SHOULDER].x, landmarks[RIGHT_SHOULDER].y]
-                r_ear = [landmarks[RIGHT_EAR].x, landmarks[RIGHT_EAR].y]
-                l_hip = [landmarks[LEFT_HIP].x, landmarks[LEFT_HIP].y]
-                r_hip = [landmarks[RIGHT_HIP].x, landmarks[RIGHT_HIP].y]
-                nose = [landmarks[NOSE].x, landmarks[NOSE].y]
-                r_wrist = [landmarks[RIGHT_WRIST].x, landmarks[RIGHT_WRIST].y]
-                r_elbow = [landmarks[RIGHT_ELBOW].x, landmarks[RIGHT_ELBOW].y]
-                r_index = [landmarks[RIGHT_INDEX].x, landmarks[RIGHT_INDEX].y]
-                r_knee = [landmarks[RIGHT_KNEE].x, landmarks[RIGHT_KNEE].y]
-                l_knee = [landmarks[LEFT_KNEE].x, landmarks[LEFT_KNEE].y]
-
-
-                # 計測：最大肩回転
-                shoulder_line_angle = np.degrees(np.arctan2(r_ear[1] - r_shoulder[1], r_ear[0] - r_shoulder[0]))
-                if shoulder_line_angle > max_shoulder_rotation:
-                    max_shoulder_rotation = shoulder_line_angle
-
-                # 計測：最小腰回転
-                hip_axis_x = l_hip[0] - r_hip[0]
-                hip_axis_y = l_hip[1] - r_hip[1]
-                current_hip_rotation = np.degrees(np.arctan2(hip_axis_y, hip_axis_x))
-                if current_hip_rotation < min_hip_rotation:
-                    min_hip_rotation = current_hip_rotation
-                
-                # 計測：頭の安定性
-                if head_start_x is None:
-                    head_start_x = nose[0]
-                current_drift_x = abs(nose[0] - head_start_x)
-                if current_drift_x > max_head_drift_x:
-                    max_head_drift_x = current_drift_x
-                    
-                # 計測：手首のコック角
-                if all(l is not None for l in [r_elbow, r_wrist, r_index]):
-                    cock_angle = calculate_angle(r_elbow, r_wrist, r_index)
-                    if cock_angle > max_wrist_cock:
-                         max_wrist_cock = cock_angle
-
-                # 計測：最大膝ブレ（スウェイ）
-                mid_knee_x = (r_knee[0] + l_knee[0]) / 2
-                if knee_start_x is None:
-                    knee_start_x = mid_knee_x
-                current_knee_sway = abs(mid_knee_x - knee_start_x)
-                if current_knee_sway > max_knee_sway_x:
-                    max_knee_sway_x = current_knee_sway
-                
-    cap.release()
-    
-    # 全ての計測結果を辞書で返す
-    return {
-        "frame_count": frame_count,
-        "max_shoulder_rotation": max_shoulder_rotation,
-        "min_hip_rotation": min_hip_rotation,
-        "max_head_drift_x": max_head_drift_x,
-        "max_wrist_cock": max_wrist_cock,
-        "max_knee_sway_x": max_knee_sway_x 
-    }
+def get_report_from_firestore(report_id):
+    """Firestoreからレポートを取得する"""
+    if db is None:
+        app.logger.error("Firestore client is not initialized.")
+        return None
+    try:
+        doc_ref = db.collection('reports').document(report_id)
+        doc = doc_ref.get()
+        if doc.exists:
+            return doc.to_dict()
+        else:
+            return None
+    except Exception as e:
+        app.logger.error(f"Error getting report from Firestore: {e}")
+        return None
 
 # ------------------------------------------------
 # Cloud Tasksへジョブを投入する関数
@@ -798,9 +705,10 @@ def handle_text_message(event):
             TextSendMessage(text="お送りいただいた動画の直近のレポートURLを後ほどお送りします。\n(実装簡略化のため、現在は動画を送るとすぐURLを返します)")
         )
     else:
+        # ★★★ 修正: 新しい料金プランを反映 ★★★
         line_bot_api.reply_message(
             event.reply_token,
-            TextSendMessage(text="動画をアップロードしてください。AIスイングドクターが解析を開始します。\n\n【料金プラン】\n・都度契約: 500円/1回\n・回数券: 1,480円/5回券\n・月額契約: 4,980円/無制限")
+            TextSendMessage(text="動画をアップロードしてください。AIスイングドクターが解析を開始します。\n\n【料金プラン】\n・都度契約: 500円/1回\n・回数券: 1,980円/5回券 (実質1回あたり396円)\n・月額契約: 4,980円/無制限")
         )
 
 @handler.add(MessageEvent, message=VideoMessage)
@@ -847,7 +755,7 @@ def handle_video_message(event):
             "結果は準備でき次第、改めてメッセージでお知らせします。\n\n"
             f"**[処理状況確認URL]**\n{report_url}\n"
             "（LINEのタイムアウトを防ぐため、このURLで進捗を確認できます）\n\n"
-            "【料金プラン】\n・都度契約: 500円/1回\n・回数券: 1,480円/5回券\n・月額契約: 4,980円/無制限"
+            "【料金プラン】\n・都度契約: 500円/1回\n・回数券: 1,980円/5回券 (実質1回あたり396円)\n・月額契約: 4,980円/無制限"
         )
         line_bot_api.reply_message(
             event.reply_token,
@@ -869,54 +777,6 @@ def handle_video_message(event):
 # ------------------------------------------------
 # Cloud Run Worker (タスク実行ハンドラー)
 # ------------------------------------------------
-
-def run_ai_analysis(raw_data):
-    """
-    MediaPipeの数値データに基づき、Geminiにスイング解析を依頼する
-    """
-    if not GEMINI_API_KEY:
-        app.logger.error("GEMINI_API_KEY is not set.")
-        return "## 03. AI総合評価\nAI診断レポートの生成に必要なAPIキーが設定されていません。", "AI診断が実行できませんでした。"
-        
-    try:
-        # Geminiクライアントの初期化
-        client = genai.Client(api_key=GEMINI_API_KEY)
-
-        # プロンプトの構築
-        prompt = (
-            "あなたは世界トップクラスのゴルフスイングコーチであり、AIドクターです。\n"
-            "提供されたスイングの骨格データ（MediaPipeによる数値）に基づき、以下の構造で詳細な日本語の診断レポートを作成してください。\n"
-            "数値データは、プロの基準値（例: 最大肩回転90°〜110°、最小腰回転30°〜45°など）と対比させて論じてください。\n\n"
-            "**レポートの構造:**\n"
-            "1. 総合評価の要約（簡潔に、褒める言葉から始めること）\n"
-            "2. **## 03. AI総合評価**\n"
-            "3. **## 04. バックスイングの課題と改善点**\n"
-            "4. **## 05. トップオブスイングの課題と改善点**\n"
-            "5. **## 06. ダウンスイングの課題と改善点**\n"
-            "6. **## 07. インパクトとフォロースルーの課題と改善点**\n"
-            "7. **## 08. 練習ドリルとアドバイス**\n\n"
-            "各セクションの内容は、Markdownの箇条書き（* を使用）を豊富に使い、具体的な数値を引用して説明してください。\n\n"
-            "**骨格計測データ:**\n"
-            f"{json.dumps(raw_data, indent=2, ensure_ascii=False)}\n"
-        )
-
-        # Gemini APIの呼び出し
-        response = client.models.generate_content(
-            model='gemini-2.5-flash',
-            contents=prompt
-        )
-
-        full_report = response.text
-        
-        # 総合評価の要約を抽出（最初の数行）
-        summary_match = full_report.split('## 03.')[0].strip()
-        summary = summary_match if summary_match else "AIによる総合評価の抽出に失敗しましたが、詳細はレポート本文をご確認ください。"
-
-        return full_report, summary
-
-    except Exception as e:
-        app.logger.error(f"Gemini API call failed: {e}")
-        return "## 03. AI総合評価\nAI診断レポートの生成中にエラーが発生しました。", "AI診断が実行できませんでした。"
 
 @app.route("/worker/process_video", methods=['POST'])
 def process_video_worker():
