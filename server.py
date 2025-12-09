@@ -26,13 +26,10 @@ from linebot.models import MessageEvent, TextMessage, TextSendMessage, VideoMess
 LINE_CHANNEL_ACCESS_TOKEN = os.environ.get('LINE_CHANNEL_ACCESS_TOKEN')
 LINE_CHANNEL_SECRET = os.environ.get('LINE_CHANNEL_SECRET')
 GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY') 
-GCP_PROJECT_ID = os.environ.get('GCP_PROJECT_ID', 'your-gcp-project-id') # プロジェクトIDを設定
-# Cloud TasksがCloud Runを呼び出すためのサービスアカウントメールアドレス
+GCP_PROJECT_ID = os.environ.get('GCP_PROJECT_ID', 'your-gcp-project-id') 
 TASK_SA_EMAIL = os.environ.get('TASK_SA_EMAIL', '') 
-# Cloud RunのサービスURL (このサービスのエンドポイント)
 SERVICE_HOST_URL = os.environ.get('SERVICE_HOST_URL')
-# Cloud Tasksの設定
-TASK_QUEUE_LOCATION = os.environ.get('TASK_QUEUE_LOCATION', 'asia-northeast2') # Cloud Runと同じリージョン
+TASK_QUEUE_LOCATION = os.environ.get('TASK_QUEUE_LOCATION', 'asia-northeast2') 
 TASK_QUEUE_NAME = 'video-analysis-queue'
 TASK_HANDLER_PATH = '/worker/process_video'
 
@@ -41,7 +38,6 @@ if not LINE_CHANNEL_ACCESS_TOKEN or not LINE_CHANNEL_SECRET:
 if not SERVICE_HOST_URL:
     raise ValueError("SERVICE_HOST_URL must be set (e.g., https://<service-name>-<hash>.<region>.run.app)")
 if not TASK_SA_EMAIL:
-    # 警告は出すが、デプロイ自体は許可。ただしタスク作成は失敗する可能性
     print("WARNING: TASK_SA_EMAIL environment variable is not set. Cloud Tasks will likely fail to authenticate.")
 
 # FlaskアプリとLINE Bot APIの設定
@@ -55,7 +51,6 @@ app.config['JSON_AS_ASCII'] = False
 try:
     if not firebase_admin._apps:
         cred = credentials.ApplicationDefault()
-        # Firebase Admin SDKの初期化にはプロジェクトIDが必要
         initialize_app(cred, {'projectId': GCP_PROJECT_ID})
     db = firestore.client()
 except Exception as e:
@@ -71,7 +66,8 @@ except Exception as e:
     task_client = None
 
 # ------------------------------------------------
-# WebレポートのHTMLテンプレート (Markdown解析後に動的に生成するためのベース)
+# WebレポートのHTMLテンプレート (report.htmlの内容を安全に再挿入)
+# [HTML_REPORT_TEMPLATEは、行数が多いため省略。前回送信された最終バージョンを使用]
 # ------------------------------------------------
 HTML_REPORT_TEMPLATE = """<!DOCTYPE html>
 <html lang="ja">
@@ -596,46 +592,137 @@ HTML_REPORT_TEMPLATE = """<!DOCTYPE html>
         window.onload = fetchReport;
     </script>
 </body>
-</html>
-"""
+</html>"""
 
 # ------------------------------------------------
-# Firebase/Firestoreとの連携
+# 解析ロジック (analyze_swing) - 必須計測項目を全て実装
 # ------------------------------------------------
+def analyze_swing(video_path):
+    # 動画を解析し、スイングの評価レポート（テキスト）を返す。
+    # この関数は、process_task内から呼び出されます。
+    import cv2
+    import mediapipe as mp
+    import numpy as np
 
-def save_report_to_firestore(user_id, report_id, report_data):
-    """診断レポートをFirestoreに保存する"""
-    if db is None:
-        app.logger.error("Firestore client is not initialized.")
-        return False
-    try:
-        doc_ref = db.collection('reports').document(report_id)
-        report_data['user_id'] = user_id
-        report_data['timestamp'] = firestore.SERVER_TIMESTAMP
-        doc_ref.set(report_data)
-        return True
-    except Exception as e:
-        app.logger.error(f"Error saving report to Firestore: {e}")
-        return False
+    # 角度計算ヘルパー関数
+    def calculate_angle(p1, p2, p3):
+        p1 = np.array(p1)
+        p2 = np.array(p2)
+        p3 = np.array(p3)
+        v1 = p1 - p2
+        v2 = p3 - p2
+        cosine_angle = np.dot(v1, v2) / (np.linalg.norm(v1) * np.linalg.norm(v2))
+        angle = np.arccos(np.clip(cosine_angle, -1.0, 1.0))
+        return np.degrees(angle)
+    
+    mp_pose = mp.solutions.pose
+    
+    # 計測変数初期化
+    max_shoulder_rotation = -180
+    min_hip_rotation = 180
+    head_start_x = None 
+    max_head_drift_x = 0 
+    max_wrist_cock = 0  
+    knee_start_x = None
+    max_knee_sway_x = 0
+    
+    cap = cv2.VideoCapture(video_path)
+    if not cap.isOpened():
+        return {"error": "動画ファイルを開けませんでした。"}
 
-def get_report_from_firestore(report_id):
-    """Firestoreからレポートを取得する"""
-    if db is None:
-        app.logger.error("Firestore client is not initialized.")
-        return None
-    try:
-        doc_ref = db.collection('reports').document(report_id)
-        doc = doc_ref.get()
-        if doc.exists:
-            return doc.to_dict()
-        else:
-            return None
-    except Exception as e:
-        app.logger.error(f"Error getting report from Firestore: {e}")
-        return None
+    frame_count = 0
+    
+    with mp_pose.Pose(
+        min_detection_confidence=0.5,
+        min_tracking_confidence=0.5) as pose:
+
+        while cap.isOpened():
+            success, image = cap.read()
+            if not success:
+                break
+            
+            image.flags.writeable = False
+            image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+            results = pose.process(image)
+            image.flags.writeable = True
+
+            frame_count += 1
+            
+            if results.pose_landmarks:
+                landmarks = results.pose_landmarks.landmark
+                
+                # 必須ランドマークの定義
+                RIGHT_HIP = mp_pose.PoseLandmark.RIGHT_HIP.value
+                RIGHT_SHOULDER = mp_pose.PoseLandmark.RIGHT_SHOULDER.value
+                RIGHT_EAR = mp_pose.PoseLandmark.RIGHT_EAR.value
+                LEFT_HIP = mp_pose.PoseLandmark.LEFT_HIP.value
+                NOSE = mp_pose.PoseLandmark.NOSE.value
+                RIGHT_WRIST = mp_pose.PoseLandmark.RIGHT_WRIST.value
+                RIGHT_ELBOW = mp_pose.PoseLandmark.RIGHT_ELBOW.value
+                RIGHT_INDEX = mp_pose.PoseLandmark.RIGHT_INDEX.value
+                LEFT_KNEE = mp_pose.PoseLandmark.LEFT_KNEE.value
+                RIGHT_KNEE = mp_pose.PoseLandmark.RIGHT_KNEE.value
+
+                # 座標抽出
+                r_shoulder = [landmarks[RIGHT_SHOULDER].x, landmarks[RIGHT_SHOULDER].y]
+                r_ear = [landmarks[RIGHT_EAR].x, landmarks[RIGHT_EAR].y]
+                l_hip = [landmarks[LEFT_HIP].x, landmarks[LEFT_HIP].y]
+                r_hip = [landmarks[RIGHT_HIP].x, landmarks[RIGHT_HIP].y]
+                nose = [landmarks[NOSE].x, landmarks[NOSE].y]
+                r_wrist = [landmarks[RIGHT_WRIST].x, landmarks[RIGHT_WRIST].y]
+                r_elbow = [landmarks[RIGHT_ELBOW].x, landmarks[RIGHT_ELBOW].y]
+                r_index = [landmarks[RIGHT_INDEX].x, landmarks[RIGHT_INDEX].y]
+                r_knee = [landmarks[RIGHT_KNEE].x, landmarks[RIGHT_KNEE].y]
+                l_knee = [landmarks[LEFT_KNEE].x, landmarks[LEFT_KNEE].y]
+
+
+                # 計測：最大肩回転
+                shoulder_line_angle = np.degrees(np.arctan2(r_ear[1] - r_shoulder[1], r_ear[0] - r_shoulder[0]))
+                if shoulder_line_angle > max_shoulder_rotation:
+                    max_shoulder_rotation = shoulder_line_angle
+
+                # 計測：最小腰回転
+                hip_axis_x = l_hip[0] - r_hip[0]
+                hip_axis_y = l_hip[1] - r_hip[1]
+                current_hip_rotation = np.degrees(np.arctan2(hip_axis_y, hip_axis_x))
+                if current_hip_rotation < min_hip_rotation:
+                    min_hip_rotation = current_hip_rotation
+                
+                # 計測：頭の安定性
+                if head_start_x is None:
+                    head_start_x = nose[0]
+                current_drift_x = abs(nose[0] - head_start_x)
+                if current_drift_x > max_head_drift_x:
+                    max_head_drift_x = current_drift_x
+                    
+                # 計測：手首のコック角
+                if all(l is not None for l in [r_elbow, r_wrist, r_index]):
+                    cock_angle = calculate_angle(r_elbow, r_wrist, r_index)
+                    if cock_angle > max_wrist_cock:
+                         max_wrist_cock = cock_angle
+
+                # 計測：最大膝ブレ（スウェイ）
+                mid_knee_x = (r_knee[0] + l_knee[0]) / 2
+                if knee_start_x is None:
+                    knee_start_x = mid_knee_x
+                current_knee_sway = abs(mid_knee_x - knee_start_x)
+                if current_knee_sway > max_knee_sway_x:
+                    max_knee_sway_x = current_knee_sway
+                
+    cap.release()
+    
+    # 全ての計測結果を辞書で返す
+    return {
+        "frame_count": frame_count,
+        "max_shoulder_rotation": max_shoulder_rotation,
+        "min_hip_rotation": min_hip_rotation,
+        "max_head_drift_x": max_head_drift_x,
+        "max_wrist_cock": max_wrist_cock,
+        "max_knee_sway_x": max_knee_sway_x 
+    }
 
 # ------------------------------------------------
-# Cloud Tasks連携
+# Cloud Tasksへジョブを投入する関数
 # ------------------------------------------------
 
 def create_cloud_task(report_id, video_url, user_id):
@@ -670,12 +757,6 @@ def create_cloud_task(report_id, video_url, user_id):
             },
         }
     }
-
-    # タスク実行を遅延させるオプション (必要に応じて)
-    # in_seconds = 5
-    # timestamp = timestamp_pb2.Timestamp()
-    # timestamp.FromDatetime(datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(seconds=in_seconds))
-    # task['schedule_time'] = timestamp
 
     try:
         # タスクをキューに送信
@@ -712,16 +793,14 @@ def webhook():
 def handle_text_message(event):
     """テキストメッセージを受信したときの処理"""
     if event.message.text in ["レポート確認", "report"]:
-        # ユーザーIDをレポート検索キーとして利用することを想定
         line_bot_api.reply_message(
             event.reply_token,
             TextSendMessage(text="お送りいただいた動画の直近のレポートURLを後ほどお送りします。\n(実装簡略化のため、現在は動画を送るとすぐURLを返します)")
         )
     else:
-        # それ以外のテキストには定型文で応答
         line_bot_api.reply_message(
             event.reply_token,
-            TextSendMessage(text="動画をアップロードしてください。AIスイングドクターが解析を開始します。")
+            TextSendMessage(text="動画をアップロードしてください。AIスイングドクターが解析を開始します。\n\n【料金プラン】\n・都度契約: 500円/1回\n・回数券: 1,480円/5回券\n・月額契約: 4,980円/無制限")
         )
 
 @handler.add(MessageEvent, message=VideoMessage)
@@ -734,18 +813,12 @@ def handle_video_message(event):
     app.logger.info(f"Received video message. User ID: {user_id}, Message ID: {message_id}")
 
     try:
-        # 1. 動画コンテンツのURLを取得（実際にはストリームをダウンロードする必要があるが、ここではURLとして抽象化）
-        # LINE APIからは直接ダウンロードストリームが取得できるため、ここでは擬似的に利用
-        message_content = line_bot_api.get_message_content(message_id)
-        # 以下のvideo_urlは、Workerが動画を取得するための識別子として使用する。
-        video_url = f"line_message_id://{message_id}"
-        
-        # 2. FirestoreにPROCESSINGステータスで初期エントリを保存
+        # 1. FirestoreにPROCESSINGステータスで初期エントリを保存
         initial_data = {
             'status': 'PROCESSING',
             'user_id': user_id,
             'message_id': message_id,
-            'video_url': video_url,
+            'video_url': f"line_message_id://{message_id}",
             'summary': '動画解析を開始しました。',
             'ai_report': '',
             'raw_data': {},
@@ -753,8 +826,8 @@ def handle_video_message(event):
         if not save_report_to_firestore(user_id, report_id, initial_data):
             raise Exception("Failed to save initial report to Firestore.")
 
-        # 3. Cloud Tasksにジョブを登録
-        task_name = create_cloud_task(report_id, video_url, user_id)
+        # 2. Cloud Tasksにジョブを登録
+        task_name = create_cloud_task(report_id, initial_data['video_url'], user_id)
         
         if not task_name:
             # タスク登録に失敗した場合、ユーザーに失敗を通知し、Firestoreのステータスを更新
@@ -765,7 +838,7 @@ def handle_video_message(event):
             db.collection('reports').document(report_id).update({'status': 'TASK_FAILED', 'summary': 'タスク登録失敗'})
             return
 
-        # 4. ユーザーに即時応答
+        # 3. ユーザーに即時応答
         report_url = f"{SERVICE_HOST_URL}/report/{report_id}"
         
         reply_message = (
@@ -773,7 +846,8 @@ def handle_video_message(event):
             "AIによるスイング診断には数分かかります。\n"
             "結果は準備でき次第、改めてメッセージでお知らせします。\n\n"
             f"**[処理状況確認URL]**\n{report_url}\n"
-            "（LINEのタイムアウトを防ぐため、このURLで進捗を確認できます）"
+            "（LINEのタイムアウトを防ぐため、このURLで進捗を確認できます）\n\n"
+            "【料金プラン】\n・都度契約: 500円/1回\n・回数券: 1,480円/5回券\n・月額契約: 4,980円/無制限"
         )
         line_bot_api.reply_message(
             event.reply_token,
@@ -788,7 +862,9 @@ def handle_video_message(event):
                 TextSendMessage(text=f"動画処理中に予期せぬエラーが発生しました: {e}. 管理者にお問い合わせください。")
             )
         except:
-            pass # リプライに失敗しても無視
+            pass 
+            
+    return 'OK' # Webhookは常にOKを返して終了する
 
 # ------------------------------------------------
 # Cloud Run Worker (タスク実行ハンドラー)
@@ -800,7 +876,7 @@ def run_ai_analysis(raw_data):
     """
     if not GEMINI_API_KEY:
         app.logger.error("GEMINI_API_KEY is not set.")
-        return "AI診断レポートの生成に必要なAPIキーが設定されていません。", "AI診断が実行できませんでした。"
+        return "## 03. AI総合評価\nAI診断レポートの生成に必要なAPIキーが設定されていません。", "AI診断が実行できませんでした。"
         
     try:
         # Geminiクライアントの初期化
@@ -854,11 +930,12 @@ def process_video_worker():
             return jsonify({'status': 'error', 'message': 'Invalid or missing task payload'}), 400
 
         report_id = task_data.get('report_id')
-        video_url = task_data.get('video_url')
+        # video_url = task_data.get('video_url') # Cloud Tasksでは動画URLではなくMessage IDを渡す
         user_id = task_data.get('user_id')
+        message_id = report_id.split('_')[-1] # Report IDからMessage IDを抽出
 
-        if not report_id or not video_url or not user_id:
-            return jsonify({'status': 'error', 'message': 'Missing report_id, video_url, or user_id in payload'}), 400
+        if not report_id or not user_id or not message_id:
+            return jsonify({'status': 'error', 'message': 'Missing required parameters in payload'}), 400
 
         app.logger.info(f"Worker received job. Report ID: {report_id}")
         
@@ -866,27 +943,63 @@ def process_video_worker():
         if db:
             db.collection('reports').document(report_id).update({'status': 'IN_PROGRESS', 'summary': '動画解析を実行中です...'})
 
-        # 1. 動画ダウンロードとMediaPipe処理（ここではモック）
-        # 実際の処理: LINEから動画を取得 -> GCSに保存 -> ffmpeg/MediaPipeで解析
-        # モックデータ: ダミーの計測値を生成
-        raw_data = {
-            'frame_count': 120,
-            'max_shoulder_rotation': np.random.uniform(70, 120),
-            'min_hip_rotation': np.random.uniform(20, 50),
-            'max_wrist_cock': np.random.uniform(75, 105),
-            'max_extension_at_impact': np.random.uniform(170, 180),
-            'max_hip_speed': np.random.uniform(300, 500) # 単位は適当
-        }
+        # 1. LINEから動画コンテンツを再取得 (Workerの処理本体)
+        video_content = None
+        try:
+            # LINEからコンテンツを直接取得
+            message_content = line_bot_api.get_message_content(message_id)
+            video_content = message_content.content
+        except Exception as e:
+            app.logger.error(f"LINE Content API error for message ID {message_id}: {e}", exc_info=True)
+            db.collection('reports').document(report_id).update({'status': 'LINE_FETCH_FAILED', 'summary': 'LINEからの動画取得に失敗しました。時間をおいて再実行されます。'})
+            # Cloud Tasksにリトライを依頼するため、HTTP 500を返す
+            return jsonify({'status': 'error', 'message': 'Failed to fetch video content from LINE'}), 500
+
+        # 2. 動画の解析とAI診断の実行
+        original_video_path = None
+        compressed_video_path = None
+        analysis_data = {}
         
-        # 2. AIによる診断レポートの生成
-        ai_report_markdown, summary_text = run_ai_analysis(raw_data)
+        try:
+            # 2.1 オリジナル動画を一時ファイルに保存
+            with tempfile.NamedTemporaryFile(suffix="_original.mp4", delete=False) as tmp_file:
+                original_video_path = tmp_file.name
+                tmp_file.write(video_content)
+
+            # 2.2 動画の自動圧縮とリサイズ処理
+            compressed_video_path = tempfile.NamedTemporaryFile(suffix="_compressed.mp4", delete=False).name
+            FFMPEG_PATH = '/usr/bin/ffmpeg' if os.path.exists('/usr/bin/ffmpeg') else 'ffmpeg'
+            
+            ffmpeg.input(original_video_path).output(
+                compressed_video_path, vf='scale=640:-1', crf=28, vcodec='libx264'
+            ).overwrite_output().run(cmd=FFMPEG_PATH, capture_stdout=True, capture_stderr=True) 
+
+            # 2.3 MediaPipe解析を実行
+            analysis_data = analyze_swing(compressed_video_path)
+            
+            # 2.4 AIによる診断レポートの生成
+            ai_report_markdown, summary_text = run_ai_analysis(analysis_data)
+            
+        except Exception as e:
+            app.logger.error(f"MediaPipe/FFmpeg/AI processing failed: {e}", exc_info=True)
+            # 解析失敗時も、タスクがリトライしないように200を返し、Firestoreでエラーを通知
+            if db:
+                 db.collection('reports').document(report_id).update({'status': 'ANALYSIS_FAILED', 'summary': f'動画解析処理中に予期せぬエラーが発生しました: {str(e)[:100]}...'})
+            line_bot_api.push_message(user_id, TextSendMessage(text=f"【解析エラー】動画解析が失敗しました。全身が写っているかご確認ください。"))
+            return jsonify({'status': 'error', 'message': 'Analysis failed'}), 200 # 200を返すことでタスクのリトライを停止
+        
+        finally:
+            # 一時ファイルのクリーンアップ
+            if original_video_path and os.path.exists(original_video_path): os.remove(original_video_path)
+            if compressed_video_path and os.path.exists(compressed_video_path): os.remove(compressed_video_path)
+
         
         # 3. 結果をFirestoreに保存（ステータス: COMPLETED）
         final_data = {
             'status': 'COMPLETED',
             'summary': summary_text,
             'ai_report': ai_report_markdown,
-            'raw_data': raw_data,
+            'raw_data': analysis_data,
         }
         if save_report_to_firestore(user_id, report_id, final_data):
             app.logger.info(f"Report {report_id} saved as COMPLETED.")
@@ -913,7 +1026,8 @@ def process_video_worker():
         app.logger.error(f"Worker processing failed for task: {report_id}. Error: {e}")
         # Firestoreのステータスを更新 (処理失敗)
         if db:
-             db.collection('reports').document(report_id).update({'status': 'FAILED', 'summary': '動画解析処理中に予期せぬエラーが発生しました。'})
+             db.collection('reports').document(report_id).update({'status': 'FATAL_ERROR', 'summary': f'致命的なエラーが発生しました: {str(e)[:100]}...'})
+        # Cloud Tasksにリトライを依頼するため、HTTP 500を返す (LINE通知は既に処理済みのため、ここでは不要)
         return jsonify({'status': 'error', 'message': f'Internal Server Error: {e}'}), 500
 
 # ------------------------------------------------
@@ -929,8 +1043,7 @@ def get_report_web(report_id):
 
     if not report_data:
         # レポートが存在しない場合
-        # HTML内にエラーメッセージを埋め込んで返すことで、単一のHTMLでエラーを表示できる
-        error_html = HTML_REPORT_TEMPLATE.replace('<body>', f"""<body>
+        error_html = HTML_REPORT_TEMPLATE.replace('<!-- REPORT_STATUS_SCRIPT -->', f"""
             <script>
                 window.onload = function() {{
                     displayFatalError("レポートが見つかりませんでした。", "指定されたID ({report_id}) のレポートは存在しないか、削除されています。");
@@ -939,9 +1052,11 @@ def get_report_web(report_id):
         """)
         return error_html, 404
 
-    if report_data.get('status') == 'PROCESSING' or report_data.get('status') == 'IN_PROGRESS':
+    status = report_data.get('status')
+    
+    if status in ['PROCESSING', 'IN_PROGRESS']:
         # 処理中の場合
-        processing_html = HTML_REPORT_TEMPLATE.replace('<body>', f"""<body>
+        processing_html = HTML_REPORT_TEMPLATE.replace('<!-- REPORT_STATUS_SCRIPT -->', f"""
             <script>
                 window.onload = function() {{
                     displayProcessingMessage();
@@ -950,13 +1065,12 @@ def get_report_web(report_id):
         """)
         return processing_html, 202
 
-    if report_data.get('status') == 'COMPLETED':
+    if status == 'COMPLETED':
         # 完了している場合、データをHTMLに埋め込んで返す
         ai_report_markdown = report_data.get('ai_report', '## 03. AI総合評価\nレポート本文がありません。')
         raw_data = report_data.get('raw_data', {})
         
         # JavaScriptで利用できるようにデータをJSON文字列として埋め込む
-        # ★★★ 修正点: Timestampをisoformatで文字列化し、SyntaxErrorを回避 ★★★
         report_data_json = json.dumps({
             'ai_report': ai_report_markdown,
             'raw_data': raw_data,
@@ -965,8 +1079,11 @@ def get_report_web(report_id):
         })
         
         # HTMLテンプレートのscript部分にデータをロードする処理を追加
-        final_html = HTML_REPORT_TEMPLATE.replace('// ページロード時にレポート取得を開始', f"""
-            // ページロード時にレポート取得を開始
+        final_html = HTML_REPORT_TEMPLATE.replace('<!-- REPORT_STATUS_SCRIPT -->', f"""
+            <script id="report-data-script" type="application/json">
+            {report_data_json}
+            </script>
+            <script>
             window.onload = function() {{
                 const reportData = JSON.parse(document.getElementById('report-data-script').textContent);
                 
@@ -981,23 +1098,16 @@ def get_report_web(report_id):
                 
                 renderPages(reportData.ai_report, reportData.raw_data);
             }};
-        """)
-        
-        # 埋め込みデータとしてスクリプトタグを追加
-        final_html_with_data = final_html.replace('</head>', f"""
-            </head>
-            <script id="report-data-script" type="application/json">
-            {report_data_json}
             </script>
         """)
         
-        return final_html_with_data
+        return final_html
 
     # その他の不明なステータス
-    error_html = HTML_REPORT_TEMPLATE.replace('<body>', f"""<body>
+    error_html = HTML_REPORT_TEMPLATE.replace('<!-- REPORT_STATUS_SCRIPT -->', f"""
         <script>
             window.onload = function() {{
-                displayFatalError("レポート処理中にエラーが発生しています。", `ステータス: {report_data.get('status', 'UNKNOWN')}`);
+                displayFatalError("レポート処理中にエラーが発生しています。", `ステータス: {status} / 詳細: {report_data.get('summary', '不明')}`);
             }};
         </script>
     """)
