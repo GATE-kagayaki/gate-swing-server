@@ -737,10 +737,7 @@ def handle_video_message(event):
         # 1. 動画コンテンツのURLを取得（実際にはストリームをダウンロードする必要があるが、ここではURLとして抽象化）
         # LINE APIからは直接ダウンロードストリームが取得できるため、ここでは擬似的に利用
         message_content = line_bot_api.get_message_content(message_id)
-        # LINE APIから取得した動画をすぐにCloud Storage等に保存し、その公開/署名付きURLをWorkerに渡すのが一般的だが、
-        # ここではCloud Storageへの保存をスキップし、Workerが直接LINEから取得するとして、メッセージIDを抽象化して扱う。
         # 以下のvideo_urlは、Workerが動画を取得するための識別子として使用する。
-        # 実際の運用では、この時点で動画をGCSにアップロードし、GCS URLを渡す必要があります。
         video_url = f"line_message_id://{message_id}"
         
         # 2. FirestoreにPROCESSINGステータスで初期エントリを保存
@@ -959,11 +956,12 @@ def get_report_web(report_id):
         raw_data = report_data.get('raw_data', {})
         
         # JavaScriptで利用できるようにデータをJSON文字列として埋め込む
+        # ★★★ 修正点: Timestampをisoformatで文字列化し、SyntaxErrorを回避 ★★★
         report_data_json = json.dumps({
             'ai_report': ai_report_markdown,
             'raw_data': raw_data,
             'summary': report_data.get('summary', ''),
-            'timestamp': report_data.get('timestamp').isoformat() if report_data.get('timestamp') else new Date().toISOString()
+            'timestamp': report_data.get('timestamp').isoformat() if report_data.get('timestamp') else datetime.datetime.now(datetime.timezone.utc).isoformat()
         })
         
         # HTMLテンプレートのscript部分にデータをロードする処理を追加
