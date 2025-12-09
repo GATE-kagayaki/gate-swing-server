@@ -26,24 +26,23 @@ from linebot.models import MessageEvent, TextMessage, TextSendMessage, VideoMess
 LINE_CHANNEL_ACCESS_TOKEN = os.environ.get('LINE_CHANNEL_ACCESS_TOKEN')
 LINE_CHANNEL_SECRET = os.environ.get('LINE_CHANNEL_SECRET')
 GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY') 
-# GCP_PROJECT_IDにデフォルト値を持たせないことで、未設定時にエラーとする
+# GCP_PROJECT_ID, TASK_SA_EMAIL, SERVICE_HOST_URL は必須のため、厳しくチェック
 GCP_PROJECT_ID = os.environ.get('GCP_PROJECT_ID') 
 TASK_SA_EMAIL = os.environ.get('TASK_SA_EMAIL') 
 SERVICE_HOST_URL = os.environ.get('SERVICE_HOST_URL')
+
 TASK_QUEUE_LOCATION = os.environ.get('TASK_QUEUE_LOCATION', 'asia-northeast2') 
 TASK_QUEUE_NAME = 'video-analysis-queue'
 TASK_HANDLER_PATH = '/worker/process_video'
 
-# 環境変数の必須チェックを強化
+# 環境変数の必須チェックを強化 (起動時チェック)
 if not LINE_CHANNEL_ACCESS_TOKEN or not LINE_CHANNEL_SECRET:
     raise ValueError("LINE_CHANNEL_ACCESS_TOKEN and LINE_CHANNEL_SECRET must be set")
 if not SERVICE_HOST_URL:
     raise ValueError("SERVICE_HOST_URL must be set (e.g., https://<service-name>-<hash>.<region>.run.app)")
 if not GCP_PROJECT_ID:
     raise ValueError("GCP_PROJECT_ID must be set.")
-# TASK_SA_EMAILは認証エラーの原因となるため、未設定の場合は警告のみ
-if not TASK_SA_EMAIL:
-    print("WARNING: TASK_SA_EMAIL environment variable is not set. Cloud Tasks will likely fail to authenticate with 404/403 errors.")
+# TASK_SA_EMAILは認証エラーの原因となるため、タスク投入関数で厳しくチェックする
 
 # FlaskアプリとLINE Bot APIの設定
 app = Flask(__name__)
@@ -53,6 +52,7 @@ handler = WebhookHandler(LINE_CHANNEL_SECRET)
 app.config['JSON_AS_ASCII'] = False 
 
 # Firestoreクライアントの初期化
+db = None
 try:
     if not firebase_admin._apps:
         cred = credentials.ApplicationDefault()
@@ -60,24 +60,26 @@ try:
     db = firestore.client()
 except Exception as e:
     app.logger.error(f"Error initializing Firestore: {e}")
-    db = None
+    # dbがNoneのままになるため、Firestore関連関数内でdbのNoneチェックが必要
 
 # Cloud Tasks クライアントの初期化
+task_client = None
 try:
-    task_client = tasks_v2.CloudTasksClient()
-    task_queue_path = task_client.queue_path(GCP_PROJECT_ID, TASK_QUEUE_LOCATION, TASK_QUEUE_NAME)
+    if GCP_PROJECT_ID: # GCP_PROJECT_IDがNoneでない場合のみ初期化を試行
+        task_client = tasks_v2.CloudTasksClient()
+        task_queue_path = task_client.queue_path(GCP_PROJECT_ID, TASK_QUEUE_LOCATION, TASK_QUEUE_NAME)
 except Exception as e:
     app.logger.error(f"Cloud Tasks Client initialization failed: {e}")
     task_client = None
 
 # ------------------------------------------------
-# ★★★ Firestore連携関数 (最上位に移動し、定義済みエラーを解消) ★★★
+# ★★★ Firestore連携関数 ★★★
 # ------------------------------------------------
 
 def save_report_to_firestore(user_id, report_id, report_data):
     """診断レポートをFirestoreに保存する"""
     if db is None:
-        app.logger.error("Firestore client is not initialized.")
+        app.logger.error("Firestore client is not initialized. Cannot save report.")
         return False
     try:
         doc_ref = db.collection('reports').document(report_id)
@@ -92,7 +94,7 @@ def save_report_to_firestore(user_id, report_id, report_data):
 def get_report_from_firestore(report_id):
     """Firestoreからレポートを取得する"""
     if db is None:
-        app.logger.error("Firestore client is not initialized.")
+        app.logger.error("Firestore client is not initialized. Cannot fetch report.")
         return None
     try:
         doc_ref = db.collection('reports').document(report_id)
@@ -290,12 +292,13 @@ def create_cloud_task(report_id, video_url, user_id):
     """
     Cloud Tasksに動画解析タスクを作成し、Cloud Run Workerをトリガーする
     """
-    if task_client is None:
+    # 必須認証情報が設定されているかチェック
+    if not task_client:
         app.logger.error("Cloud Tasks client is not initialized.")
         return None
-
-    # Cloud Run WorkerのエンドポイントURLを構築
-    # SERVICE_HOST_URLが設定されていない場合は、タスク投入を中止
+    if not TASK_SA_EMAIL:
+        app.logger.error("TASK_SA_EMAIL is missing. Cannot authenticate Cloud Task.")
+        return None
     if not SERVICE_HOST_URL:
         app.logger.error("SERVICE_HOST_URL is missing. Cannot create Cloud Task.")
         return None
@@ -319,7 +322,7 @@ def create_cloud_task(report_id, video_url, user_id):
             'headers': {'Content-Type': 'application/json'},
             # OIDC認証トークンを使用して認証を行う
             'oidc_token': {
-                'service_account_email': TASK_SA_EMAIL, # ★★★修正点: 環境変数から取得
+                'service_account_email': TASK_SA_EMAIL, 
             },
         }
     }
@@ -378,6 +381,14 @@ def handle_video_message(event):
     report_id = f"{user_id}_{message_id}"
     
     app.logger.info(f"Received video message. User ID: {user_id}, Message ID: {message_id}")
+
+    # 必須環境変数の再々々チェック
+    if not SERVICE_HOST_URL or not TASK_SA_EMAIL or not task_client:
+        error_msg = ("システムエラー: 環境設定が不完全です。"
+                     "管理者にお問い合わせください。 (原因: SERVICE_HOST_URL, TASK_SA_EMAIL, または Cloud Tasks Client の未設定)")
+        app.logger.error(error_msg)
+        line_bot_api.reply_message(event.reply_token, TextSendMessage(text=error_msg))
+        return 'OK'
 
     try:
         # 1. FirestoreにPROCESSINGステータスで初期エントリを保存
