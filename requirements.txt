@@ -8,3 +8,4 @@ numpy
 ffmpeg-python
 google-cloud-aiplatform
 firebase-admin
+google-cloud-tasks
