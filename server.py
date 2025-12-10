@@ -283,7 +283,6 @@ def run_ai_analysis(raw_data):
         full_report = response.text
         
         # 総合評価の要約を抽出（最初の数行）
-        summary_match = full_report.split('## 03.')[0].trim() # ★修正: trim()を削除して改行で分割
         
         summary_match = full_report.split('\n')[0].strip() # 最初の行をサマリーとして抽出
         summary = summary_match if summary_match else "AIによる総合評価の抽出に失敗しましたが、詳細はレポート本文をご確認ください。"
@@ -341,7 +340,7 @@ def create_cloud_task(report_id, video_url, user_id):
             'headers': {'Content-Type': 'application/json'},
             # OIDC認証トークンを使用して認証を行う
             'oidc_token': {
-                'service_account_email': TASK_SA_ACCOUNT, 
+                'service_account_email': TASK_SA_EMAIL, 
             },
         }
     }
