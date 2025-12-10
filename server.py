@@ -263,13 +263,15 @@ def run_ai_analysis(raw_data):
             "数値データは、プロの基準値（例: 最大肩回転90°〜110°、最小腰回転30°〜45°など）と対比させて論じてください。\n\n"
             "**レポートの構造:**\n"
             "**レポートの導入文（褒め言葉や挨拶の段落）は一切生成しないでください。** レポート本文は以下の**Markdown見出し**から直接始めてください。\n"
-            "1. **## 03. AI総合評価**\n"
-            "2. **## 04. トップオブスイングの課題と改善点**\n" # 項目番号を繰り上げ
-            "3. **## 05. ダウンスイングの課題と改善点**\n" # 項目番号を繰り上げ
-            "4. **## 06. インパクトとフォロースルーの課題と改善点**\n" # 項目番号を繰り上げ
-            "5. **## 07. 練習ドリルとアドバイス**\n" # 項目番号を繰り上げ
-            "6. **## 08. フィッティング提案**\n" # 項目番号を繰り上げ (これが今回の目的の項目)
-            "7. **## 09. エグゼクティブサマリー**\n\n" # 項目番号を繰り上げ
+            "1. **## 02. AI総合評価 (Key Diagnosis)**\n" # ★修正: 項目番号を02に繰り上げ、Key Diagnosisのスタイルを継承
+            "2. **## 03. Shoulder Rotation (肩の回旋)**\n"
+            "3. **## 04. Hip Rotation (腰の回旋)**\n"
+            "4. **## 05. Wrist Mechanics (手首のメカニクス)**\n"
+            "5. **## 06. Lower Body Stability (下半身の安定性)**\n"
+            "6. **## 07. Improvement Strategy (改善戦略とドリル)**\n"
+            "7. **## 08. Fitting Recommendation (フィッティング提案)**\n" 
+            "8. **## 09. Executive Summary (エグゼクティブサマリー)**\n\n" # 項目番号を繰り上げ
+            
             "各セクションの内容は、Markdownの箇条書き（* を使用）を豊富に使い、具体的な数値を引用して説明してください。\n\n"
             "**骨格計測データ:**\n"
             f"{json.dumps(raw_data, indent=2, ensure_ascii=False)}\n"
@@ -283,16 +285,19 @@ def run_ai_analysis(raw_data):
 
         full_report = response.text
         
-        # 総合評価のサマリーをAIレポート本文の最初の見出し(## 03.)の最初の段落から抽出
+        # 総合評価のサマリーをAIレポート本文の最初の見出し(## 02.)の最初の段落から抽出
         try:
-            # ## 03. のセクションを探す
-            section_03_start = full_report.find('## 03. AI総合評価')
-            if section_03_start == -1:
+            # ## 02. のセクションを探す
+            section_02_start = full_report.find('## 02. AI総合評価 (Key Diagnosis)')
+            if section_02_start == -1:
                 summary = full_report.split('\n\n')[0].strip()
             else:
-                content_after_header = full_report[section_03_start:].strip()
-                content_after_header = content_after_header.split('\n', 1)[1].strip()
-                summary = content_after_header.split('\n\n')[0].strip()
+                # 最初の見出し行と、その直後の改行をスキップ
+                content_after_header = full_report[section_02_start:].strip()
+                summary_search_content = content_after_header.split('\n', 1)[1].strip()
+                
+                # 最初の段落をサマリーとして使用
+                summary = summary_search_content.split('\n\n')[0].strip()
 
         except Exception:
             summary = "AIによる総合評価の抽出に失敗しましたが、詳細はレポート本文をご確認ください。"
@@ -302,7 +307,7 @@ def run_ai_analysis(raw_data):
 
     except Exception as e:
         app.logger.error(f"Gemini API call failed: {e}")
-        return "## 03. AI総合評価\nAI診断レポートの生成中にエラーが発生しました。", "AI診断が実行できませんでした。"
+        return "## 02. AI総合評価\nAI診断レポートの生成中にエラーが発生しました。", "AI診断が実行できませんでした。"
 
 # ------------------------------------------------
 # Cloud Tasksへジョブを投入する関数
@@ -587,7 +592,6 @@ def process_video_worker():
             final_line_message = (
                 "🎉 AIスイング診断が完了しました！\n\n"
                 f"**[診断レポートURL]**\n{report_url}\n\n"
-                f"**[総合評価]**\n{summary_text}\n"
                 "詳細なレポートはURLからご確認ください。次の練習にお役立てください！"
             )
             line_bot_api.push_message(
@@ -693,32 +697,52 @@ def get_report_web(report_id):
                 /* ページングをシミュレートするため、非表示がデフォルト */
                 display: none;
                 min-height: calc(100vh - 80px);
-                padding: 1.5rem; /* パディングを追加 */
+                padding: 1.5rem; 
             }}
             .content-page.active {{
                 display: block;
             }}
-            /* ヘッダーとコンテンツのメリハリを強化 */
+            /* Word文書のデザインを反映したメリハリのあるスタイル */
             .report-content h2 {{
-                font-size: 1.8em; /* フォントサイズを拡大 */
-                font-weight: 800; /* 極太に */
-                color: #10b981; /* Tailwind Emerald-600 */
-                border-bottom: 4px solid #34d399; /* 強い下線 */
+                font-size: 2.25rem; /* text-4xl相当 */
+                font-weight: 900; /* 極太 */
+                color: #1f2937; /* Gray-800 */
+                border-bottom: 4px solid #10b981; /* Strong Emerald line */
                 padding-bottom: 0.5em;
-                margin-top: 2.5em;
-                margin-bottom: 1em;
+                margin-top: 2.5rem;
+                margin-bottom: 1.5rem;
+                letter-spacing: 0.05em; /* わずかに間隔を空ける */
             }}
             .report-content h3 {{
-                font-size: 1.25em; 
+                font-size: 1.5rem; /* text-xl相当 */
                 font-weight: 700;
-                color: #1f2937; /* Gray-800 */
-                border-left: 4px solid #99f6e4;
-                padding-left: 0.5em;
-                margin-top: 1.5em;
+                color: #374151; /* Gray-700 */
+                border-left: 6px solid #6ee7b7; /* Light Green accent */
+                padding-left: 1rem;
+                margin-top: 2rem;
+                margin-bottom: 1rem;
             }}
-            .report-content strong {{
-                color: #059669; /* Emerald-600 */
-                font-weight: 700;
+            /* Findings/Interpretationのカードスタイル */
+            .info-card {{
+                background-color: #f9fafb; /* Gray-50 */
+                border-radius: 0.75rem; /* rounded-xl */
+                padding: 1.5rem;
+                margin-bottom: 1.5rem;
+                border: 1px solid #e5e7eb; /* Gray-200 */
+            }}
+            .info-card strong {{
+                display: block;
+                font-size: 1rem;
+                font-weight: 800;
+                color: #10b981; /* Emerald-600 */
+                margin-bottom: 0.5rem;
+                text-transform: uppercase;
+                letter-spacing: 0.1em;
+            }}
+            .report-content p {{
+                margin-bottom: 1em;
+                line-height: 1.6;
+                color: #374151;
             }}
             .report-content ul {{
                 list-style-type: disc;
@@ -727,16 +751,11 @@ def get_report_web(report_id):
                 margin-top: 1rem;
                 margin-bottom: 1rem;
             }}
-            .report-content p {{
-                margin-bottom: 1em;
-                line-height: 1.6;
-            }}
-            /* ナビゲーションのCSSは変更なし */
             .nav-item {{
                 cursor: pointer;
                 transition: background-color 0.2s;
                 border-left: 4px solid transparent; 
-                padding: 0.75rem 0.5rem; /* クリックしやすいように調整 */
+                padding: 0.75rem 0.5rem;
             }}
             .nav-item:hover {{
                 background-color: #f0fdf4;
@@ -773,8 +792,10 @@ def get_report_web(report_id):
             <!-- メインコンテンツエリア -->
             <main id="main-content" class="flex-1 transition-all duration-300 ml-64 p-4 md:p-8">
                 
-                <!-- レポートヘッダー (削除済み) -->
+                <!-- レポートヘッダー (Word文書の雰囲気に合わせ、よりシンプルに) -->
                 <div class="bg-white p-4 rounded-lg shadow-md mb-6 border-t border-gray-300">
+                    <p class="text-2xl font-extrabold text-gray-900 text-center mb-2">SWING ANALYTICS REPORT</p>
+                    <hr class="border-gray-300 mb-2">
                     <p class="text-gray-500 mt-1 text-sm text-right no-print">
                         最終診断日: <span id="timestamp_display"></span> | レポートID: <span id="report-id-display"></span>
                     </p>
@@ -799,14 +820,13 @@ def get_report_web(report_id):
             // レポートIDをJSに渡す
             const REPORT_ID = "{report_id}";
 
-            // ★修正: NAV_ITEMSから02. データ評価基準を削除
+            // ★修正: 00.概要を削除し、01.骨格計測データから開始
             const NAV_ITEMS = [
-                {{ id: 'summary', title: '00. レポート概要' }},
                 {{ id: 'mediapipe', title: '01. 骨格計測データと評価目安' }},
             ];
 
             let aiReportContent = {{}};
-            let currentPageId = 'summary';
+            let currentPageId = 'mediapipe'; // ★修正: 初期ページを計測データに変更
 
             function displayFatalError(message, details = null) {{
                 const loadingElement = document.getElementById('loading');
@@ -832,6 +852,50 @@ def get_report_web(report_id):
                 document.getElementById('report-container').style.display = 'none';
             }}
 
+            // Word文書のデザイン性を反映
+            function formatMarkdownContent(markdownText) {{
+                // 1. **Findings / Interpretation** の構造化を試みる
+                let content = markdownText.trim();
+                
+                // Findings/Interpretation パターンを検出
+                const pattern = /(Findings\s*.*?)(\s*Interpretation\s*.*)/s;
+
+                if (pattern.test(content)) {{
+                    content = content.replace(pattern, (match, findings, interpretation) => {{
+                        
+                        // FindingsとInterpretationのテキストを抽出
+                        const findingsText = findings.replace('Findings', '').trim();
+                        const interpretationText = interpretation.replace('Interpretation', '').trim();
+
+                        return `
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div class="info-card">
+                                    <strong>Findings</strong>
+                                    <p>${{findingsText.replace(/\\n/g, '<br>')}}</p>
+                                </div>
+                                <div class="info-card">
+                                    <strong>Interpretation</strong>
+                                    <p>${{interpretationText.replace(/\\n/g, '<br>')}}</p>
+                                </div>
+                            </div>
+                        `;
+                    }});
+                }}
+
+                // 2. 基本的なMarkdown変換
+                // リスト項目を<li>タグで囲む（\n\nで囲まれた * リスト）
+                content = content.replace(/\\n\\n\s*(\* .*\\n?)+/gs, (match) => {{
+                    let listItems = match.trim().split('\\n').map(line => `<li>${{line.trim().substring(2)}}</li>`).join('');
+                    return `<ul class="list-disc ml-6">${{listItems}}</ul>`;
+                }});
+                
+                // 段落の改行
+                content = content.replace(/\\n/g, '<br>');
+                
+                return content;
+            }}
+
+
             // Markdownコンテンツを解析し、ページを構築する関数
             function renderPages(markdownContent, rawData) {{
                 const pagesContainer = document.getElementById('report-pages');
@@ -853,21 +917,15 @@ def get_report_web(report_id):
                         
                         // Markdown本文を取得
                         const content = section.substring(titleMatch[0].length).trim();
-                        
-                        // ★修正: AIレポートの導入文削除対応 (AIプロンプト修正により、このロジックは安全性が向上)
-                        if (index === 0 && fullTitle.startsWith('03. AI総合評価')) {{
-                            // 03. AI総合評価の場合、最初の段落（以前の導入文）を削除
-                            const paragraphs = content.split('\\n\\n').filter(p => p.trim() !== '');
-                            // 最初の段落を削除し、残りの段落を結合
-                            const cleanedContent = paragraphs.slice(1).join('\\n\\n');
-                            aiReportContent[id] = cleanedContent || content; 
-                        }} else {{
-                            aiReportContent[id] = content;
-                        }}
+                        aiReportContent[id] = content;
+                    } else {{
+                        // ##見出しがない最初のコンテンツを無視 (AI導入文対策)
+                        console.log("Ignoring initial content outside of ##:", section.substring(0, 50));
                     }}
                 }});
 
                 // 2. ナビゲーションメニューを構築
+                // ★修正: 00. レポート概要は固定メニューから削除されたため、動的項目のみを処理
                 const fullNavItems = [...NAV_ITEMS, ...dynamicNavItems];
                 fullNavItems.forEach(item => {{
                     const navItem = document.createElement('div');
@@ -879,9 +937,8 @@ def get_report_web(report_id):
                 }});
 
                 // 3. 固定ページコンテンツの定義と挿入 (rawDataを使用)
-                pagesContainer.appendChild(createSummaryPage());
-                pagesContainer.appendChild(createRawDataPage(rawData));
-                // createCriteriaPage 関数は削除済み
+                // ★修正: createSummaryPage()の呼び出しを削除
+                pagesContainer.appendChild(createRawDataPage(rawData)); 
 
                 // 4. AI動的ページコンテンツの定義と挿入
                 dynamicNavItems.forEach(item => {{
@@ -891,34 +948,9 @@ def get_report_web(report_id):
                     
                     page.innerHTML += `<h2 class="text-2xl font-bold text-green-700 mb-4">${{item.title}}</h2>`;
                     
-                    // Markdownの改行とリストをHTMLに変換
-                    let processedText = aiReportContent[item.id]
-                        .split('\\n')
-                        .map(line => {{
-                            // Markdownのリスト項目を<li>に変換
-                            if (line.trim().startsWith('* ')) {{
-                                return `<li>${{line.trim().substring(2)}}</li>`;
-                            }}
-                            // その他の行は<br>で改行
-                            return line + '<br>';
-                        }})
-                        .join('');
-
-                    // 連続する<li>を<ul>で囲む (簡易Markdown処理)
-                    processedText = processedText.replace(/(<br>)*(<li>.*?<\/li>)+/gs, (match) => {{
-                        let listItems = match.replace(/<br>/g, '');
-                        // ulタグが連続しないように、既に<ul>で囲まれていないか確認
-                        if (!listItems.trim().startsWith('<ul>')) {{
-                            listItems = `<ul>${{listItems.replace(/<\/li>/g, '</li>')}}</ul>`;
-                        }}
-                        return listItems;
-                    }});
+                    // Word文書のデザインを反映したMarkdown整形
+                    page.innerHTML += formatMarkdownContent(aiReportContent[item.id]); 
                     
-                    // 最後に残った<br>を整理
-                    processedText = processedText.replace(/(<br>){{2,}}/g, '<br><br>');
-                    processedText = processedText.replace(/<br>$/, '');
-                    
-                    page.innerHTML += processedText; 
                     pagesContainer.appendChild(page);
                 }});
 
@@ -1029,32 +1061,8 @@ def get_report_web(report_id):
                 return page;
             }}
 
-            // createCriteriaPage 関数は削除
-
-            function createSummaryPage() {{
-                 const page = document.createElement('div');
-                page.id = 'summary';
-                page.className = 'content-page p-4';
-                page.innerHTML = `
-                    <h2 class="text-2xl font-bold text-green-700 mb-6">00. レポート概要</h2>
-                    <div class="text-gray-700 space-y-4">
-                        <p class="font-semibold">レポートの目的:</p>
-                        <p>このレポートは、お客様のスイング動画をAIが骨格レベルで分析し、その計測データに基づいて詳細な診断と改善戦略を提供するものです。左側のメニューから各診断項目を選択して、詳細をご確認ください。</p>
-                        <p class="font-semibold mt-4">診断項目一覧:</p>
-                        <ul class="list-disc ml-6 text-sm text-gray-600">
-                            <li>01. 骨格計測データと評価目安</li>
-                            <li>03. AI総合評価</li>
-                            <li>04. トップオブスイングの課題と改善点</li>
-                            <li>05. ダウンスイングの課題と改善点</li>
-                            <li>06. インパクトとフォロースルーの課題と改善点</li>
-                            <li>07. 練習ドリルとアドバイス</li>
-                            <li>08. フィッティング提案</li>
-                            <li>09. エグゼクティブサマリー</li>
-                        </ul>
-                    </div>
-                `;
-                return page;
-            }}
+            // createSummaryPage 関数は削除（レポート概要の項目が不要になったため）
+            /* function createSummaryPage() {{ ... }} */
 
             function showPage(pageId) {{
                 currentPageId = pageId;
@@ -1115,9 +1123,6 @@ def get_report_web(report_id):
                     }}
                     
                     // 1. 基本データの挿入
-                    // ヘッダーが削除されたため、この処理は不要
-                    // document.getElementById('report-id').textContent = reportId; 
-                    
                     let timestamp = 'N/A';
                     try {{
                         // Firestoreから返された文字列またはオブジェクトをパース
@@ -1131,7 +1136,6 @@ def get_report_web(report_id):
                         console.error("Timestamp parsing failed:", e);
                         timestamp = 'データ処理エラー';
                     }}
-                    // document.getElementById('timestamp').textContent = timestamp;
                     
                     // 2. Markdownコンテンツの取得
                     const markdownText = data.ai_report_text || "";
