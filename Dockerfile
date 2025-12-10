@@ -2,13 +2,16 @@
 # Debian 系のイメージは、FFmpeg やその他のライブラリをインストールしやすい
 FROM python:3.10-slim-buster
 
-# 1. 依存関係のインストール (FFmpeg)
-# FFmpegをインストールするためにapt-getを使用
-RUN apt-get update && apt-get install -y \
+# 1. OS依存関係のインストール (FFmpegとMediaPipeの実行時ライブラリ)
+# apt-get の非対話型フラグをセットし、ビルドを安定させる
+ENV DEBIAN_FRONTEND=noninteractive
+
+# ビルドが失敗する主な原因であるapt-get update/installを安定化
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
     ffmpeg \
-    # MediaPipeの依存関係
     libglib2.0-0 \
-    && rm -rf /var/lib/apt/lists/*
+    && apt-get clean && rm -rf /var/lib/apt/lists/*
 
 # 2. 作業ディレクトリの設定
 WORKDIR /app
