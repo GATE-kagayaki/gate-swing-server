@@ -3,7 +3,7 @@ gunicorn
 requests
 line-bot-sdk
 opencv-python
-mediapipe-tasks
+mediapipe
 numpy
 ffmpeg-python
 google-cloud-aiplatform
