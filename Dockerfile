@@ -5,9 +5,9 @@ FROM python:3.10-slim-bookworm
 # apt-get の非対話型フラグをセット
 ENV DEBIAN_FRONTEND=noninteractive
 
-# ビルド安定化のため、apt-get updateとinstallを分離
-RUN apt-get update
-RUN apt-get install -y --no-install-recommends \
+# ビルド安定化のため、apt-get updateとinstallを単一のRUNレイヤーに統合し、依存関係を確実にインストールする
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
     ffmpeg \
     libglib2.0-0 \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
@@ -16,7 +16,6 @@ RUN apt-get install -y --no-install-recommends \
 WORKDIR /app
 
 # 3. Pythonの依存関係のコピーとインストール
-# requirements.txtは、Flask, google-cloud-tasks, mediapipe などを含んでいるはずです。
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
