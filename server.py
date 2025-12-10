@@ -827,7 +827,7 @@ def get_report_web(report_id):
                 const reportId = '%(report_id)s';
                 document.getElementById('report-id-display').textContent = reportId;
 
-                const api_url = '/api/report_data/' + reportId; // ★ここを修正しました★
+                const api_url = '/api/report_data/' + reportId; 
                 
                 // Firestoreからデータを取得
                 fetch(api_url)
@@ -856,11 +856,16 @@ def get_report_web(report_id):
     """
     
     # Python文字列として report_id を埋め込む
-    return html_template % {'report_id': report_id}, 200
+    # お客様の指示に基づき、%フォーマットから安全なreplace()メソッドに修正
+    return html_template.replace("%(report_id)s", report_id), 200
 
 # ------------------------------------------------
 # Flask実行
 # ------------------------------------------------
+@app.route("/NotificationContent.js")
+def dummy_notification_js():
+    return "", 200
+
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8080))
     app.run(host="0.0.0.0", port=port, debug=True)
