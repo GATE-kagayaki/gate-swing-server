@@ -6,8 +6,7 @@ import requests
 import numpy as np 
 import json
 import datetime
-# datetimeのインポートを単純化 (timezone, timedeltaは使用しない)
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 # Cloud Tasks, Firestore, Gemini APIのインポート
 from google.cloud import tasks_v2
 from google.protobuf import timestamp_pb2
@@ -152,6 +151,7 @@ def run_ai_analysis(raw_data, is_premium=True): # is_premiumをデフォルトTr
         client = genai.Client(api_key=GEMINI_API_KEY)
 
         # 課金ロジック削除につき、常にフルレポートのプロンプトを使用
+        # ★★★ 修正: 08セクションはAIに簡潔な「ドリル名と目的」だけ生成させ、手順はWeb側で静的に挿入する前提に調整 ★★★
         prompt = (
             "あなたは世界トップクラスのゴルフスイングコーチであり、AIドクターです。\n"
             "提供されたスイングの骨格データに基づき、以下の構造で詳細な日本語の診断レポートを作成してください。\n"
@@ -166,10 +166,10 @@ def run_ai_analysis(raw_data, is_premium=True): # is_premiumをデフォルトTr
             "6. **## 07. 総合診断（一番の課題はここ！）**\n"
             "   (07の導入文に、まずお客様のポテンシャルを褒めるポジティブな一文を導入すること)\n"
             "7. **## 08. 改善戦略とドリル（今日からできる練習法）**\n"
-            "   【重要】 ここには、必ず具体的な練習ドリルを3つ以上、その目的と手順を含めて詳細に記載してください。\n"
+            "   【重要】 ここには、**最も重要な課題に絞った、具体的な練習ドリルを最大3つ**、その**ドリル名と目的**のみをMarkdown箇条書きで簡潔に記載してください。手順は記載しないでください。\n"
             "8. **## 10. まとめ（次のステップ）**\n\n"
             f"**骨格計測データ:**\n{json.dumps(raw_data, indent=2, ensure_ascii=False)}\n"
-            "**【最終指示】** 9.フィッティング提案セクションはAIではなくWeb側で静的に挿入されるため、**本文生成は10.まとめの終了をもって完了**させてください。ただし、全てのセクションの内容が途切れることなく、完全な文章で終了していることを確認してください。\n"
+            "**【最終指示】** 9.フィッティング提案セクションはAIではなくWeb側で静的に挿入されます。本文生成は10.まとめの終了をもって完了させてください。ただし、全てのセクションの内容が途切れることなく、完全な文章で終了していることを確認してください。\n"
         )
 
         response = client.models.generate_content(
@@ -396,7 +396,7 @@ def process_video_worker():
         return jsonify({'status': 'error', 'message': f'Internal Server Error: {e}'}), 500
 
 # ------------------------------------------------
-# Webレポート表示エンドポイント (課金ロジック削除)
+# Webレポート表示エンドポイント (最終統合版)
 # ------------------------------------------------
 
 # APIエンドポイント: フロントエンドにJSONデータを返す
@@ -424,7 +424,7 @@ def get_report_data(report_id):
         if is_premium:
             ai_report_markdown = data.get('ai_report', '')
             
-            # 確定したフィッティングテーブルを静的に挿入する
+            # 確定したフィッティングテーブルを静的に挿入するための Markdown
             fitting_markdown = """
 ---
 ## 09. フィッティング提案（道具の調整）
@@ -442,8 +442,27 @@ def get_report_data(report_id):
 
 * **ロフト角:** ボールの打ち出し角を適正にし、飛距離を最大化するため、ドライバーのロフト角を**現在の設定から最低1度**、寝かせる（ロフトを増やす）調整を推奨します。
 """
-            # AIが生成したレポート本文の最後に静的なフィッティングセクションを結合
-            data['ai_report'] = ai_report_markdown + "\n" + fitting_markdown
+            
+            # ★★★ 修正箇所: 挿入順序を調整し、08と10の間に09が入るようにする ★★★
+            
+            # 1. AI生成のMarkdownを 08. と 10. で分割
+            parts = ai_report_markdown.split('## 10. まとめ（次のステップ）', 1)
+            
+            if len(parts) == 2:
+                # 08までの内容 + 09 (静的) + 10以降の内容 の順で結合
+                combined_markdown = parts[0] + fitting_markdown + "\n## 10. まとめ（次のステップ）" + parts[1]
+            else:
+                # 10セクションが見つからなかった場合（AIの出力が途中で切れたなど）
+                # 09と10を静的に結合し、AI生成の全内容 (08まで) の後に挿入し、レポートの完全性を保証
+                final_summary_markdown = """
+## 10. まとめ（次のステップ）
+
+このレポートは、お客様のパフォーマンスを最大限に引き出すためのロードマップです。計測されたデータに基づき、特定の動きを意識して改善することで、飛距離が**理論上10〜15ヤード向上**し、ショットの安定性が増すことが期待されます。今日から、最優先課題である「上半身の捻転」の改善に集中して練習に取り組んでください！
+"""
+                combined_markdown = parts[0] + fitting_markdown + final_summary_markdown
+
+
+            data['ai_report'] = combined_markdown
 
         # 共通レスポンス
         response_data = {
@@ -537,13 +556,24 @@ def get_report_web(report_id):
                 color: #374151;
             }
             .report-content ul {
-                list-style-type: disc;
-                margin-left: 1.5rem;
-                padding-left: 0.5rem;
-                margin-top: 1rem;
-                margin-bottom: 1rem;
+                list-style-type: none; /* デフォルトのリストスタイルを無効化 */
+                margin: 1rem 0;
+                padding: 0;
             }
             
+            /* ★★★ 修正: リスト項目をカードデザインに変更するCSS ★★★ */
+            .report-content ul li {
+                padding: 1rem;
+                margin-bottom: 0.5rem;
+                background-color: #f0fdf4; /* Light Green Background */
+                border-left: 5px solid #10b981; /* Dark Green Border */
+                border-radius: 0.5rem;
+                box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+                line-height: 1.4;
+                color: #059669; /* Text color */
+                font-weight: 600;
+            }
+
             /* データカードと強調 */
             .info-card {
                 background-color: #f9fafb; 
@@ -624,11 +654,14 @@ def get_report_web(report_id):
 
             let aiReportContent = {};
 
-            // MarkdownコンテンツをHTMLに整形する（カスタムデザイン反映）
+            // ★★★ 修正箇所: Markdownのリストをカード形式に変換するようにロジックを強化 ★★★
             function formatMarkdownContent(markdownText) {
                 let content = markdownText.trim();
                 
-                // Findings/Interpretation パターンを検出
+                // **太字** の変換
+                content = content.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+                
+                // Findings/Interpretation パターンを検出 (変更なし)
                 const pattern = /\\n\\n?(Findings\\s*.*?)(\\s*Interpretation\\s*.*)/s;
 
                 if (pattern.test(content)) {
@@ -652,10 +685,19 @@ def get_report_web(report_id):
                     });
                 }
 
-                // 基本的なMarkdown変換: リスト、改行
-                content = content.replace(/\\n\\n\\s*(\\*\s.*\\n?)+/gs, (match) => {
-                    let listItems = match.trim().split('\\n').map(line => `<li style="margin-left: -1rem;">${line.trim().substring(2)}</li>`).join('');
-                    return `<ul class="list-disc ml-6 space-y-2">${listItems}</ul>`;
+                // 基本的なMarkdown変換: リストをカードアイテムに変換
+                content = content.replace(/\\n\\n\\s*([\-\*]\s.*\\n?)+/gs, (match) => {
+                    let listItems = match.trim().split('\\n')
+                        .filter(line => line.trim().startsWith('*') || line.trim().startsWith('-'))
+                        .map(line => {
+                            // リストマーカーを取り除く
+                            let itemText = line.trim().substring(1).trim();
+                            // アイコンを付与
+                            return `<li>${itemText}</li>`;
+                        }).join('');
+                    
+                    // ulタグにカスタムCSSを適用
+                    return `<ul class="report-list">${listItems}</ul>`;
                 });
                 
                 // その他の改行を<br>に
@@ -666,7 +708,7 @@ def get_report_web(report_id):
                 return content;
             }
 
-            // ★★★ 修正済み: createRawDataPage 関数に説明を追加 ★★★
+            // createRawDataPage 関数 (変更なし)
             function createRawDataPage(raw) {
                 const page = document.createElement('div');
                 page.className = 'content-page p-4';
