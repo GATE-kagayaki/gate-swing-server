@@ -212,7 +212,7 @@ def analyze_swing(video_path):
                 if all(l is not None for l in [r_elbow, r_wrist, r_index]):
                     cock_angle = calculate_angle(r_elbow, r_wrist, r_index)
                     if cock_angle > max_wrist_cock:
-                         max_wrist_cock = cock_angle
+                         max_wrist_cock = cock_wrist
 
                 # 計測：最大膝ブレ（スウェイ）
                 mid_knee_x = (r_knee[0] + l_knee[0]) / 2
@@ -535,7 +535,7 @@ def process_video_worker():
             if compressed_video_path and os.path.exists(compressed_video_path): os.remove(compressed_video_path)
 
         
-        # 3. 結果をFirestoreに保存（ステータス: COMPLETED）
+        # 3. 結果をFirestoreに保存（ステータsス: COMPLETED）
         final_data = {
             'status': 'COMPLETED',
             'summary': summary_text,
@@ -575,108 +575,501 @@ def process_video_worker():
 # Webレポート表示エンドポイント
 # ------------------------------------------------
 
+# レポート表示用のAPIエンドポイント
+@app.route("/api/report_data/<report_id>", methods=['GET'])
+def get_report_data(report_id):
+    """WebレポートのフロントエンドにJSONデータを返すAPIエンドポイント"""
+    app.logger.info(f"Report API accessed for ID: {report_id}")
+    
+    if not db:
+        app.logger.error("Firestore DB connection is not initialized.")
+        return jsonify({"error": "データベースが初期化されていません。サーバーログを確認してください。"}), 500
+
+    try:
+        doc = db.collection('reports').document(report_id).get()
+        if not doc.exists:
+            app.logger.warning(f"Report document not found: {report_id}")
+            return jsonify({"error": "指定されたレポートは見つかりませんでした。"}), 404
+        
+        data = doc.to_dict()
+        app.logger.info(f"Successfully retrieved data for report: {report_id}")
+        
+        # Webレポートのフロントエンドが必要なデータを構造化して返す
+        response_data = {
+            "timestamp": data.get('timestamp', {}), 
+            "mediapipe_data": data.get('raw_data', {}),
+            "ai_report_text": data.get('ai_report', 'AIレポートがありません。'),
+            "summary": data.get('summary', '総合評価データなし。'),
+            "status": data.get('status', 'UNKNOWN')
+        }
+        
+        json_output = json.dumps(response_data, ensure_ascii=False, default=str) # datetimeオブジェクトを文字列に変換
+        response = app.response_class(
+            response=json_output,
+            status=200,
+            mimetype='application/json'
+        )
+        return response
+
+    except Exception as e:
+        app.logger.error(f"レポート表示APIエラー: {e}", exc_info=True)
+        return jsonify({"error": f"レポートデータの取得中に予期せぬエラーが発生しました: {e}"}), 500
+
+# WebレポートのHTMLを返すエンドポイント
 @app.route("/report/<report_id>", methods=['GET'])
 def get_report_web(report_id):
     """
-    レポートIDに対応するWebレポートを表示する
+    レポートIDに対応するWebレポートのHTMLテンプレートを返す
     """
-    report_data = get_report_from_firestore(report_id)
+    # 処理中の確認やエラー表示ロジックはブラウザ側のJavaScriptに任せ、ここではHTMLテンプレートを返す
+    
+    # HTMLレポートのコンテンツ（ページングとデザインを含む）
+    # HTML_REPORT_TEMPLATEをPythonコードから分離し、<script>タグでレポートIDを渡します。
+    
+    # HTMLの動的テンプレートを返す
+    html_content = f"""
+    <!DOCTYPE html>
+    <html lang="ja">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>GATE AIスイングドクター診断レポート</title>
+        <script src="https://cdn.tailwindcss.com"></script>
+        <style>
+            /* 印刷時のCSS設定 */
+            @media print {{
+                body {{ padding: 0 !important; margin: 0 !important; font-size: 10pt; }}
+                .no-print {{ display: none !important; }}
+                #sidebar, #header-container {{ display: none !important; }}
+                #main-content {{ margin-left: 0 !important; width: 100% !important; padding: 0 !important; }}
+                .content-page {{ display: block !important; margin-bottom: 20px; page-break-after: always; }}
+            }}
+            
+            /* カスタムCSS */
+            .content-page {{
+                /* ページングをシミュレートするため、非表示がデフォルト */
+                display: none;
+                min-height: calc(100vh - 80px);
+            }}
+            .content-page.active {{
+                display: block;
+            }}
+            .report-content h2 {{
+                font-size: 1.5em; 
+                font-weight: bold;
+                color: #059669; /* Emerald Green */
+                border-bottom: 2px solid #34d399;
+                padding-bottom: 0.25em;
+                margin-top: 1.5em;
+            }}
+            .report-content strong {{
+                color: #10b981;
+            }}
+            .report-content ul {{
+                list-style-type: disc;
+                margin-left: 1.5rem;
+                padding-left: 0.5rem;
+            }}
+            .nav-item {{
+                cursor: pointer;
+                transition: background-color 0.2s;
+                border-left: 4px solid transparent; 
+            }}
+            .nav-item:hover {{
+                background-color: #f0fdf4;
+            }}
+            .nav-item.active {{
+                background-color: #d1fae5;
+                color: #059669;
+                font-weight: bold;
+                border-left: 4px solid #10b981;
+            }}
+        </style>
+    </head>
+    <body class="bg-gray-100 font-sans">
+        
+        <!-- Loading Spinner -->
+        <div id="loading" class="fixed inset-0 bg-white bg-opacity-75 flex flex-col justify-center items-center z-50">
+            <div class="animate-spin rounded-full h-16 w-16 border-t-4 border-b-4 border-green-500"></div>
+            <p class="mt-4 text-xl text-gray-700 font-semibold">AIレポートを読み込み中...</p>
+        </div>
 
-    if not report_data:
-        # レポートが存在しない場合
-        error_html = """
-            <!DOCTYPE html>
-            <html lang="ja">
-            <head>
-                <meta charset="UTF-8">
-                <meta name="viewport" content="width=device-width, initial-scale=1.0">
-                <title>レポートエラー</title>
-                <script src="https://cdn.tailwindcss.com"></script>
-            </head>
-            <body class="bg-gray-100 font-sans flex items-center justify-center min-h-screen">
-                <div class="p-8 bg-white rounded-xl shadow-2xl text-center">
-                    <p class="text-3xl font-bold text-red-600 mb-4">🚨 レポートが見つかりません</p>
-                    <p class="text-gray-700">指定されたID ({}) のレポートは存在しないか、削除されています。</p>
-                    <p class="text-sm text-gray-500 mt-4">レポートID: {}</p>
+        <!-- メインレイアウト -->
+        <div id="report-container" class="flex min-h-screen max-w-full mx-auto" style="display: none;">
+
+            <!-- サイドバー (ナビゲーション) -->
+            <aside id="sidebar" class="w-64 fixed left-0 top-0 h-full bg-white shadow-xl p-4 overflow-y-auto no-print">
+                <h1 class="text-2xl font-bold text-gray-800 border-b pb-2 mb-4">
+                    ⛳ AI診断メニュー
+                </h1>
+                <nav id="nav-menu" class="space-y-1 text-gray-600">
+                    <!-- ナビゲーション項目はJSで動的に挿入されます -->
+                </nav>
+            </aside>
+
+            <!-- メインコンテンツエリア -->
+            <main id="main-content" class="flex-1 transition-all duration-300 ml-64 p-4 md:p-8">
+                
+                <!-- レポートヘッダー -->
+                <div id="header-container" class="bg-white p-4 rounded-lg shadow-md mb-6">
+                    <header class="pb-2 border-b border-green-200">
+                        <h1 class="text-3xl font-bold text-gray-800">
+                            GATE AIスイングドクター診断レポート
+                        </h1>
+                        <p class="text-gray-500 mt-1 text-sm">
+                            最終診断日: <span id="timestamp"></span> | レポートID: <span id="report-id"></span>
+                        </p>
+                    </header>
                 </div>
-            </body>
-            </html>
-        """.format(report_id, report_id)
-        return error_html, 404
+                
+                <!-- ページングされたコンテンツ -->
+                <div id="report-pages" class="bg-white p-6 rounded-lg shadow-md min-h-[70vh] report-content">
+                    <!-- 各診断項目（ページ）がここに動的に挿入されます -->
+                </div>
 
-    status = report_data.get('status')
-    
-    # 【注意】WebレポートのHTMLテンプレートがPythonコードにないため、簡易的な応答を返します
-    
-    if status == 'PROCESSING' or status == 'IN_PROGRESS':
-        # 処理中の場合
-        return f"""
-            <!DOCTYPE html>
-            <html lang="ja">
-            <head>
-                <meta charset="UTF-8">
-                <meta name="viewport" content="width=device-width, initial-scale=1.0">
-                <title>処理中</title>
-                <script src="https://cdn.tailwindcss.com"></script>
-            </head>
-            <body class="bg-gray-100 font-sans flex items-center justify-center min-h-screen">
-                <div class="p-8 bg-white rounded-xl shadow-2xl text-center">
+                <footer class="mt-8 pt-4 border-t border-gray-300 text-center text-sm text-gray-500 no-print">
+                    <p>このレポートはAIによる骨格分析に基づき診断されています。</p>
+                    <button onclick="window.print()" class="mt-4 px-6 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 transition duration-150 shadow-lg">
+                        📄 PDFとして保存 / 印刷
+                    </button>
+                </footer>
+
+            </main>
+        </div>
+
+        <script>
+            // レポートIDをJSに渡す
+            const REPORT_ID = "{report_id}";
+
+            // ナビゲーションメニューの定義 (固定項目)
+            const NAV_ITEMS = [
+                {{ id: 'summary', title: '00. レポート概要' }},
+                {{ id: 'mediapipe', title: '01. 骨格計測データ' }},
+                {{ id: 'criteria', title: '02. データ評価基準' }},
+            ];
+
+            let aiReportContent = {{}};
+            let currentPageId = 'summary';
+
+            function displayFatalError(message, details = null) {{
+                const loadingElement = document.getElementById('loading');
+                loadingElement.classList.remove('hidden');
+                loadingElement.innerHTML = `<div class="p-6 bg-red-100 border-l-4 border-red-500 text-red-700 m-8">
+                    <p class="font-bold">🚨 致命的なエラーが発生しました</p>
+                    <p class="mt-2">${{message}}</p>`;
+                if (details) {{
+                    loadingElement.innerHTML += `<p class="mt-2 text-sm">詳細: ${{details}}</p>`;
+                }}
+                loadingElement.innerHTML += `</div>`;
+                document.getElementById('report-container').style.display = 'none';
+            }}
+            
+            function displayProcessingMessage(reportId) {{
+                const loadingElement = document.getElementById('loading');
+                loadingElement.classList.remove('hidden');
+                loadingElement.innerHTML = `<div class="p-8 bg-white rounded-xl shadow-2xl text-center">
                     <p class="text-3xl font-bold text-yellow-600 mb-4">⏱️ 解析処理中です...</p>
                     <p class="text-gray-700">LINEにプッシュ通知が届くまで、しばらくお待ちください。</p>
-                    <p class="text-sm text-gray-500 mt-4">ステータス: {status}</p>
-                </div>
-            </body>
-            </html>
-        """, 202
+                    <p class="text-sm text-gray-500 mt-4">レポートID: ${{reportId}}</p>
+                </div>`;
+                document.getElementById('report-container').style.display = 'none';
+            }}
 
-    if status == 'COMPLETED':
-        # 完了している場合 (ダミーまたは正式なレポート)
-        summary = report_data.get('summary', 'AI診断が完了しました。')
-        return f"""
-            <!DOCTYPE html>
-            <html lang="ja">
-            <head>
-                <meta charset="UTF-8">
-                <meta name="viewport" content="width=device-width, initial-scale=1.0">
-                <title>レポート完了</title>
-                <script src="https://cdn.tailwindcss.com"></script>
-            </head>
-            <body class="bg-gray-100 font-sans flex items-center justify-center min-h-screen">
-                <div class="p-8 bg-white rounded-xl shadow-2xl text-center">
-                    <p class="text-3xl font-bold text-green-600 mb-4">✅ 解析完了！</p>
-                    <p class="text-gray-700 font-semibold mb-2">総合評価:</p>
-                    <p class="text-gray-700 mb-4">{summary}</p>
-                    <p class="text-gray-500 text-sm">詳細はLINEへの通知をご確認ください。</p>
-                </div>
-            </body>
-            </html>
-        """
+            // Markdownコンテンツを解析し、ページを構築する関数
+            function renderPages(markdownContent, rawData) {{
+                const pagesContainer = document.getElementById('report-pages');
+                const navMenu = document.getElementById('nav-menu');
+                pagesContainer.innerHTML = '';
+                navMenu.innerHTML = '';
+
+                // 1. Markdownコンテンツを分割
+                const sections = markdownContent.split('## ').filter(s => s.trim() !== '');
+                const dynamicNavItems = [];
+                
+                sections.forEach((section, index) => {{
+                    const titleMatch = section.match(/^([^\\n]+)/);
+                    if (titleMatch) {{
+                        const fullTitle = titleMatch[1].trim();
+                        const id = 'ai-sec-' + index;
+                        dynamicNavItems.push({{ id: id, title: fullTitle }});
+                        
+                        // Markdown本文を取得
+                        const content = section.substring(titleMatch[0].length).trim();
+                        aiReportContent[id] = content;
+                    }}
+                }});
+
+                // 2. ナビゲーションメニューを構築
+                const fullNavItems = [...NAV_ITEMS, ...dynamicNavItems];
+                fullNavItems.forEach(item => {{
+                    const navItem = document.createElement('div');
+                    navItem.className = `nav-item p-2 rounded-lg text-sm transition-all duration-150 ${{item.id === currentPageId ? 'active' : ''}}`;
+                    navItem.textContent = item.title;
+                    navItem.dataset.pageId = item.id;
+                    navItem.onclick = () => showPage(item.id);
+                    navMenu.appendChild(navItem);
+                }});
+
+                // 3. 固定ページコンテンツの定義と挿入 (rawDataを使用)
+                pagesContainer.appendChild(createSummaryPage());
+                pagesContainer.appendChild(createRawDataPage(rawData));
+                pagesContainer.appendChild(createCriteriaPage());
+
+                // 4. AI動的ページコンテンツの定義と挿入
+                dynamicNavItems.forEach(item => {{
+                    const page = document.createElement('div');
+                    page.id = item.id;
+                    page.className = 'content-page p-4';
+                    
+                    page.innerHTML += `<h2 class="text-2xl font-bold text-green-700 mb-4">${{item.title}}</h2>`;
+                    
+                    // Markdownの改行とリストをHTMLに変換
+                    let processedText = aiReportContent[item.id]
+                        .split('\\n')
+                        .map(line => {{
+                            // Markdownのリスト項目を<li>に変換
+                            if (line.trim().startsWith('* ')) {{
+                                return `<li>${{line.trim().substring(2)}}</li>`;
+                            }}
+                            // その他の行は<br>で改行
+                            return line + '<br>';
+                        }})
+                        .join('');
+
+                    // 連続する<li>を<ul>で囲む (簡易Markdown処理)
+                    processedText = processedText.replace(/(<br>)*(<li>.*?<\/li>)+/gs, (match) => {{
+                        let listItems = match.replace(/<br>/g, '');
+                        // ulタグが連続しないように、既に<ul>で囲まれていないか確認
+                        if (!listItems.trim().startsWith('<ul>')) {{
+                            listItems = `<ul>${{listItems.replace(/<\/li>/g, '</li>')}}</ul>`;
+                        }}
+                        return listItems;
+                    }});
+                    
+                    // 最後に残った<br>を整理
+                    processedText = processedText.replace(/(<br>){{2,}}/g, '<br><br>');
+                    processedText = processedText.replace(/<br>$/, '');
+                    
+                    page.innerHTML += processedText; 
+                    pagesContainer.appendChild(page);
+                }});
+
+                showPage(currentPageId);
+                document.getElementById('loading').classList.add('hidden');
+                document.getElementById('report-container').style.display = 'flex';
+            }}
+            
+            function createRawDataPage(raw) {{
+                const page = document.createElement('div');
+                page.id = 'mediapipe';
+                page.className = 'content-page p-4';
+                page.innerHTML = `
+                    <h2 class="text-2xl font-bold text-green-700 mb-6">01. 骨格計測データ (MediaPipe)</h2>
+                    <section class="mb-8">
+                        <div class="grid grid-cols-2 md:grid-cols-4 gap-4 text-center">
+                            <div class="p-3 bg-gray-100 rounded-lg">
+                                <p class="text-2xl font-bold text-gray-800">${{raw.frame_count || 'N/A'}}</p>
+                                <p class="text-xs text-gray-500">解析フレーム数</p>
+                            </div>
+                            <div class="p-3 bg-gray-100 rounded-lg">
+                                <p class="text-2xl font-bold text-gray-800">${{raw.max_shoulder_rotation ? raw.max_shoulder_rotation.toFixed(1) + '°' : 'N/A'}}</p>
+                                <p class="text-xs text-gray-500">最大肩回転</p>
+                            </div>
+                            <div class="p-3 bg-gray-100 rounded-lg">
+                                <p class="text-2xl font-bold text-gray-800">${{raw.min_hip_rotation ? raw.min_hip_rotation.toFixed(1) + '°' : 'N/A'}}</p>
+                                <p class="text-xs text-gray-500">最小腰回転</p>
+                            </div>
+                            <div class="p-3 bg-gray-100 rounded-lg">
+                                <p class="text-2xl font-bold text-gray-800">${{raw.max_wrist_cock ? raw.max_wrist_cock.toFixed(1) + '°' : 'N/A'}}</p>
+                                <p class="text-xs text-gray-500">最大コック角</p>
+                            </div>
+                            <div class="p-3 bg-gray-100 rounded-lg col-span-2">
+                                <p class="text-2xl font-bold text-gray-800">${{raw.max_head_drift_x ? raw.max_head_drift_x.toFixed(4) : 'N/A'}}</p>
+                                <p class="text-xs text-gray-500">最大頭ブレ(Sway)</p>
+                            </div>
+                            <div class="p-3 bg-gray-100 rounded-lg col-span-2">
+                                <p class="text-2xl font-bold text-gray-800">${{raw.max_knee_sway_x ? raw.max_knee_sway_x.toFixed(4) : 'N/A'}}</p>
+                                <p class="text-xs text-gray-500">最大膝ブレ(Sway)</p>
+                            </div>
+                        </div>
+                    </section>
+                `;
+                return page;
+            }}
+
+            function createCriteriaPage() {{
+                const page = document.createElement('div');
+                page.id = 'criteria';
+                page.className = 'content-page p-4';
+                page.innerHTML = `
+                    <h2 class="text-2xl font-bold text-green-700 mb-6">02. データ評価基準</h2>
+                    <section class="mb-8">
+                        <div class="space-y-4 text-sm text-gray-600">
+                            <div class="p-3 bg-white border border-gray-200 rounded-lg shadow-sm">
+                                <h3 class="font-bold text-gray-800">最大肩回転 (03. 肩の回旋の基礎)</h3>
+                                <p class="mt-1">
+                                    <span class="font-semibold text-green-700">適正範囲の目安:</span> 70°〜90°程度 (ドライバー)。<br>
+                                    <span class="text-red-600">マイナス値:</span> 目標線に対して肩がオープンになっている（捻転不足）可能性を示します。
+                                </p>
+                            </div>
+                            <div class="p-3 bg-white border border-gray-200 rounded-lg shadow-sm">
+                                <h3 class="font-bold text-gray-800">最小腰回転 (04. 腰の回旋の基礎)</h3>
+                                <p class="mt-1">
+                                    <span class="font-semibold text-green-700">適正範囲の目安:</span> 30°〜50°程度 (インパクト時)。<br>
+                                    <span class="text-red-600">マイナス値:</span> 腰の開きがほとんどないか、目標の逆を向いていることを示唆。回転不足やスウェイ（軸ブレ）の可能性。
+                                </p>
+                            </div>
+                            <div class="p-3 bg-white border border-gray-200 rounded-lg shadow-sm">
+                                <h3 class="font-bold text-gray-800">最大コック角 (05. 手首のメカニクスの基礎)</h3>
+                                <p class="mt-1">
+                                    <span class="font-semibold text-green-700">適正範囲の目安:</span> 90°〜110°程度 (トップスイング)。<br>
+                                    <span class="text-red-600">数値が大きい (160°超) :</span> 手首のタメが不足し、「アーリーリリース」の可能性が高いです。
+                                </p>
+                            </div>
+                            <div class="p-3 bg-white border border-gray-200 rounded-lg shadow-sm">
+                                <h3 class="font-bold text-gray-800">最大膝ブレ(Sway) (06. 下半身安定の基礎)</h3>
+                                <p class="mt-1">
+                                    <span class="font-semibold text-green-700">適正範囲の目安:</span> 最小限 (セットアップ時からのブレが少ない)。<br>
+                                    <span class="text-red-600">数値が大きい:</span> スイング中に下半身が水平方向に大きく移動している（スウェイ/スライド）ことを示します。軸が不安定になり、ミート率の低下やパワーロスにつながります。
+                                </p>
+                            </div>
+                        </div>
+                    </section>
+                `;
+                return page;
+            }}
+            
+            function createSummaryPage() {{
+                 const page = document.createElement('div');
+                page.id = 'summary';
+                page.className = 'content-page p-4';
+                page.innerHTML = `
+                    <h2 class="text-2xl font-bold text-green-700 mb-6">00. レポート概要</h2>
+                    <div class="text-gray-700 space-y-4">
+                        <p class="font-semibold">レポートの目的:</p>
+                        <p>このレポートは、お客様のスイング動画をAIが骨格レベルで分析し、その計測データに基づいて詳細な診断と改善戦略を提供するものです。左側のメニューから各診断項目を選択して、詳細をご確認ください。</p>
+                        <p class="font-semibold mt-4">診断項目一覧:</p>
+                        <ul class="list-disc ml-6 text-sm text-gray-600">
+                            <li>01. 骨格計測データ</li>
+                            <li>02. データ評価基準</li>
+                            <li>03. 肩の回旋</li>
+                            <li>04. 腰の回旋</li>
+                            <li>05. 手首のメカニクス</li>
+                            <li>06. 下半身の安定性</li>
+                            <li>07. 総合診断 (Key Diagnosis)</li>
+                            <li>08. 改善戦略とドリル (Improvement Strategy)</li>
+                            <li>09. フィッティング提案 (Fitting Recommendation)</li>
+                            <li>10. エグゼクティブサマリー (Executive Summary)</li>
+                        </ul>
+                    </div>
+                `;
+                return page;
+            }}
+
+            function showPage(pageId) {{
+                currentPageId = pageId;
+                document.querySelectorAll('.content-page').forEach(page => {{
+                    page.classList.remove('active');
+                }});
+                document.getElementById(pageId).classList.add('active');
+
+                document.querySelectorAll('.nav-item').forEach(item => {{
+                    item.classList.remove('active');
+                    if (item.dataset.pageId === pageId) {{
+                        item.classList.add('active');
+                    }}
+                }});
+                window.scrollTo(0, 0); // ページ切り替え時に最上部へスクロール
+            }}
+
+
+            // メインのデータ取得とレンダリング
+            document.addEventListener('DOMContentLoaded', async () => {{
+                // レポートIDをURLから取得
+                const reportId = window.location.pathname.split('/').pop();
+                if (!reportId) {{
+                    displayFatalError('レポートIDが指定されていません。');
+                    return;
+                }}
+                
+                // 処理中メッセージを表示
+                displayProcessingMessage(reportId);
+
+                try {{
+                    // APIエンドポイントの修正: /api/report_data/<report_id>
+                    const api_url = `${{window.location.origin}}/api/report_data/${{reportId}}`;
+                    const response = await fetch(api_url);
+                    
+                    if (!response.ok) {{
+                        const errorData = await response.json().catch(() => ({{error: `サーバーエラー ${response.status}`}}));
+                        // レポートが見つからない場合は404エラーを表示
+                        if(response.status === 404) {{
+                            displayFatalError("レポートが見つかりませんでした。", `ID: ${{reportId}}`);
+                        }} else {{
+                            throw new Error(`API呼び出しエラー。HTTPステータス: ${{response.status}} (${{response.statusText}})`);
+                        }}
+                        return;
+                    }}
+                    
+                    const data = await response.json();
+                    
+                    if (data.status === 'PROCESSING' || data.status === 'IN_PROGRESS') {{
+                        // 処理中の場合はポーリングまたは手動リロードを推奨 (ここではメッセージを出すのみ)
+                         displayProcessingMessage(reportId);
+                         return;
+                    }}
+                    
+                    if (data.error) {{
+                         displayFatalError("APIがエラーを返しました。", data.error);
+                         return;
+                    }}
+                    
+                    // 1. 基本データの挿入
+                    document.getElementById('report-id').textContent = reportId;
+                    let timestamp = 'N/A';
+                    try {{
+                        // Firestoreから返された文字列またはオブジェクトをパース
+                        const ts = data.timestamp;
+                        if (ts && ts._seconds) {{
+                            timestamp = new Date(ts._seconds * 1000).toLocaleString('ja-JP');
+                        }} else if (ts) {{
+                            timestamp = new Date(ts).toLocaleString('ja-JP');
+                        }}
+                    }} catch (e) {{
+                        console.error("Timestamp parsing failed:", e);
+                        timestamp = 'データ処理エラー';
+                    }}
+                    document.getElementById('timestamp').textContent = timestamp;
+                    
+                    // 2. Markdownコンテンツの取得
+                    const markdownText = data.ai_report || "";
+                    
+                    // 3. ページングレンダリング開始
+                    if (markdownText) {{
+                        try {{
+                            // MarkdownとRawDataをレンダリング
+                            renderPages(markdownText, data.mediapipe_data || {{}});
+
+                        }} catch (e) {{
+                            console.error("Markdown structure parsing failed:", e);
+                             displayFatalError("AIレポートの構造解析中にエラーが発生しました。", e.message);
+                             return;
+                        }}
+                    }} else {{
+                        // AIレポートがない場合も、固定ページは表示する
+                        renderPages("", data.mediapipe_data || {{}});
+                    }}
+
+                }} catch (error) {{
+                    displayFatalError("レポートの初期化中に致命的なエラーが発生しました。", error.message);
+                }}
+            }});
+        </script>
+    </body>
+    </html>
+    """
     
-    if status == 'COMPLETED_DEBUG':
-        # デバッグ完了ステータスの場合 (認証テストの成功)
-        summary = report_data.get('summary', '認証テスト完了。')
-        return f"""
-            <!DOCTYPE html>
-            <html lang="ja">
-            <head>
-                <meta charset="UTF-8">
-                <meta name="viewport" content="width=device-width, initial-scale=1.0">
-                <title>認証テスト完了</title>
-                <script src="https://cdn.tailwindcss.com"></script>
-            </head>
-            <body class="bg-gray-100 font-sans flex items-center justify-center min-h-screen">
-                <div class="p-8 bg-white rounded-xl shadow-2xl text-center">
-                    <p class="text-3xl font-bold text-blue-600 mb-4">🎉 認証テスト成功！</p>
-                    <p class="text-gray-700 font-semibold mb-2">結果:</p>
-                    <p class="text-gray-700 mb-4">Cloud Tasks と Cloud Run のインフラ連携は正常です。</p>
-                    <p class="text-gray-500 text-sm">次の動画送信で、動画解析が実行されます。</p>
-                </div>
-            </body>
-            </html>
-        """
-    
-    # その他の不明なステータス
-    return f"レポート処理エラー: ステータス {status}", 500
+    return html_content, 200
 
 # ------------------------------------------------
 # Flask実行
