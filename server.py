@@ -60,6 +60,7 @@ try:
         initialize_app(cred, {'projectId': GCP_PROJECT_ID})
     db = firestore.client()
 except Exception as e:
+    # 接続失敗時、dbをNoneではなく、エラーメッセージを出力
     print(f"Error initializing Firebase/Firestore: {e}")
 
 try:
@@ -76,6 +77,7 @@ except Exception as e:
 def save_report_to_firestore(user_id, report_id, report_data):
     """診断レポートをFirestoreに保存する"""
     if db is None:
+        # DB接続が失敗している場合は即座にFalseを返す
         print("Firestore client is not initialized. Cannot save report.")
         return False
     try:
@@ -95,11 +97,6 @@ def check_service_eligibility(user_id):
     [MOCK] 課金ロジックが未実装のため、常にサービス利用可能 (is_premium=True) と見なす。
     """
     return True, 'free_preview', "全機能プレビューモードで利用可能です。"
-
-# レポート作成成功時に利用回数を消費する関数 (完全に削除)
-# def consume_service_count(user_id):
-#     """(課金ロジック削除済)"""
-#     return True, "課金ロジックは無効化されています"
 
 # ------------------------------------------------
 # 解析ロジック (analyze_swing) - Mediapipeの計測 (省略)
@@ -199,7 +196,7 @@ def create_cloud_task(report_id, video_url, user_id):
     global task_client, task_queue_path
     
     if task_client is None or task_queue_path is None:
-        print("Cloud Tasks Client/Path is not initialized.")
+        print("Cloud Tasks Client/Path is not initialized. Cannot create task.") # エラーメッセージを明確化
         return None
     if not TASK_SA_EMAIL or not SERVICE_HOST_URL:
         print("TASK_SA_EMAIL or SERVICE_HOST_URL is missing.")
@@ -232,7 +229,7 @@ def create_cloud_task(report_id, video_url, user_id):
         return None
 
 # ------------------------------------------------
-# LINE Bot Webhookハンドラー (契約チェック削除)
+# LINE Bot Webhookハンドラー (応答失敗時のエラー処理を強化)
 # ------------------------------------------------
 
 @app.route("/webhook", methods=['POST'])
@@ -265,36 +262,36 @@ def handle_video_message(event):
         return 'OK'
 
     try:
-        # [削除] サービス利用可否をチェックするロジック
+        # [MOCK] プレビューモード
         is_eligible, plan_type, eligibility_message = True, 'free_preview', "プレビューモード"
         
-        # [削除] if not is_eligible: ... 拒否ロジック
-
-        # 利用可能な場合、初期データとジョブを登録
+        # 1. Firestoreへの初期保存
         initial_data = {
             'status': 'PROCESSING',
             'video_url': f"line_message_id://{message_id}",
             'summary': '動画解析を開始しました。',
-            'plan_type': plan_type # MOCK: プレビューモードとして保存
+            'plan_type': plan_type 
         }
         if not save_report_to_firestore(user_id, report_id, initial_data):
-            error_msg = "システムエラー：データベース接続に失敗しました。"
+            # Firestore保存失敗時
+            error_msg = "システムエラー：データベース接続に失敗しました。管理者にご確認ください。"
             line_bot_api.reply_message(event.reply_token, TextSendMessage(text=error_msg))
             return 'OK'
 
+        # 2. Cloud Tasksへのジョブ投入
         task_name = create_cloud_task(report_id, initial_data['video_url'], user_id)
         
         if not task_name:
-            line_bot_api.reply_message(
-                event.reply_token,
-                TextSendMessage(text="システムエラー：動画解析ジョブの登録に失敗しました。")
-            )
-            return
+            # Cloud Tasks投入失敗時
+            error_msg = "システムエラー：動画解析ジョブの登録に失敗しました。管理者にご確認ください。"
+            line_bot_api.reply_message(event.reply_token, TextSendMessage(text=error_msg))
+            return 'OK' # LINE APIには 'OK' を返す
 
+        # 3. 正常応答
         report_url = f"{SERVICE_HOST_URL}/report/{report_id}"
         reply_message = (
             "✅ 動画を受信しました。解析を開始します！\n"
-            f"（モード: 全機能プレビュー）\n" # 応答メッセージをプレビューモードに変更
+            f"（モード: 全機能プレビュー）\n"
             "AIによるスイング診断には数分かかります。\n"
             f"**[処理状況確認URL]**\n{report_url}\n"
             "【料金プラン】\n・都度契約: 500円/1回\n・回数券: 1,980円/5回券\n・月額契約: 4,980円/月"
@@ -303,6 +300,7 @@ def handle_video_message(event):
 
     except Exception as e:
         print(f"Error in video message handler: {e}")
+        # 最終的なフォールバック
         line_bot_api.reply_message(event.reply_token, TextSendMessage(text=f"動画処理中に予期せぬエラーが発生しました。"))
             
     return 'OK'
@@ -326,7 +324,6 @@ def process_video_worker():
         user_id = task_data.get('user_id')
         message_id = report_id.split('_')[-1]
         
-        # [削除] 契約状態を再チェックするロジック
         is_premium = True # 常に有料版レポートを生成
         plan_type = 'free_preview'
 
@@ -378,8 +375,6 @@ def process_video_worker():
         }
         if save_report_to_firestore(user_id, report_id, final_data):
             
-            # [削除] 回数券の利用回数を消費するロジック (consume_service_count の呼び出し)
-
             # 4. ユーザーに最終通知をLINEで送信
             report_url = f"{SERVICE_HOST_URL}/report/{report_id}"
             final_line_message = (
@@ -391,6 +386,7 @@ def process_video_worker():
 
             return jsonify({'status': 'success', 'report_id': report_id}), 200
         else:
+            # DB保存失敗時も、LINE通知は完了しているはずだが、Worker側でエラーを返す
             return jsonify({'status': 'error', 'message': 'Failed to save final report'}), 500
 
     except Exception as e:
@@ -449,8 +445,6 @@ def get_report_data(report_id):
             # AIが生成したレポート本文の最後に静的なフィッティングセクションを結合
             data['ai_report'] = ai_report_markdown + "\n" + fitting_markdown
 
-        # [削除] else: 無料版レポートの静的構築ロジック
-
         # 共通レスポンス
         response_data = {
             "timestamp": timestamp_str,
@@ -469,7 +463,7 @@ def get_report_data(report_id):
 
 
 # WebレポートのHTMLを返すエンドポイント (★メインURLです★)
-@app.route("/report/<report_id}", methods=['GET'])
+@app.route("/report/<report_id>", methods=['GET'])
 def get_report_web(report_id):
     """
     レポートIDに対応するWebレポートのHTMLテンプレートを返す (シングルスクロールビューに変更)
@@ -828,4 +822,4 @@ def get_report_web(report_id):
     """
     
     # Python文字列として report_id を埋め込む
-    return html_template.replace("%(report_id)s", report_
+    return html_template.replace("%(report_id)s", report_id), 200
