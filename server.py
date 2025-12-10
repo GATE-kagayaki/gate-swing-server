@@ -674,6 +674,267 @@ def get_report_web(report_id):
     レポートIDに対応するWebレポートのHTMLテンプレートを返す
     """
     # HTMLの動的テンプレートを返す
+    # JavaScript関数は単一の文字列としてPythonの変数に格納し、HTMLに埋め込む
+    
+    js_functions = """
+    <script>
+        // Word文書のデザインを反映
+        function formatMarkdownContent(markdownText) {
+            let content = markdownText.trim();
+            
+            // Findings/Interpretation パターンを検出
+            const pattern = /\\n\\n?(Findings\\s*.*?)(\\s*Interpretation\\s*.*)/s;
+
+            if (pattern.test(content)) {
+                content = content.replace(pattern, (match, findings, interpretation) => {
+                    
+                    const findingsText = findings.replace('Findings', '').trim();
+                    const interpretationText = interpretation.replace('Interpretation', '').trim();
+
+                    return `
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 my-6">
+                            <div class="info-card">
+                                <strong>Findings</strong>
+                                <p>${findingsText.replace(/\\n/g, '<br>')}</p>
+                            </div>
+                            <div class="info-card">
+                                <strong>Interpretation</strong>
+                                <p>${interpretationText.replace(/\\n/g, '<br>')}</p>
+                            </div>
+                        </div>
+                    `;
+                });
+            }
+
+            // 基本的なMarkdown変換: リスト、改行
+            content = content.replace(/\\n\\n\\s*(\\*\s.*\\n?)+/gs, (match) => {
+                let listItems = match.trim().split('\\n').map(line => `<li style="margin-left: -1rem;">${line.trim().substring(2)}</li>`).join('');
+                return `<ul class="list-disc ml-6 space-y-2">${listItems}</ul>`;
+            });
+            
+            content = content.replace(/\\n/g, '<br>');
+            content = content.replace(/\\n\\n/g, '<p></p>'); // 連続する改行を段落に
+
+            return content;
+        }
+
+        // Markdownコンテンツを解析し、ページを構築する関数
+        function renderPages(markdownContent, rawData) {
+            const pagesContainer = document.getElementById('report-pages');
+            const navMenu = document.getElementById('nav-menu');
+            pagesContainer.innerHTML = '';
+            navMenu.innerHTML = '';
+
+            // 固定項目定義
+            const NAV_ITEMS = [
+                { id: 'mediapipe', title: '01. 骨格計測データと評価目安' },
+            ];
+
+            // Markdownコンテンツを分割
+            const sections = markdownContent.split('## ').filter(s => s.trim() !== '');
+            const dynamicNavItems = [];
+            
+            sections.forEach((section, index) => {
+                const titleMatch = section.match(/^([^\\n]+)/);
+                if (titleMatch) {
+                    const fullTitle = titleMatch[1].trim();
+                    const id = 'ai-sec-' + fullTitle.split('.')[0].trim(); // IDを02, 03, 04...として取得
+                    dynamicNavItems.push({ id: id, title: fullTitle });
+                    
+                    // Markdown本文を取得
+                    const content = section.substring(titleMatch[0].length).trim();
+                    aiReportContent[id] = content;
+                }
+            });
+
+            // ナビゲーションメニューを構築
+            const fullNavItems = [...NAV_ITEMS, ...dynamicNavItems];
+            let currentPageId = 'mediapipe'; 
+            
+            fullNavItems.forEach(item => {
+                const navItem = document.createElement('div');
+                navItem.className = `nav-item p-2 rounded-lg text-sm transition-all duration-150 ${item.id === currentPageId ? 'active' : ''}`;
+                navItem.textContent = item.title;
+                navItem.dataset.pageId = item.id;
+                navItem.onclick = () => showPage(item.id);
+                navMenu.appendChild(navItem);
+            });
+
+            // 固定ページコンテンツの定義と挿入 (rawDataを使用)
+            pagesContainer.appendChild(createRawDataPage(rawData)); 
+
+            // AI動的ページコンテンツの定義と挿入
+            dynamicNavItems.forEach(item => {
+                const page = document.createElement('div');
+                page.id = item.id;
+                page.className = 'content-page p-4';
+                
+                page.innerHTML += `<h2 class="text-2xl font-bold text-green-700 mb-4">${item.title}</h2>`;
+                
+                // Word文書のデザインを反映したMarkdown整形
+                page.innerHTML += formatMarkdownContent(aiReportContent[item.id]); 
+                
+                pagesContainer.appendChild(page);
+            });
+
+            showPage(currentPageId);
+            document.getElementById('loading').classList.add('hidden');
+            document.getElementById('report-container').style.display = 'flex';
+            
+            // ヘッダー情報の表示をメインコンテンツ内で行う
+            const mainContent = document.getElementById('main-content');
+            const headerInfo = document.createElement('div');
+            headerInfo.className = 'bg-white p-4 rounded-lg shadow-md mb-6 border-t border-gray-300';
+            headerInfo.innerHTML = `
+                <p class="text-2xl font-extrabold text-gray-900 text-center mb-2">SWING ANALYTICS REPORT</p>
+                <hr class="border-gray-300 mb-2">
+                <p class="text-gray-500 mt-1 text-sm text-right no-print">
+                    最終診断日: <span id="timestamp_display"></span> | レポートID: <span id="report-id-display"></span>
+                </p>
+            `;
+            // mainContentの最初の子要素として挿入
+            mainContent.insertBefore(headerInfo, mainContent.firstChild);
+            
+            // 日付とIDの表示を更新
+            const reportId = window.location.pathname.split('/').pop();
+            document.getElementById('report-id-display').textContent = reportId;
+            
+            // APIで取得した日付を反映
+            const api_url = window.location.origin + '/api/report_data/' + reportId;
+            fetch(api_url).then(r => r.json()).then(data => {
+                 let timestamp = 'N/A';
+                 try {
+                    const ts = data.timestamp;
+                    if (ts && ts._seconds) {
+                        timestamp = new Date(ts._seconds * 1000).toLocaleString('ja-JP');
+                    } else if (ts) {
+                        timestamp = new Date(ts).toLocaleString('ja-JP');
+                    }
+                } catch (e) {
+                    timestamp = '日付取得エラー';
+                }
+                document.getElementById('timestamp_display').textContent = timestamp;
+            }).catch(() => {
+                document.getElementById('timestamp_display').textContent = '日付取得失敗';
+            });
+            
+        }
+        
+        function createRawDataPage(raw) {
+            const page = document.createElement('div');
+            page.id = 'mediapipe';
+            page.className = 'content-page p-4';
+            page.innerHTML = `
+                <h2 class="text-2xl font-bold text-green-700 mb-6">01. 骨格計測データと評価目安 (MediaPipe)</h2>
+                <section class="mb-8">
+                    <div class="grid grid-cols-2 md:grid-cols-4 gap-4 text-center">
+                        <div class="p-3 bg-gray-100 rounded-lg">
+                            <p class="text-2xl font-bold text-gray-800">${raw.frame_count || 'N/A'}</p>
+                            <p class="text-xs text-gray-500">解析フレーム数</p>
+                        </div>
+                        <div class="p-3 bg-gray-100 rounded-lg">
+                            <p class="text-2xl font-bold text-gray-800">${raw.max_shoulder_rotation ? raw.max_shoulder_rotation.toFixed(1) + '°' : 'N/A'}</p>
+                            <p class="text-xs text-gray-500">最大肩回転</p>
+                        </div>
+                        <div class="p-3 bg-gray-100 rounded-lg">
+                            <p class="text-2xl font-bold text-gray-800">${raw.min_hip_rotation ? raw.min_hip_rotation.toFixed(1) + '°' : 'N/A'}</p>
+                            <p class="text-xs text-gray-500">最小腰回転</p>
+                        </div>
+                        <div class="p-3 bg-gray-100 rounded-lg">
+                            <p class="text-2xl font-bold text-gray-800">${raw.max_wrist_cock ? raw.max_wrist_cock.toFixed(1) + '°' : 'N/A'}</p>
+                            <p class="text-xs text-gray-500">最大コック角</p>
+                        </div>
+                        <div class="p-3 bg-gray-100 rounded-lg col-span-2">
+                            <p class="text-2xl font-bold text-gray-800">${raw.max_head_drift_x ? raw.max_head_drift_x.toFixed(4) : 'N/A'}</p>
+                            <p class="text-xs text-gray-500">最大頭ブレ(Sway)</p>
+                        </div>
+                        <div class="p-3 bg-gray-100 rounded-lg col-span-2">
+                            <p class="text-2xl font-bold text-gray-800">${raw.max_knee_sway_x ? raw.max_knee_sway_x.toFixed(4) : 'N/A'}</p>
+                            <p class="text-xs text-gray-500">最大膝ブレ(Sway)</p>
+                        </div>
+                    </div>
+                </section>
+                
+                <h3 class="text-xl font-bold text-gray-700 mt-8 mb-4 border-b pb-2">適正範囲の目安</h3>
+                <div class="space-y-3 text-sm text-gray-600">
+                    <div class="p-3 bg-white border border-gray-200 rounded-lg shadow-sm">
+                        <h4 class="font-bold text-gray-800">最大肩回転</h4>
+                        <p class="mt-1">
+                            <span class="font-semibold text-green-700">目安:</span> 70°〜90°程度 (ドライバー)。
+                        </p>
+                    </div>
+                    <div class="p-3 bg-white border border-gray-200 rounded-lg shadow-sm">
+                        <h4 class="font-bold text-gray-800">最小腰回転</h4>
+                        <p class="mt-1">
+                            <span class="font-semibold text-green-700">目安:</span> 30°〜50°程度 (インパクト時)。
+                        </p>
+                    </div>
+                    <div class="p-3 bg-white border border-gray-200 rounded-lg shadow-sm">
+                        <h4 class="font-bold text-gray-800">最大コック角</h4>
+                        <p class="mt-1">
+                            <span class="font-semibold text-green-700">目安:</span> 90°〜110°程度 (トップスイング)。
+                        </p>
+                    </div>
+                    <div class="p-3 bg-white border border-gray-200 rounded-lg shadow-sm">
+                        <h4 class="font-bold text-gray-800">最大膝ブレ(Sway)</h4>
+                        <p class="mt-1">
+                            <span class="font-semibold text-green-700">目安:</span> 最小限 (セットアップ時からのブレが少ない)。
+                        </p>
+                    </div>
+                </div>
+            `;
+            return page;
+        }
+
+        function showPage(pageId) {
+            currentPageId = pageId;
+            document.querySelectorAll('.content-page').forEach(page => {
+                page.classList.remove('active');
+            });
+            document.getElementById(pageId).classList.add('active');
+
+            document.querySelectorAll('.nav-item').forEach(item => {
+                item.classList.remove('active');
+                if (item.dataset.pageId === pageId) {
+                    item.classList.add('active');
+                }
+            });
+            window.scrollTo(0, 0);
+        }
+
+        function main() {
+            const reportId = window.location.pathname.split('/').pop();
+            if (!reportId) {
+                displayFatalError('レポートIDが指定されていません。');
+                return;
+            }
+            
+            displayProcessingMessage(reportId);
+
+            const api_url = window.location.origin + '/api/report_data/' + reportId;
+            fetch(api_url).then(r => r.json()).then(data => {
+                
+                if (data.status === 'PROCESSING' || data.status === 'IN_PROGRESS') {
+                    displayProcessingMessage(reportId);
+                    return;
+                }
+                
+                if (data.error || data.status === 'FATAL_ERROR') {
+                     displayFatalError("レポート処理エラー", data.error || data.summary || `ステータス: ${data.status}`);
+                     return;
+                }
+                
+                renderPages(data.ai_report_text || "", data.mediapipe_data || {});
+
+            }).catch(error => {
+                displayFatalError("レポートの初期化中に致命的なエラーが発生しました。", error.message);
+            });
+        }
+
+        document.addEventListener('DOMContentLoaded', main);
+    </script>
+    """
+    
     html_content = f"""
     <!DOCTYPE html>
     <html lang="ja">
@@ -815,352 +1076,7 @@ def get_report_web(report_id):
 
             </main>
         </div>
-
-        <script>
-            // レポートIDをJSに渡す
-            const REPORT_ID = "{report_id}";
-
-            // ★修正: 00.概要を削除し、01.骨格計測データから開始
-            const NAV_ITEMS = [
-                {{ id: 'mediapipe', title: '01. 骨格計測データと評価目安' }},
-            ];
-
-            let aiReportContent = {{}};
-            let currentPageId = 'mediapipe'; // ★修正: 初期ページを計測データに変更
-
-            function displayFatalError(message, details = null) {{
-                const loadingElement = document.getElementById('loading');
-                loadingElement.classList.remove('hidden');
-                loadingElement.innerHTML = `<div class="p-6 bg-red-100 border-l-4 border-red-500 text-red-700 m-8">
-                    <p class="font-bold">🚨 致命的なエラーが発生しました</p>
-                    <p class="mt-2">${{message}}</p>`;
-                if (details) {{
-                    loadingElement.innerHTML += `<p class="mt-2 text-sm">詳細: ${{details}}</p>`;
-                }}
-                loadingElement.innerHTML += `</div>`;
-                document.getElementById('report-container').style.display = 'none';
-            }}
-            
-            function displayProcessingMessage(reportId) {{
-                const loadingElement = document.getElementById('loading');
-                loadingElement.classList.remove('hidden');
-                loadingElement.innerHTML = `<div class="p-8 bg-white rounded-xl shadow-2xl text-center">
-                    <p class="text-3xl font-bold text-yellow-600 mb-4">⏱️ 解析処理中です...</p>
-                    <p class="text-gray-700">LINEにプッシュ通知が届くまで、しばらくお待ちください。</p>
-                    <p class="text-sm text-gray-500 mt-4">レポートID: ${{reportId}}</p>
-                </div>`;
-                document.getElementById('report-container').style.display = 'none';
-            }}
-
-            // Word文書のデザイン性を反映
-            function formatMarkdownContent(markdownText) {{
-                // 1. **Findings / Interpretation** の構造化を試みる
-                let content = markdownText.trim();
-                
-                // Findings/Interpretation パターンを検出
-                const pattern = /(Findings\s*.*?)(\s*Interpretation\s*.*)/s;
-
-                if (pattern.test(content)) {{
-                    content = content.replace(pattern, (match, findings, interpretation) => {{
-                        
-                        // FindingsとInterpretationのテキストを抽出
-                        const findingsText = findings.replace('Findings', '').trim();
-                        const interpretationText = interpretation.replace('Interpretation', '').trim();
-
-                        return `
-                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                <div class="info-card">
-                                    <strong>Findings</strong>
-                                    <p>${{findingsText.replace(/\\n/g, '<br>')}}</p>
-                                </div>
-                                <div class="info-card">
-                                    <strong>Interpretation</strong>
-                                    <p>${{interpretationText.replace(/\\n/g, '<br>')}}</p>
-                                </div>
-                            </div>
-                        `;
-                    }});
-                }}
-
-                // 2. 基本的なMarkdown変換
-                // リスト項目を<li>タグで囲む（\n\nで囲まれた * リスト）
-                content = content.replace(/\\n\\n\s*(\* .*\\n?)+/gs, (match) => {{
-                    let listItems = match.trim().split('\\n').map(line => `<li>${{line.trim().substring(2)}}</li>`).join('');
-                    return `<ul class="list-disc ml-6">${{listItems}}</ul>`;
-                }});
-                
-                // 段落の改行
-                content = content.replace(/\\n/g, '<br>');
-                
-                return content;
-            }}
-
-
-            // Markdownコンテンツを解析し、ページを構築する関数
-            function renderPages(markdownContent, rawData) {{
-                const pagesContainer = document.getElementById('report-pages');
-                const navMenu = document.getElementById('nav-menu');
-                pagesContainer.innerHTML = '';
-                navMenu.innerHTML = '';
-
-                // 1. Markdownコンテンツを分割
-                const sections = markdownContent.split('## ').filter(s => s.trim() !== '');
-                const dynamicNavItems = [];
-                
-                // 1.5 MarkdownコンテンツがAIレポートの最初の部分から始まることを前提に処理
-                sections.forEach((section, index) => {{
-                    const titleMatch = section.match(/^([^\\n]+)/);
-                    if (titleMatch) {{
-                        const fullTitle = titleMatch[1].trim();
-                        const id = 'ai-sec-' + index;
-                        dynamicNavItems.push({{ id: id, title: fullTitle }});
-                        
-                        // Markdown本文を取得
-                        const content = section.substring(titleMatch[0].length).trim();
-                        aiReportContent[id] = content;
-                    } else {{
-                        // ##見出しがない最初のコンテンツを無視 (AI導入文対策)
-                        console.log("Ignoring initial content outside of ##:", section.substring(0, 50));
-                    }}
-                }});
-
-                // 2. ナビゲーションメニューを構築
-                // ★修正: 00. レポート概要は固定メニューから削除されたため、動的項目のみを処理
-                const fullNavItems = [...NAV_ITEMS, ...dynamicNavItems];
-                fullNavItems.forEach(item => {{
-                    const navItem = document.createElement('div');
-                    navItem.className = `nav-item p-2 rounded-lg text-sm transition-all duration-150 ${{item.id === currentPageId ? 'active' : ''}}`;
-                    navItem.textContent = item.title;
-                    navItem.dataset.pageId = item.id;
-                    navItem.onclick = () => showPage(item.id);
-                    navMenu.appendChild(navItem);
-                }});
-
-                // 3. 固定ページコンテンツの定義と挿入 (rawDataを使用)
-                // ★修正: createSummaryPage()の呼び出しを削除
-                pagesContainer.appendChild(createRawDataPage(rawData)); 
-
-                // 4. AI動的ページコンテンツの定義と挿入
-                dynamicNavItems.forEach(item => {{
-                    const page = document.createElement('div');
-                    page.id = item.id;
-                    page.className = 'content-page p-4';
-                    
-                    page.innerHTML += `<h2 class="text-2xl font-bold text-green-700 mb-4">${{item.title}}</h2>`;
-                    
-                    // Word文書のデザインを反映したMarkdown整形
-                    page.innerHTML += formatMarkdownContent(aiReportContent[item.id]); 
-                    
-                    pagesContainer.appendChild(page);
-                }});
-
-                showPage(currentPageId);
-                document.getElementById('loading').classList.add('hidden');
-                document.getElementById('report-container').style.display = 'flex';
-                
-                // ヘッダー情報の表示をメインコンテンツ内で行う
-                const mainContent = document.getElementById('main-content');
-                const headerInfo = document.createElement('div');
-                headerInfo.className = 'bg-white p-4 rounded-lg shadow-md mb-6 border-t border-gray-300';
-                headerInfo.innerHTML = `
-                    <p class="text-gray-500 mt-1 text-sm text-right no-print">
-                        最終診断日: <span id="timestamp_display"></span> | レポートID: <span id="report-id-display"></span>
-                    </p>
-                `;
-                // mainContentの最初の子要素として挿入
-                mainContent.insertBefore(headerInfo, mainContent.firstChild);
-                
-                // 日付とIDの表示を更新
-                const reportId = window.location.pathname.split('/').pop();
-                document.getElementById('report-id-display').textContent = reportId;
-                
-                // APIで取得した日付を反映
-                const api_url = `${{window.location.origin}}/api/report_data/${{reportId}}`;
-                fetch(api_url).then(r => r.json()).then(data => {{
-                     let timestamp = 'N/A';
-                     try {{
-                        const ts = data.timestamp;
-                        if (ts && ts._seconds) {{
-                            timestamp = new Date(ts._seconds * 1000).toLocaleString('ja-JP');
-                        }} else if (ts) {{
-                            timestamp = new Date(ts).toLocaleString('ja-JP');
-                        }}
-                    }} catch (e) {{
-                        timestamp = '日付取得エラー';
-                    }}
-                    document.getElementById('timestamp_display').textContent = timestamp;
-                }}).catch(() => {{
-                    document.getElementById('timestamp_display').textContent = '日付取得失敗';
-                }});
-                
-            }}
-            
-            function createRawDataPage(raw) {{
-                const page = document.createElement('div');
-                page.id = 'mediapipe';
-                page.className = 'content-page p-4';
-                page.innerHTML = `
-                    <h2 class="text-2xl font-bold text-green-700 mb-6">01. 骨格計測データと評価目安 (MediaPipe)</h2>
-                    <section class="mb-8">
-                        <div class="grid grid-cols-2 md:grid-cols-4 gap-4 text-center">
-                            <div class="p-3 bg-gray-100 rounded-lg">
-                                <p class="text-2xl font-bold text-gray-800">${{raw.frame_count || 'N/A'}}</p>
-                                <p class="text-xs text-gray-500">解析フレーム数</p>
-                            </div>
-                            <div class="p-3 bg-gray-100 rounded-lg">
-                                <p class="text-2xl font-bold text-gray-800">${{raw.max_shoulder_rotation ? raw.max_shoulder_rotation.toFixed(1) + '°' : 'N/A'}}</p>
-                                <p class="text-xs text-gray-500">最大肩回転</p>
-                            </div>
-                            <div class="p-3 bg-gray-100 rounded-lg">
-                                <p class="text-2xl font-bold text-gray-800">${{raw.min_hip_rotation ? raw.min_hip_rotation.toFixed(1) + '°' : 'N/A'}}</p>
-                                <p class="text-xs text-gray-500">最小腰回転</p>
-                            </div>
-                            <div class="p-3 bg-gray-100 rounded-lg">
-                                <p class="text-2xl font-bold text-gray-800">${{raw.max_wrist_cock ? raw.max_wrist_cock.toFixed(1) + '°' : 'N/A'}}</p>
-                                <p class="text-xs text-gray-500">最大コック角</p>
-                            </div>
-                            <div class="p-3 bg-gray-100 rounded-lg col-span-2">
-                                <p class="text-2xl font-bold text-gray-800">${{raw.max_head_drift_x ? raw.max_head_drift_x.toFixed(4) : 'N/A'}}</p>
-                                <p class="text-xs text-gray-500">最大頭ブレ(Sway)</p>
-                            </div>
-                            <div class="p-3 bg-gray-100 rounded-lg col-span-2">
-                                <p class="text-2xl font-bold text-gray-800">${{raw.max_knee_sway_x ? raw.max_knee_sway_x.toFixed(4) : 'N/A'}}</p>
-                                <p class="text-xs text-gray-500">最大膝ブレ(Sway)</p>
-                            </div>
-                        </div>
-                    </section>
-                    
-                    <h3 class="text-xl font-bold text-gray-700 mt-8 mb-4 border-b pb-2">適正範囲の目安</h3>
-                    <div class="space-y-3 text-sm text-gray-600">
-                        <div class="p-3 bg-white border border-gray-200 rounded-lg shadow-sm">
-                            <h4 class="font-bold text-gray-800">最大肩回転</h4>
-                            <p class="mt-1">
-                                <span class="font-semibold text-green-700">目安:</span> 70°〜90°程度 (ドライバー)。
-                            </p>
-                        </div>
-                        <div class="p-3 bg-white border border-gray-200 rounded-lg shadow-sm">
-                            <h4 class="font-bold text-gray-800">最小腰回転</h4>
-                            <p class="mt-1">
-                                <span class="font-semibold text-green-700">目安:</span> 30°〜50°程度 (インパクト時)。
-                            </p>
-                        </div>
-                        <div class="p-3 bg-white border border-gray-200 rounded-lg shadow-sm">
-                            <h4 class="font-bold text-gray-800">最大コック角</h4>
-                            <p class="mt-1">
-                                <span class="font-semibold text-green-700">目安:</span> 90°〜110°程度 (トップスイング)。
-                            </p>
-                        </div>
-                        <div class="p-3 bg-white border border-gray-200 rounded-lg shadow-sm">
-                            <h4 class="font-bold text-gray-800">最大膝ブレ(Sway)</h4>
-                            <p class="mt-1">
-                                <span class="font-semibold text-green-700">目安:</span> 最小限 (セットアップ時からのブレが少ない)。
-                            </p>
-                        </div>
-                    </div>
-                `;
-                return page;
-            }}
-
-            // createSummaryPage 関数は削除（レポート概要の項目が不要になったため）
-            /* function createSummaryPage() {{ ... }} */
-
-            function showPage(pageId) {{
-                currentPageId = pageId;
-                document.querySelectorAll('.content-page').forEach(page => {{
-                    page.classList.remove('active');
-                }});
-                document.getElementById(pageId).classList.add('active');
-
-                document.querySelectorAll('.nav-item').forEach(item => {{
-                    item.classList.remove('active');
-                    if (item.dataset.pageId === pageId) {{
-                        item.classList.add('active');
-                    }}
-                }});
-                window.scrollTo(0, 0); // ページ切り替え時に最上部へスクロール
-            }}
-
-
-            // メインのデータ取得とレンダリング
-            document.addEventListener('DOMContentLoaded', async () => {{
-                // レポートIDをURLから取得
-                const reportId = window.location.pathname.split('/').pop();
-                if (!reportId) {{
-                    displayFatalError('レポートIDが指定されていません。');
-                    return;
-                }}
-                
-                // 処理中メッセージを表示
-                displayProcessingMessage(reportId);
-
-                try {{
-                    // APIエンドポイントの修正: /api/report_data/<report_id>
-                    const api_url = `${{window.location.origin}}/api/report_data/${{reportId}}`;
-                    const response = await fetch(api_url);
-                    
-                    if (!response.ok) {{
-                        const errorData = await response.json().catch(() => ({{error: `サーバーエラー ${{response.status}}`}}));
-                        // レポートが見つからない場合は404エラーを表示
-                        if(response.status === 404) {{
-                            displayFatalError("レポートが見つかりませんでした。", `ID: ${{reportId}}`);
-                        }} else {{
-                            throw new Error(`API呼び出しエラー。HTTPステータス: ${{response.status}} (${{response.statusText}})`);
-                        }}
-                        return;
-                    }}
-                    
-                    const data = await response.json();
-                    
-                    if (data.status === 'PROCESSING' || data.status === 'IN_PROGRESS') {{
-                        // 処理中の場合はポーリングまたは手動リロードを推奨 (ここではメッセージを出すのみ)
-                         displayProcessingMessage(reportId);
-                         return;
-                    }}
-                    
-                    if (data.error) {{
-                         displayFatalError("APIがエラーを返しました。", data.error);
-                         return;
-                    }}
-                    
-                    // 1. 基本データの挿入
-                    let timestamp = 'N/A';
-                    try {{
-                        // Firestoreから返された文字列またはオブジェクトをパース
-                        const ts = data.timestamp;
-                        if (ts && ts._seconds) {{
-                            timestamp = new Date(ts._seconds * 1000).toLocaleString('ja-JP');
-                        }} else if (ts) {{
-                            timestamp = new Date(ts).toLocaleString('ja-JP');
-                        }}
-                    }} catch (e) {{
-                        console.error("Timestamp parsing failed:", e);
-                        timestamp = 'データ処理エラー';
-                    }}
-                    
-                    // 2. Markdownコンテンツの取得
-                    const markdownText = data.ai_report_text || "";
-                    
-                    // 3. ページングレンダリング開始
-                    if (markdownText) {{
-                        try {{
-                            // MarkdownとRawDataをレンダリング
-                            renderPages(markdownText, data.mediapipe_data || {{}});
-
-                        }} catch (e) {{
-                            console.error("Markdown structure parsing failed:", e);
-                             displayFatalError("AIレポートの構造解析中にエラーが発生しました。", e.message);
-                             return;
-                        }}
-                    }} else {{
-                        // AIレポートがない場合も、固定ページは表示する
-                        renderPages("", data.mediapipe_data || {{}});
-                    }}
-
-                }} catch (error) {{
-                    displayFatalError("レポートの初期化中に致命的なエラーが発生しました。", error.message);
-                }}
-            }});
-        </script>
+        """ + js_functions + """
     </body>
     </html>
     """
