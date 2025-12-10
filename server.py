@@ -674,8 +674,10 @@ def get_report_web(report_id):
     レポートIDに対応するWebレポートのHTMLテンプレートを返す
     """
     # HTMLの動的テンプレートを返す
-    # JavaScript関数は単一の文字列としてPythonの変数に格納し、HTMLに埋め込む
     
+    # ------------------------------------------------
+    # JavaScript関数群をPython文字列として定義 (構文エラー回避のため)
+    # ------------------------------------------------
     js_functions = """
     <script>
         // Word文書のデザインを反映
@@ -712,8 +714,10 @@ def get_report_web(report_id):
                 return `<ul class="list-disc ml-6 space-y-2">${listItems}</ul>`;
             });
             
+            // その他の改行を<br>に
             content = content.replace(/\\n/g, '<br>');
-            content = content.replace(/\\n\\n/g, '<p></p>'); // 連続する改行を段落に
+            // 連続する改行を段落に
+            content = content.replace(/\\n\\n/g, '<p></p>'); 
 
             return content;
         }
