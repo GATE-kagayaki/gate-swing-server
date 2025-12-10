@@ -108,181 +108,36 @@ def get_report_from_firestore(report_id):
         return None
 
 # ------------------------------------------------
-# 解析ロジック (analyze_swing) - 必須計測項目を全て実装
+# 解析ロジック (analyze_swing) - 【デバッグ用にダミー化】
 # ------------------------------------------------
 def analyze_swing(video_path):
-    # 動画を解析し、スイングの評価レポート（テキスト）を返す。
-    # この関数は、process_task内から呼び出されます。
-    import cv2
-    import mediapipe as mp
-    import numpy as np
-
-    # 角度計算ヘルパー関数
-    def calculate_angle(p1, p2, p3):
-        p1 = np.array(p1)
-        p2 = np.array(p2)
-        p3 = np.array(p3)
-        v1 = p1 - p2
-        v2 = p3 - p2
-        cosine_angle = np.dot(v1, v2) / (np.linalg.norm(v1) * np.linalg.norm(v2))
-        angle = np.arccos(np.clip(cosine_angle, -1.0, 1.0))
-        return np.degrees(angle)
-    
-    mp_pose = mp.solutions.pose
-    
-    # 計測変数初期化
-    max_shoulder_rotation = -180
-    min_hip_rotation = 180
-    head_start_x = None 
-    max_head_drift_x = 0 
-    max_wrist_cock = 0  
-    knee_start_x = None
-    max_knee_sway_x = 0
-    
-    cap = cv2.VideoCapture(video_path)
-    if not cap.isOpened():
-        return {"error": "動画ファイルを開けませんでした。"}
-
-    frame_count = 0
-    
-    with mp_pose.Pose(
-        min_detection_confidence=0.5,
-        min_tracking_confidence=0.5) as pose:
-
-        while cap.isOpened():
-            success, image = cap.read()
-            if not success:
-                break
-            
-            image.flags.writeable = False
-            image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-            results = pose.process(image)
-            image.flags.writeable = True
-
-            frame_count += 1
-            
-            if results.pose_landmarks:
-                landmarks = results.pose_landmarks.landmark
-                
-                # 必須ランドマークの定義
-                RIGHT_HIP = mp_pose.PoseLandmark.RIGHT_HIP.value
-                RIGHT_SHOULDER = mp_pose.PoseLandmark.RIGHT_SHOULDER.value
-                RIGHT_EAR = mp_pose.PoseLandmark.RIGHT_EAR.value
-                LEFT_HIP = mp_pose.PoseLandmark.LEFT_HIP.value
-                NOSE = mp_pose.PoseLandmark.NOSE.value
-                RIGHT_WRIST = mp_pose.PoseLandmark.RIGHT_WRIST.value
-                RIGHT_ELBOW = mp_pose.PoseLandmark.RIGHT_ELBOW.value
-                RIGHT_INDEX = mp_pose.PoseLandmark.RIGHT_INDEX.value
-                LEFT_KNEE = mp_pose.PoseLandmark.LEFT_KNEE.value
-                RIGHT_KNEE = mp_pose.PoseLandmark.RIGHT_KNEE.value
-
-                # 座標抽出
-                r_shoulder = [landmarks[RIGHT_SHOULDER].x, landmarks[RIGHT_SHOULDER].y]
-                r_ear = [landmarks[RIGHT_EAR].x, landmarks[RIGHT_EAR].y]
-                l_hip = [landmarks[LEFT_HIP].x, landmarks[LEFT_HIP].y]
-                r_hip = [landmarks[RIGHT_HIP].x, landmarks[RIGHT_HIP].y]
-                nose = [landmarks[NOSE].x, landmarks[NOSE].y]
-                r_wrist = [landmarks[RIGHT_WRIST].x, landmarks[RIGHT_WRIST].y]
-                r_elbow = [landmarks[RIGHT_ELBOW].x, landmarks[RIGHT_ELBOW].y]
-                r_index = [landmarks[RIGHT_INDEX].x, landmarks[RIGHT_INDEX].y]
-                r_knee = [landmarks[RIGHT_KNEE].x, landmarks[RIGHT_KNEE].y]
-                l_knee = [landmarks[LEFT_KNEE].x, landmarks[LEFT_KNEE].y]
-
-
-                # 計測：最大肩回転
-                shoulder_line_angle = np.degrees(np.arctan2(r_ear[1] - r_shoulder[1], r_ear[0] - r_shoulder[0]))
-                if shoulder_line_angle > max_shoulder_rotation:
-                    max_shoulder_rotation = shoulder_line_angle
-
-                # 計測：最小腰回転
-                hip_axis_x = l_hip[0] - r_hip[0]
-                hip_axis_y = l_hip[1] - r_hip[1]
-                current_hip_rotation = np.degrees(np.arctan2(hip_axis_y, hip_axis_x))
-                if current_hip_rotation < min_hip_rotation:
-                    min_hip_rotation = current_hip_rotation
-                
-                # 計測：頭の安定性
-                if head_start_x is None:
-                    head_start_x = nose[0]
-                current_drift_x = abs(nose[0] - head_start_x)
-                if current_drift_x > max_head_drift_x:
-                    max_head_drift_x = current_drift_x
-                    
-                # 計測：手首のコック角
-                if all(l is not None for l in [r_elbow, r_wrist, r_index]):
-                    cock_angle = calculate_angle(r_elbow, r_wrist, r_index)
-                    if cock_angle > max_wrist_cock:
-                         max_wrist_cock = cock_angle
-
-                # 計測：最大膝ブレ（スウェイ）
-                mid_knee_x = (r_knee[0] + l_knee[0]) / 2
-                if knee_start_x is None:
-                    knee_start_x = mid_knee_x
-                current_knee_sway = abs(mid_knee_x - knee_start_x)
-                if current_knee_sway > max_knee_sway_x:
-                    max_knee_sway_x = current_knee_sway
-                
-    cap.release()
-    
-    # 全ての計測結果を辞書で返す
+    # デバッグ用にダミーデータを返す
+    app.logger.info("DEBUG: analyze_swing (ダミー) を実行しました。動画処理はスキップされます。")
     return {
-        "frame_count": frame_count,
-        "max_shoulder_rotation": max_shoulder_rotation,
-        "min_hip_rotation": min_hip_rotation,
-        "max_head_drift_x": max_head_drift_x,
-        "max_wrist_cock": max_wrist_cock,
-        "max_knee_sway_x": max_knee_sway_x 
+        "frame_count": 1,
+        "max_shoulder_rotation": 90.0,
+        "min_hip_rotation": 35.0,
+        "max_head_drift_x": 0.015,
+        "max_wrist_cock": 95.0,
+        "max_knee_sway_x": 0.02
     }
 
 # ------------------------------------------------
-# Gemini API 呼び出し関数 (有料会員向け詳細レポート)
+# Gemini API 呼び出し関数 (有料会員向け詳細レポート) - 【デバッグ用にダミー化】
 # ------------------------------------------------
 def run_ai_analysis(raw_data): 
     """MediaPipeの数値結果をGemini APIに渡し、理想の10項目を網羅した詳細レポートを生成させる"""
     
-    if not GEMINI_API_KEY:
-        app.logger.error("GEMINI_API_KEY is not set.")
-        return "## 03. AI総合評価\nAI診断レポートの生成に必要なAPIキーが設定されていません。", "AI診断が実行できませんでした。"
-        
-    try:
-        # Geminiクライアントの初期化
-        client = genai.Client(api_key=GEMINI_API_KEY)
+    app.logger.info("DEBUG: run_ai_analysis (ダミー) を実行しました。AI処理はスキップされます。")
 
-        # プロンプトの構築
-        prompt = (
-            "あなたは世界トップクラスのゴルフスイングコーチであり、AIドクターです。\n"
-            "提供されたスイングの骨格データ（MediaPipeによる数値）に基づき、以下の構造で詳細な日本語の診断レポートを作成してください。\n"
-            "数値データは、プロの基準値（例: 最大肩回転90°〜110°、最小腰回転30°〜45°など）と対比させて論じてください。\n\n"
-            "**レポートの構造:**\n"
-            "1. 総合評価の要約（簡潔に、褒める言葉から始めること）\n"
-            "2. **## 03. AI総合評価**\n"
-            "3. **## 04. バックスイングの課題と改善点**\n"
-            "4. **## 05. トップオブスイングの課題と改善点**\n"
-            "5. **## 06. ダウンスイングの課題と改善点**\n"
-            "6. **## 07. インパクトとフォロースルーの課題と改善点**\n"
-            "7. **## 08. 練習ドリルとアドバイス**\n\n"
-            "各セクションの内容は、Markdownの箇条書き（* を使用）を豊富に使い、具体的な数値を引用して説明してください。\n\n"
-            "**骨格計測データ:**\n"
-            f"{json.dumps(raw_data, indent=2, ensure_ascii=False)}\n"
-        )
-
-        # Gemini APIの呼び出し
-        response = client.models.generate_content(
-            model='gemini-2.5-flash',
-            contents=prompt
-        )
-
-        full_report = response.text
-        
-        # 総合評価の要約を抽出（最初の数行）
-        summary_match = full_report.split('## 03.')[0].strip()
-        summary = summary_match if summary_match else "AIによる総合評価の抽出に失敗しましたが、詳細はレポート本文をご確認ください。"
-
-        return full_report, summary
-
-    except Exception as e:
-        app.logger.error(f"Gemini API call failed: {e}")
-        return "## 03. AI総合評価\nAI診断レポートの生成中にエラーが発生しました。", "AI診断が実行できませんでした。"
+    # デバッグ用にダミーのレポートテキストを返す
+    dummy_report = (
+        "## 03. AI総合評価\n"
+        "認証とインフラ連携のテストが正常に完了しました。このレポートはダミーです。\n"
+        "* 成功: Cloud Tasks認証、Firestore保存、LINEプッシュ通知の全行程が正常でした。\n"
+        "* 次のステップ: Workerクラッシュの原因であるFFmpeg/MediaPipeの実行環境を修正します。\n"
+    )
+    return dummy_report, "認証テスト完了"
 
 # ------------------------------------------------
 # Cloud Tasksへジョブを投入する関数
@@ -428,15 +283,16 @@ def handle_video_message(event):
             db.collection('reports').document(report_id).update({'status': 'TASK_FAILED', 'summary': 'タスク登録失敗'})
             return
 
-        # 3. ユーザーに即時応答
+        # 3. ユーザーに即時応答 (URL表示を維持)
         report_url = f"{SERVICE_HOST_URL}/report/{report_id}"
         
         reply_message = (
             "✅ 動画を受信しました。解析を開始します！\n"
             "AIによるスイング診断には数分かかります。\n"
             "結果は準備でき次第、改めてメッセージでお知らせします。\n\n"
-            f"**[処理状況確認URL]**\n{report_url}\n"
-            "（LINEのタイムアウトを防ぐため、このURLで進捗を確認できます）\n\n"
+            f"**[処理状況確認URL]**\n{report_url}"
+            # URLを維持しつつ、ユーザーが「不要」と言ったのでコメントアウト
+            # "\n（LINEのタイムアウトを防ぐため、このURLで進捗を確認できます）\n\n"
             "【料金プラン】\n・都度契約: 500円/1回\n・回数券: 1,980円/5回券 (実質1回あたり396円)\n・月額契約: 4,980円/無制限"
         )
         line_bot_api.reply_message(
@@ -485,73 +341,31 @@ def process_video_worker():
             db.collection('reports').document(report_id).update({'status': 'IN_PROGRESS', 'summary': '動画解析を実行中です...'})
 
         # 1. LINEから動画コンテンツを再取得 (Workerの処理本体)
-        video_content = None
-        try:
-            # LINEからコンテンツを直接取得
-            message_content = line_bot_api.get_message_content(message_id)
-            video_content = message_content.content
-        except Exception as e:
-            app.logger.error(f"LINE Content API error for message ID {message_id}: {e}", exc_info=True)
-            db.collection('reports').document(report_id).update({'status': 'LINE_FETCH_FAILED', 'summary': 'LINEからの動画取得に失敗しました。時間をおいて再実行されます。'})
-            # Cloud Tasksにリトライを依頼するため、HTTP 500を返す
-            return jsonify({'status': 'error', 'message': 'Failed to fetch video content from LINE'}), 500
+        # ※ デバッグのため、動画コンテンツの取得処理はスキップします。
 
         # 2. 動画の解析とAI診断の実行
-        original_video_path = None
-        compressed_video_path = None
-        analysis_data = {}
+        # 【重要】FFmpeg/MediaPipeの実行時クラッシュを防ぐため、処理をダミー化
         
-        try:
-            # 2.1 オリジナル動画を一時ファイルに保存
-            with tempfile.NamedTemporaryFile(suffix="_original.mp4", delete=False) as tmp_file:
-                original_video_path = tmp_file.name
-                tmp_file.write(video_content)
-
-            # 2.2 動画の自動圧縮とリサイズ処理
-            compressed_video_path = tempfile.NamedTemporaryFile(suffix="_compressed.mp4", delete=False).name
-            FFMPEG_PATH = '/usr/bin/ffmpeg' if os.path.exists('/usr/bin/ffmpeg') else 'ffmpeg'
-            
-            ffmpeg.input(original_video_path).output(
-                compressed_video_path, vf='scale=640:-1', crf=28, vcodec='libx264'
-            ).overwrite_output().run(cmd=FFMPEG_PATH, capture_stdout=True, capture_stderr=True) 
-
-            # 2.3 MediaPipe解析を実行
-            analysis_data = analyze_swing(compressed_video_path)
-            
-            # 2.4 AIによる診断レポートの生成
-            ai_report_markdown, summary_text = run_ai_analysis(analysis_data)
-            
-        except Exception as e:
-            app.logger.error(f"MediaPipe/FFmpeg/AI processing failed: {e}", exc_info=True)
-            # 解析失敗時も、タスクがリトライしないように200を返し、Firestoreでエラーを通知
-            if db:
-                 db.collection('reports').document(report_id).update({'status': 'ANALYSIS_FAILED', 'summary': f'動画解析処理中に予期せぬエラーが発生しました: {str(e)[:100]}...'})
-            line_bot_api.push_message(user_id, TextSendMessage(text=f"【解析エラー】動画解析が失敗しました。全身が写っているかご確認ください。"))
-            return jsonify({'status': 'error', 'message': 'Analysis failed'}), 200 # 200を返すことでタスクのリトライを停止
+        raw_data = analyze_swing(None) # ダミーデータを取得
+        ai_report_markdown, summary_text = run_ai_analysis(raw_data) # ダミーレポートを生成
         
-        finally:
-            # 一時ファイルのクリーンアップ
-            if original_video_path and os.path.exists(original_video_path): os.remove(original_video_path)
-            if compressed_video_path and os.path.exists(compressed_video_path): os.remove(compressed_video_path)
-
-        
-        # 3. 結果をFirestoreに保存（ステータス: COMPLETED）
+        # 3. 結果をFirestoreに保存（ステータス: COMPLETED_DEBUG）
         final_data = {
-            'status': 'COMPLETED',
+            'status': 'COMPLETED_DEBUG', # デバッグ完了ステータス
             'summary': summary_text,
             'ai_report': ai_report_markdown,
-            'raw_data': analysis_data,
+            'raw_data': raw_data,
         }
         if save_report_to_firestore(user_id, report_id, final_data):
-            app.logger.info(f"Report {report_id} saved as COMPLETED.")
+            app.logger.info(f"DEBUG: Auth Test Report {report_id} saved as COMPLETED_DEBUG.")
 
             # 4. ユーザーに最終通知をLINEで送信
             report_url = f"{SERVICE_HOST_URL}/report/{report_id}"
             final_line_message = (
-                "🎉 AIスイング診断が完了しました！\n\n"
-                f"**[診断レポートURL]**\n{report_url}\n\n"
-                f"**[総合評価]**\n{summary_text}\n"
-                "詳細なレポートはURLからご確認ください。次の練習にお役立てください！"
+                "🎉 認証テスト成功 (DEBUG)！\n\n"
+                "Cloud Tasks と Cloud Run の認証が正常に機能しました。\n"
+                f"**[デバッグレポートURL]**\n{report_url}\n"
+                "※ 今後のステップ: Workerクラッシュの原因であるFFmpeg/MediaPipeの実行環境を修正します。"
             )
             line_bot_api.push_message(
                 to=user_id,
@@ -561,14 +375,14 @@ def process_video_worker():
             return jsonify({'status': 'success', 'report_id': report_id}), 200
         else:
             # Firestore保存失敗時
-            return jsonify({'status': 'error', 'message': 'Failed to save final report to Firestore'}), 500
+            return jsonify({'status': 'error', 'message': 'DEBUG: Failed to save final report to Firestore'}), 500
 
     except Exception as e:
         app.logger.error(f"Worker processing failed for task: {report_id}. Error: {e}")
         # Firestoreのステータスを更新 (処理失敗)
         if db:
-             db.collection('reports').document(report_id).update({'status': 'FATAL_ERROR', 'summary': f'致命的なエラーが発生しました: {str(e)[:100]}...'})
-        # Cloud Tasksにリトライを依頼するため、HTTP 500を返す (LINE通知は既に処理済みのため、ここでは不要)
+             db.collection('reports').document(report_id).update({'status': 'FATAL_ERROR_DEBUG', 'summary': f'致命的な認証エラーが発生しました: {str(e)[:100]}...'})
+        # 認証テスト失敗時は、Cloud Tasksにリトライを依頼するため、HTTP 500を返す
         return jsonify({'status': 'error', 'message': f'Internal Server Error: {e}'}), 500
 
 # ------------------------------------------------
