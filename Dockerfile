@@ -1,14 +1,13 @@
-# FFmpegとPythonの依存関係を持つベースイメージを使用
-# Debian 系のイメージは、FFmpeg やその他のライブラリをインストールしやすい
-FROM python:3.10-slim-buster
+# FFmpegとPythonの依存関係を持つ、より安定したベースイメージ (Bookworm) を使用
+FROM python:3.10-slim-bookworm
 
 # 1. OS依存関係のインストール (FFmpegとMediaPipeの実行時ライブラリ)
-# apt-get の非対話型フラグをセットし、ビルドを安定させる
+# apt-get の非対話型フラグをセット
 ENV DEBIAN_FRONTEND=noninteractive
 
-# ビルドが失敗する主な原因であるapt-get update/installを安定化
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends \
+# ビルド安定化のため、apt-get updateとinstallを分離
+RUN apt-get update
+RUN apt-get install -y --no-install-recommends \
     ffmpeg \
     libglib2.0-0 \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
