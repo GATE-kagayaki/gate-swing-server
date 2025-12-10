@@ -141,7 +141,7 @@ def analyze_swing(video_path):
     knee_start_x = None
     max_knee_sway_x = 0
     
-    # ★修正: ファイルの存在確認を強化
+    # ファイルの存在確認を強化
     if not os.path.exists(video_path):
         app.logger.error(f"動画ファイルパスエラー: {video_path} が見つかりません。")
         return {"error": f"動画ファイルが見つかりません: {os.path.basename(video_path)}"}
@@ -220,7 +220,7 @@ def analyze_swing(video_path):
                 if all(l is not None for l in [r_elbow, r_wrist, r_index]):
                     cock_angle = calculate_angle(r_elbow, r_wrist, r_index)
                     if cock_angle > max_wrist_cock:
-                         max_wrist_cock = cock_angle # ★修正: cock_angle を代入
+                         max_wrist_cock = cock_angle # cock_angle を代入
 
                 # 計測：最大膝ブレ（スウェイ）
                 mid_knee_x = (r_knee[0] + l_knee[0]) / 2
@@ -283,8 +283,11 @@ def run_ai_analysis(raw_data):
         full_report = response.text
         
         # 総合評価の要約を抽出（最初の数行）
-        summary_match = full_report.split('## 03.')[0].strip()
+        summary_match = full_report.split('## 03.')[0].trim() # ★修正: trim()を削除して改行で分割
+        
+        summary_match = full_report.split('\n')[0].strip() # 最初の行をサマリーとして抽出
         summary = summary_match if summary_match else "AIによる総合評価の抽出に失敗しましたが、詳細はレポート本文をご確認ください。"
+
 
         return full_report, summary
 
@@ -338,7 +341,7 @@ def create_cloud_task(report_id, video_url, user_id):
             'headers': {'Content-Type': 'application/json'},
             # OIDC認証トークンを使用して認証を行う
             'oidc_token': {
-                'service_account_email': TASK_SA_EMAIL, 
+                'service_account_email': TASK_SA_ACCOUNT, 
             },
         }
     }
@@ -550,8 +553,8 @@ def process_video_worker():
             if db:
                  db.collection('reports').document(report_id).update({'status': 'ANALYSIS_FAILED', 'summary': f'動画解析処理中にエラーが発生しました。詳細: {error_details[:100]}...'})
             
-            # ★修正: LINEへの通知にエラー詳細を追記 (デバッグ用)
-            line_bot_api.push_message(user_id, TextSendMessage(text=f"【解析エラー】動画解析が失敗しました。全身が写っているかご確認ください。エラー詳細: {error_details[:50]}..."))
+            # ★修正: LINEへの通知はエラー詳細を削除し、シンプルに
+            line_bot_api.push_message(user_id, TextSendMessage(text=f"【解析エラー】動画解析が失敗しました。全身が写っているかご確認ください。"))
             return jsonify({'status': 'error', 'message': 'Analysis failed'}), 200 
         
         finally:
@@ -657,9 +660,6 @@ def get_report_web(report_id):
     """
     レポートIDに対応するWebレポートのHTMLテンプレートを返す
     """
-    # 処理中の確認やエラー表示ロジックはブラウザ側のJavaScriptに任せ、ここではHTMLテンプレートを返す
-    
-    # HTMLレポートのコンテンツ（ページングとデザインを含む）
     # HTMLの動的テンプレートを返す
     html_content = f"""
     <!DOCTYPE html>
