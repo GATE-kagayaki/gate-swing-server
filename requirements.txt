@@ -2,7 +2,7 @@ flask
 gunicorn
 requests
 line-bot-sdk
-opencv-python
+opencv-python-headless
 mediapipe
 numpy
 ffmpeg-python
