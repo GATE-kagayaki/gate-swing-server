@@ -6,7 +6,8 @@ import requests
 import numpy as np 
 import json
 import datetime
-from datetime import datetime, timezone, timedelta
+# datetimeのインポートを単純化 (timezone, timedeltaは使用しない)
+from datetime import datetime
 # Cloud Tasks, Firestore, Gemini APIのインポート
 from google.cloud import tasks_v2
 from google.protobuf import timestamp_pb2
@@ -69,7 +70,7 @@ except Exception as e:
     print(f"Cloud Tasks Client initialization failed: {e}")
 
 # ------------------------------------------------
-# ★★★ Firestore連携関数 (プラン管理ロジック) ★★★
+# ★★★ Firestore連携関数 (課金ロジック削除) ★★★
 # ------------------------------------------------
 
 def save_report_to_firestore(user_id, report_id, report_data):
@@ -88,86 +89,17 @@ def save_report_to_firestore(user_id, report_id, report_data):
         print(f"Error saving report to Firestore: {e}")
         return False
 
-# ユーザーのサービス利用可否を判定する関数
+# ユーザーのサービス利用可否を判定する関数 (削除し、ダミーで常にTrueを返す)
 def check_service_eligibility(user_id):
     """
-    ユーザーの契約状態をチェックし、サービス利用が可能かどうかを判定する。
-    都度/回数券/月額プランに対応。
-    返り値: (利用可能フラグ: bool, プランタイプ: str, メッセージ: str)
+    [MOCK] 課金ロジックが未実装のため、常にサービス利用可能 (is_premium=True) と見なす。
     """
-    if db is None:
-        return False, 'error', "システムエラー：データベース接続が確立されていません。"
-        
-    try:
-        user_doc = db.collection('users').document(user_id).get()
-        if not user_doc.exists:
-            # ユーザー情報がない場合 (初期状態) は無料版と見なす
-            return True, 'free', "無料ユーザーとして利用可能です。"
-        
-        user_data = user_doc.to_dict()
-        plan_type = user_data.get('plan_type', 'free')
-        
-        if plan_type == 'monthly':
-            # 月額プランのチェック
-            end_date = user_data.get('contract_end_date')
-            # FirestoreのTimestampオブジェクトをdatetimeオブジェクトに変換してから比較
-            if end_date and end_date.replace(tzinfo=timezone.utc) > datetime.now(timezone.utc):
-                return True, 'premium_monthly', "月額プレミアムプランで利用可能です。"
-            else:
-                return False, 'monthly_expired', "月額プランの有効期限が切れています。"
+    return True, 'free_preview', "全機能プレビューモードで利用可能です。"
 
-        elif plan_type in ['ticket', 'single']:
-            # 回数券/都度購入プランのチェック
-            remaining_count = user_data.get('remaining_count', 0)
-            if remaining_count > 0:
-                # plan_typeを統一的に扱うため 'premium_count' を返す
-                return True, 'premium_count', f"回数券プランで利用可能です。残り回数: {remaining_count}回"
-            else:
-                return False, 'count_zero', "回数券の残り回数がありません。"
-        
-        elif plan_type == 'free':
-            # 明示的な無料ユーザー
-            return True, 'free', "無料ユーザーとして利用可能です。"
-
-        return False, 'unknown', "契約状態が不明です。プランをご確認ください。"
-        
-    except Exception as e:
-        print(f"Error checking eligibility for {user_id}: {e}")
-        # エラー時は安全側を見て利用不可と見なす
-        return False, 'error', f"契約状態のチェック中にエラーが発生しました: {e}"
-
-# レポート作成成功時に利用回数を消費する関数
-def consume_service_count(user_id):
-    """回数券または都度プランの場合に残り回数を1つ減らす"""
-    if db is None:
-        return False, "データベース未接続"
-    
-    try:
-        user_ref = db.collection('users').document(user_id)
-        user_doc = user_ref.get()
-        
-        if not user_doc.exists:
-            return False, "ユーザーデータなし"
-
-        user_data = user_doc.to_dict()
-        plan_type = user_data.get('plan_type', 'free')
-        
-        # 回数券または都度購入プランの場合のみ消費
-        if plan_type in ['ticket', 'single']:
-            remaining_count = user_data.get('remaining_count', 0)
-            if remaining_count > 0:
-                # FirestoreのIncrementを使って安全に回数を減らす
-                user_ref.update({'remaining_count': firestore.Increment(-1)})
-                return True, f"残り回数を1回消費しました。新残数: {remaining_count - 1}回"
-            else:
-                return False, "残り回数がゼロのため消費できませんでした"
-        
-        # 月額または無料プランの場合は回数を消費しない
-        return True, "月額/無料プランのため回数消費なし"
-
-    except Exception as e:
-        print(f"Error consuming count for {user_id}: {e}")
-        return False, f"利用回数の消費中に致命的なエラーが発生しました: {e}"
+# レポート作成成功時に利用回数を消費する関数 (完全に削除)
+# def consume_service_count(user_id):
+#     """(課金ロジック削除済)"""
+#     return True, "課金ロジックは無効化されています"
 
 # ------------------------------------------------
 # 解析ロジック (analyze_swing) - Mediapipeの計測 (省略)
@@ -213,7 +145,7 @@ def analyze_swing(video_path):
 # ------------------------------------------------
 # Gemini API 呼び出し関数 (プロンプト安定化)
 # ------------------------------------------------
-def run_ai_analysis(raw_data, is_premium):
+def run_ai_analysis(raw_data, is_premium=True): # is_premiumをデフォルトTrueに設定
     """Mediapipeの数値結果をGemini APIに渡し、詳細レポートを生成させる"""
     
     if not GEMINI_API_KEY:
@@ -222,30 +154,26 @@ def run_ai_analysis(raw_data, is_premium):
     try:
         client = genai.Client(api_key=GEMINI_API_KEY)
 
-        if is_premium:
-            # 契約ユーザー向けの完全版レポートプロンプト
-            # ★★★ 修正: 応答の完了を強く指示する文言をプロンプト末尾に追加 ★★★
-            prompt = (
-                "あなたは世界トップクラスのゴルフスイングコーチであり、AIドクターです。\n"
-                "提供されたスイングの骨格データに基づき、以下の構造で詳細な日本語の診断レポートを作成してください。\n"
-                "**指示:** 専門的な用語（捻転、アーリーリリースなど）は使用しつつも、その直後や括弧内で平易な言葉で説明し、読みやすさと専門性のバランスを取ってください。\n"
-                "**注意:** 最小腰回転が-179.9度など極端な異常値を示しているため、データ異常の可能性を指摘しつつ、他のデータに基づいて診断を進めてください。\n\n"
-                "**レポートの構造:**\n"
-                "1. **## 02. データ評価基準（プロとの違い）**\n"
-                "2. **## 03. 肩の回旋（上半身のねじり）**\n"
-                "3. **## 04. 腰の回旋（下半身の動き）**\n"
-                "4. **## 05. 手首のメカニクス（クラブを操る技術）**\n"
-                "5. **## 06. 下半身の安定性（軸のブレ）**\n"
-                "6. **## 07. 総合診断（一番の課題はここ！）**\n"
-                "   (07の導入文に、まずお客様のポテンシャルを褒めるポジティブな一文を導入すること)\n"
-                "7. **## 08. 改善戦略とドリル（今日からできる練習法）**\n"
-                "   【重要】 ここには、必ず具体的な練習ドリルを3つ以上、その目的と手順を含めて詳細に記載してください。\n"
-                "8. **## 10. まとめ（次のステップ）**\n\n"
-                f"**骨格計測データ:**\n{json.dumps(raw_data, indent=2, ensure_ascii=False)}\n"
-                "**【最終指示】** 9.フィッティング提案セクションはAIではなくWeb側で静的に挿入されるため、**本文生成は10.まとめの終了をもって完了**させてください。ただし、全てのセクションの内容が途切れることなく、完全な文章で終了していることを確認してください。\n"
-            )
-        else:
-            return "無料ユーザーのため、AIレポート本文はWebサーバー側で静的に生成されました。", "無料診断サマリー"
+        # 課金ロジック削除につき、常にフルレポートのプロンプトを使用
+        prompt = (
+            "あなたは世界トップクラスのゴルフスイングコーチであり、AIドクターです。\n"
+            "提供されたスイングの骨格データに基づき、以下の構造で詳細な日本語の診断レポートを作成してください。\n"
+            "**指示:** 専門的な用語（捻転、アーリーリリースなど）は使用しつつも、その直後や括弧内で平易な言葉で説明し、読みやすさと専門性のバランスを取ってください。\n"
+            "**注意:** 最小腰回転が-179.9度など極端な異常値を示しているため、データ異常の可能性を指摘しつつ、他のデータに基づいて診断を進めてください。\n\n"
+            "**レポートの構造:**\n"
+            "1. **## 02. データ評価基準（プロとの違い）**\n"
+            "2. **## 03. 肩の回旋（上半身のねじり）**\n"
+            "3. **## 04. 腰の回旋（下半身の動き）**\n"
+            "4. **## 05. 手首のメカニクス（クラブを操る技術）**\n"
+            "5. **## 06. 下半身の安定性（軸のブレ）**\n"
+            "6. **## 07. 総合診断（一番の課題はここ！）**\n"
+            "   (07の導入文に、まずお客様のポテンシャルを褒めるポジティブな一文を導入すること)\n"
+            "7. **## 08. 改善戦略とドリル（今日からできる練習法）**\n"
+            "   【重要】 ここには、必ず具体的な練習ドリルを3つ以上、その目的と手順を含めて詳細に記載してください。\n"
+            "8. **## 10. まとめ（次のステップ）**\n\n"
+            f"**骨格計測データ:**\n{json.dumps(raw_data, indent=2, ensure_ascii=False)}\n"
+            "**【最終指示】** 9.フィッティング提案セクションはAIではなくWeb側で静的に挿入されるため、**本文生成は10.まとめの終了をもって完了**させてください。ただし、全てのセクションの内容が途切れることなく、完全な文章で終了していることを確認してください。\n"
+        )
 
         response = client.models.generate_content(
             model='gemini-2.5-flash',
@@ -253,7 +181,7 @@ def run_ai_analysis(raw_data, is_premium):
         )
 
         full_report = response.text
-        summary = "肩回転不足とデータ異常が確認されました。詳細はレポートをご確認ください。"
+        summary = "AIによる診断レポートが生成されました。"
         
         return full_report, summary
 
@@ -304,7 +232,7 @@ def create_cloud_task(report_id, video_url, user_id):
         return None
 
 # ------------------------------------------------
-# LINE Bot Webhookハンドラー (契約チェック追加)
+# LINE Bot Webhookハンドラー (契約チェック削除)
 # ------------------------------------------------
 
 @app.route("/webhook", methods=['POST'])
@@ -337,23 +265,17 @@ def handle_video_message(event):
         return 'OK'
 
     try:
-        # サービス利用可否をチェック
-        is_eligible, plan_type, eligibility_message = check_service_eligibility(user_id)
+        # [削除] サービス利用可否をチェックするロジック
+        is_eligible, plan_type, eligibility_message = True, 'free_preview', "プレビューモード"
         
-        if not is_eligible:
-            # サービス利用不可の場合、理由をLINEで通知し、処理を中止
-            line_bot_api.reply_message(
-                event.reply_token,
-                TextSendMessage(text=f"【サービス利用不可】\n{eligibility_message}\n\nプランを更新するか、残りの利用回数をご確認ください。")
-            )
-            return 'OK'
+        # [削除] if not is_eligible: ... 拒否ロジック
 
         # 利用可能な場合、初期データとジョブを登録
         initial_data = {
             'status': 'PROCESSING',
             'video_url': f"line_message_id://{message_id}",
             'summary': '動画解析を開始しました。',
-            'plan_type': plan_type # レポート配信時の判定用に保存
+            'plan_type': plan_type # MOCK: プレビューモードとして保存
         }
         if not save_report_to_firestore(user_id, report_id, initial_data):
             error_msg = "システムエラー：データベース接続に失敗しました。"
@@ -372,7 +294,7 @@ def handle_video_message(event):
         report_url = f"{SERVICE_HOST_URL}/report/{report_id}"
         reply_message = (
             "✅ 動画を受信しました。解析を開始します！\n"
-            f"（プラン: {plan_type.upper().replace('PREMIUM_', '').replace('COUNT', '回数券')}）\n"
+            f"（モード: 全機能プレビュー）\n" # 応答メッセージをプレビューモードに変更
             "AIによるスイング診断には数分かかります。\n"
             f"**[処理状況確認URL]**\n{report_url}\n"
             "【料金プラン】\n・都度契約: 500円/1回\n・回数券: 1,980円/5回券\n・月額契約: 4,980円/月"
@@ -404,11 +326,9 @@ def process_video_worker():
         user_id = task_data.get('user_id')
         message_id = report_id.split('_')[-1]
         
-        # 契約状態を再チェックし、AIレポートのタイプを決定
-        is_eligible, plan_type, _ = check_service_eligibility(user_id)
-        
-        # is_premium: 無料ユーザー以外はTrue
-        is_premium = is_eligible and plan_type != 'free'
+        # [削除] 契約状態を再チェックするロジック
+        is_premium = True # 常に有料版レポートを生成
+        plan_type = 'free_preview'
 
         # 0. Firestoreのステータスを「IN_PROGRESS」に更新
         if db:
@@ -454,17 +374,11 @@ def process_video_worker():
             'summary': summary_text,
             'ai_report': ai_report_markdown,
             'raw_data': analysis_data,
-            'is_premium': is_premium # レポート表示の最終確認用
+            'is_premium': True # 常にTrueを保存
         }
         if save_report_to_firestore(user_id, report_id, final_data):
             
-            # 3.1 NEW: 回数券の利用回数を消費する
-            # plan_type == 'premium_count' は ticket/single の総称
-            if plan_type == 'premium_count': 
-                 success, msg = consume_service_count(user_id)
-                 print(f"回数消費ロジック実行: {msg}")
-                 if not success:
-                     pass 
+            # [削除] 回数券の利用回数を消費するロジック (consume_service_count の呼び出し)
 
             # 4. ユーザーに最終通知をLINEで送信
             report_url = f"{SERVICE_HOST_URL}/report/{report_id}"
@@ -486,7 +400,7 @@ def process_video_worker():
         return jsonify({'status': 'error', 'message': f'Internal Server Error: {e}'}), 500
 
 # ------------------------------------------------
-# Webレポート表示エンドポイント (最終統合版)
+# Webレポート表示エンドポイント (課金ロジック削除)
 # ------------------------------------------------
 
 # APIエンドポイント: フロントエンドにJSONデータを返す
@@ -506,10 +420,11 @@ def get_report_data(report_id):
         timestamp_str = str(timestamp_data)
         
         user_id = data.get('user_id')
-        is_eligible, plan_type, _ = check_service_eligibility(user_id)
-        is_premium = is_eligible and plan_type != 'free'
+        
+        # [削除] 課金判定ロジック
+        is_premium = True 
 
-        # Markdownを切り替えるためのロジック
+        # Markdownを切り替えるためのロジック -> 常にフルレポートを返す
         if is_premium:
             ai_report_markdown = data.get('ai_report', '')
             
@@ -534,46 +449,8 @@ def get_report_data(report_id):
             # AIが生成したレポート本文の最後に静的なフィッティングセクションを結合
             data['ai_report'] = ai_report_markdown + "\n" + fitting_markdown
 
-        # ... (無料版レポートの静的構築ロジックは変更なし) ...
-        else:
-            raw_data = data.get('raw_data', {})
-            
-            # 静的Markdownの構築 (無料レポートの内容)
-            free_markdown = f"""
-# GATE AIスイングドクター
+        # [削除] else: 無料版レポートの静的構築ロジック
 
-# 無料診断レポート
-
-プレーヤーID：{user_id[:8]}... | 分析日：{datetime.now(timezone(timedelta(hours=+9))).strftime('%Y年%m月%d日')}
-
-## 02. 総合診断（無料版）
-
-### ✨ お客様のポテンシャル
-
-計測データによると、お客様は下半身の横方向へのブレが少なく、**スイング軸の安定性**には高いポテンシャルがあります。この安定性が、今後の改善の土台となります。
-
-### 🌟 最も優先すべき課題
-
-AIの分析では、お客様の**「極度の肩の捻転不足」**が、飛距離と安定性を妨げる最大のボトルネックであると特定されました。（計測値 **`{raw_data.get("max_shoulder_rotation", "N/A")}°`**）。
-
-**この捻転不足を改善しない限り、あなたのスイングが持つ潜在的なパワーは引き出されません。**
-
----
-
-### 🔓 さらに詳しい診断と改善戦略はこちら
-
-現在の無料レポートでは、具体的な改善ドリル、最適なクラブフィッティングの推奨、および詳細な診断根拠（03〜06のセクション）は省略されています。
-
-**有料版**にアップグレードしていただくことで、以下の情報を含む**全10セクションの完全レポート**が即座に閲覧可能になります。
-
-* ✅ **今日からできる具体的な練習ドリル**
-
-* ✅ **スイング課題を解決する推奨クラブスペック（フレックス、重量など）**
-
-* ✅ **各計測項目（手首、腰、安定性）の詳細な診断根拠**
-"""
-            data['ai_report'] = free_markdown 
-        
         # 共通レスポンス
         response_data = {
             "timestamp": timestamp_str,
@@ -581,7 +458,7 @@ AIの分析では、お客様の**「極度の肩の捻転不足」**が、飛�
             "ai_report_text": data.get('ai_report', 'AIレポートがありません。'),
             "summary": data.get('summary', '総合評価データなし。'),
             "status": data.get('status', 'UNKNOWN'),
-            "is_premium": is_premium # クライアントに契約状態を伝える
+            "is_premium": True # 常にTrueを返す
         }
         
         return jsonify(response_data)
@@ -592,7 +469,7 @@ AIの分析では、お客様の**「極度の肩の捻転不足」**が、飛�
 
 
 # WebレポートのHTMLを返すエンドポイント (★メインURLです★)
-@app.route("/report/<report_id>", methods=['GET'])
+@app.route("/report/<report_id}", methods=['GET'])
 def get_report_web(report_id):
     """
     レポートIDに対応するWebレポートのHTMLテンプレートを返す (シングルスクロールビューに変更)
@@ -951,4 +828,4 @@ def get_report_web(report_id):
     """
     
     # Python文字列として report_id を埋め込む
-    return html_template.replace("%(report_id)s", report_id), 200
+    return html_template.replace("%(report_id)s", report_
