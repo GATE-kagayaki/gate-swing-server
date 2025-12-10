@@ -262,13 +262,14 @@ def run_ai_analysis(raw_data):
             "提供されたスイングの骨格データ（MediaPipeによる数値）に基づき、以下の構造で詳細な日本語の診断レポートを作成してください。\n"
             "数値データは、プロの基準値（例: 最大肩回転90°〜110°、最小腰回転30°〜45°など）と対比させて論じてください。\n\n"
             "**レポートの構造:**\n"
-            "1. 総合評価の要約（簡潔に、褒める言葉から始めること）\n"
-            "2. **## 03. AI総合評価**\n"
-            "3. **## 04. バックスイングの課題と改善点**\n"
-            "4. **## 05. トップオブスイングの課題と改善点**\n"
-            "5. **## 06. ダウンスイングの課題と改善点**\n"
-            "6. **## 07. インパクトとフォロースルーの課題と改善点**\n"
-            "7. **## 08. 練習ドリルとアドバイス**\n\n"
+            "**レポートの導入文（褒め言葉や挨拶の段落）は一切生成しないでください。** レポート本文は以下の**Markdown見出し**から直接始めてください。\n"
+            "1. **## 03. AI総合評価**\n"
+            "2. **## 04. トップオブスイングの課題と改善点**\n" # 項目番号を繰り上げ
+            "3. **## 05. ダウンスイングの課題と改善点**\n" # 項目番号を繰り上げ
+            "4. **## 06. インパクトとフォロースルーの課題と改善点**\n" # 項目番号を繰り上げ
+            "5. **## 07. 練習ドリルとアドバイス**\n" # 項目番号を繰り上げ
+            "6. **## 08. フィッティング提案**\n" # 項目番号を繰り上げ (これが今回の目的の項目)
+            "7. **## 09. エグゼクティブサマリー**\n\n" # 項目番号を繰り上げ
             "各セクションの内容は、Markdownの箇条書き（* を使用）を豊富に使い、具体的な数値を引用して説明してください。\n\n"
             "**骨格計測データ:**\n"
             f"{json.dumps(raw_data, indent=2, ensure_ascii=False)}\n"
@@ -282,10 +283,19 @@ def run_ai_analysis(raw_data):
 
         full_report = response.text
         
-        # 総合評価の要約を抽出（最初の数行）
-        
-        summary_match = full_report.split('\n')[0].strip() # 最初の行をサマリーとして抽出
-        summary = summary_match if summary_match else "AIによる総合評価の抽出に失敗しましたが、詳細はレポート本文をご確認ください。"
+        # 総合評価のサマリーをAIレポート本文の最初の見出し(## 03.)の最初の段落から抽出
+        try:
+            # ## 03. のセクションを探す
+            section_03_start = full_report.find('## 03. AI総合評価')
+            if section_03_start == -1:
+                summary = full_report.split('\n\n')[0].strip()
+            else:
+                content_after_header = full_report[section_03_start:].strip()
+                content_after_header = content_after_header.split('\n', 1)[1].strip()
+                summary = content_after_header.split('\n\n')[0].strip()
+
+        except Exception:
+            summary = "AIによる総合評価の抽出に失敗しましたが、詳細はレポート本文をご確認ください。"
 
 
         return full_report, summary
@@ -552,7 +562,7 @@ def process_video_worker():
             if db:
                  db.collection('reports').document(report_id).update({'status': 'ANALYSIS_FAILED', 'summary': f'動画解析処理中にエラーが発生しました。詳細: {error_details[:100]}...'})
             
-            # ★修正: LINEへの通知はエラー詳細を削除し、シンプルに
+            # LINEへの通知はエラー詳細を削除し、シンプルに
             line_bot_api.push_message(user_id, TextSendMessage(text=f"【解析エラー】動画解析が失敗しました。全身が写っているかご確認ください。"))
             return jsonify({'status': 'error', 'message': 'Analysis failed'}), 200 
         
@@ -683,30 +693,50 @@ def get_report_web(report_id):
                 /* ページングをシミュレートするため、非表示がデフォルト */
                 display: none;
                 min-height: calc(100vh - 80px);
+                padding: 1.5rem; /* パディングを追加 */
             }}
             .content-page.active {{
                 display: block;
             }}
+            /* ヘッダーとコンテンツのメリハリを強化 */
             .report-content h2 {{
-                font-size: 1.5em; 
-                font-weight: bold;
-                color: #059669; /* Emerald Green */
-                border-bottom: 2px solid #34d399;
-                padding-bottom: 0.25em;
+                font-size: 1.8em; /* フォントサイズを拡大 */
+                font-weight: 800; /* 極太に */
+                color: #10b981; /* Tailwind Emerald-600 */
+                border-bottom: 4px solid #34d399; /* 強い下線 */
+                padding-bottom: 0.5em;
+                margin-top: 2.5em;
+                margin-bottom: 1em;
+            }}
+            .report-content h3 {{
+                font-size: 1.25em; 
+                font-weight: 700;
+                color: #1f2937; /* Gray-800 */
+                border-left: 4px solid #99f6e4;
+                padding-left: 0.5em;
                 margin-top: 1.5em;
             }}
             .report-content strong {{
-                color: #10b981;
+                color: #059669; /* Emerald-600 */
+                font-weight: 700;
             }}
             .report-content ul {{
                 list-style-type: disc;
                 margin-left: 1.5rem;
                 padding-left: 0.5rem;
+                margin-top: 1rem;
+                margin-bottom: 1rem;
             }}
+            .report-content p {{
+                margin-bottom: 1em;
+                line-height: 1.6;
+            }}
+            /* ナビゲーションのCSSは変更なし */
             .nav-item {{
                 cursor: pointer;
                 transition: background-color 0.2s;
                 border-left: 4px solid transparent; 
+                padding: 0.75rem 0.5rem; /* クリックしやすいように調整 */
             }}
             .nav-item:hover {{
                 background-color: #f0fdf4;
@@ -743,16 +773,11 @@ def get_report_web(report_id):
             <!-- メインコンテンツエリア -->
             <main id="main-content" class="flex-1 transition-all duration-300 ml-64 p-4 md:p-8">
                 
-                <!-- レポートヘッダー -->
-                <div id="header-container" class="bg-white p-4 rounded-lg shadow-md mb-6">
-                    <header class="pb-2 border-b border-green-200">
-                        <h1 class="text-3xl font-bold text-gray-800">
-                            GATE AIスイングドクター診断レポート
-                        </h1>
-                        <p class="text-gray-500 mt-1 text-sm">
-                            最終診断日: <span id="timestamp"></span> | レポートID: <span id="report-id"></span>
-                        </p>
-                    </header>
+                <!-- レポートヘッダー (削除済み) -->
+                <div class="bg-white p-4 rounded-lg shadow-md mb-6 border-t border-gray-300">
+                    <p class="text-gray-500 mt-1 text-sm text-right no-print">
+                        最終診断日: <span id="timestamp_display"></span> | レポートID: <span id="report-id-display"></span>
+                    </p>
                 </div>
                 
                 <!-- ページングされたコンテンツ -->
@@ -774,11 +799,10 @@ def get_report_web(report_id):
             // レポートIDをJSに渡す
             const REPORT_ID = "{report_id}";
 
-            // ナビゲーションメニューの定義 (固定項目)
+            // ★修正: NAV_ITEMSから02. データ評価基準を削除
             const NAV_ITEMS = [
                 {{ id: 'summary', title: '00. レポート概要' }},
-                {{ id: 'mediapipe', title: '01. 骨格計測データ' }},
-                {{ id: 'criteria', title: '02. データ評価基準' }},
+                {{ id: 'mediapipe', title: '01. 骨格計測データと評価目安' }},
             ];
 
             let aiReportContent = {{}};
@@ -819,6 +843,7 @@ def get_report_web(report_id):
                 const sections = markdownContent.split('## ').filter(s => s.trim() !== '');
                 const dynamicNavItems = [];
                 
+                // 1.5 MarkdownコンテンツがAIレポートの最初の部分から始まることを前提に処理
                 sections.forEach((section, index) => {{
                     const titleMatch = section.match(/^([^\\n]+)/);
                     if (titleMatch) {{
@@ -828,7 +853,17 @@ def get_report_web(report_id):
                         
                         // Markdown本文を取得
                         const content = section.substring(titleMatch[0].length).trim();
-                        aiReportContent[id] = content;
+                        
+                        // ★修正: AIレポートの導入文削除対応 (AIプロンプト修正により、このロジックは安全性が向上)
+                        if (index === 0 && fullTitle.startsWith('03. AI総合評価')) {{
+                            // 03. AI総合評価の場合、最初の段落（以前の導入文）を削除
+                            const paragraphs = content.split('\\n\\n').filter(p => p.trim() !== '');
+                            // 最初の段落を削除し、残りの段落を結合
+                            const cleanedContent = paragraphs.slice(1).join('\\n\\n');
+                            aiReportContent[id] = cleanedContent || content; 
+                        }} else {{
+                            aiReportContent[id] = content;
+                        }}
                     }}
                 }});
 
@@ -846,7 +881,7 @@ def get_report_web(report_id):
                 // 3. 固定ページコンテンツの定義と挿入 (rawDataを使用)
                 pagesContainer.appendChild(createSummaryPage());
                 pagesContainer.appendChild(createRawDataPage(rawData));
-                pagesContainer.appendChild(createCriteriaPage());
+                // createCriteriaPage 関数は削除済み
 
                 // 4. AI動的ページコンテンツの定義と挿入
                 dynamicNavItems.forEach(item => {{
@@ -890,6 +925,42 @@ def get_report_web(report_id):
                 showPage(currentPageId);
                 document.getElementById('loading').classList.add('hidden');
                 document.getElementById('report-container').style.display = 'flex';
+                
+                // ヘッダー情報の表示をメインコンテンツ内で行う
+                const mainContent = document.getElementById('main-content');
+                const headerInfo = document.createElement('div');
+                headerInfo.className = 'bg-white p-4 rounded-lg shadow-md mb-6 border-t border-gray-300';
+                headerInfo.innerHTML = `
+                    <p class="text-gray-500 mt-1 text-sm text-right no-print">
+                        最終診断日: <span id="timestamp_display"></span> | レポートID: <span id="report-id-display"></span>
+                    </p>
+                `;
+                // mainContentの最初の子要素として挿入
+                mainContent.insertBefore(headerInfo, mainContent.firstChild);
+                
+                // 日付とIDの表示を更新
+                const reportId = window.location.pathname.split('/').pop();
+                document.getElementById('report-id-display').textContent = reportId;
+                
+                // APIで取得した日付を反映
+                const api_url = `${{window.location.origin}}/api/report_data/${{reportId}}`;
+                fetch(api_url).then(r => r.json()).then(data => {{
+                     let timestamp = 'N/A';
+                     try {{
+                        const ts = data.timestamp;
+                        if (ts && ts._seconds) {{
+                            timestamp = new Date(ts._seconds * 1000).toLocaleString('ja-JP');
+                        }} else if (ts) {{
+                            timestamp = new Date(ts).toLocaleString('ja-JP');
+                        }}
+                    }} catch (e) {{
+                        timestamp = '日付取得エラー';
+                    }}
+                    document.getElementById('timestamp_display').textContent = timestamp;
+                }}).catch(() => {{
+                    document.getElementById('timestamp_display').textContent = '日付取得失敗';
+                }});
+                
             }}
             
             function createRawDataPage(raw) {{
@@ -897,7 +968,7 @@ def get_report_web(report_id):
                 page.id = 'mediapipe';
                 page.className = 'content-page p-4';
                 page.innerHTML = `
-                    <h2 class="text-2xl font-bold text-green-700 mb-6">01. 骨格計測データ (MediaPipe)</h2>
+                    <h2 class="text-2xl font-bold text-green-700 mb-6">01. 骨格計測データと評価目安 (MediaPipe)</h2>
                     <section class="mb-8">
                         <div class="grid grid-cols-2 md:grid-cols-4 gap-4 text-center">
                             <div class="p-3 bg-gray-100 rounded-lg">
@@ -926,52 +997,40 @@ def get_report_web(report_id):
                             </div>
                         </div>
                     </section>
+                    
+                    <h3 class="text-xl font-bold text-gray-700 mt-8 mb-4 border-b pb-2">適正範囲の目安</h3>
+                    <div class="space-y-3 text-sm text-gray-600">
+                        <div class="p-3 bg-white border border-gray-200 rounded-lg shadow-sm">
+                            <h4 class="font-bold text-gray-800">最大肩回転</h4>
+                            <p class="mt-1">
+                                <span class="font-semibold text-green-700">目安:</span> 70°〜90°程度 (ドライバー)。
+                            </p>
+                        </div>
+                        <div class="p-3 bg-white border border-gray-200 rounded-lg shadow-sm">
+                            <h4 class="font-bold text-gray-800">最小腰回転</h4>
+                            <p class="mt-1">
+                                <span class="font-semibold text-green-700">目安:</span> 30°〜50°程度 (インパクト時)。
+                            </p>
+                        </div>
+                        <div class="p-3 bg-white border border-gray-200 rounded-lg shadow-sm">
+                            <h4 class="font-bold text-gray-800">最大コック角</h4>
+                            <p class="mt-1">
+                                <span class="font-semibold text-green-700">目安:</span> 90°〜110°程度 (トップスイング)。
+                            </p>
+                        </div>
+                        <div class="p-3 bg-white border border-gray-200 rounded-lg shadow-sm">
+                            <h4 class="font-bold text-gray-800">最大膝ブレ(Sway)</h4>
+                            <p class="mt-1">
+                                <span class="font-semibold text-green-700">目安:</span> 最小限 (セットアップ時からのブレが少ない)。
+                            </p>
+                        </div>
+                    </div>
                 `;
                 return page;
             }}
 
-            function createCriteriaPage() {{
-                const page = document.createElement('div');
-                page.id = 'criteria';
-                page.className = 'content-page p-4';
-                page.innerHTML = `
-                    <h2 class="text-2xl font-bold text-green-700 mb-6">02. データ評価基準</h2>
-                    <section class="mb-8">
-                        <div class="space-y-4 text-sm text-gray-600">
-                            <div class="p-3 bg-white border border-gray-200 rounded-lg shadow-sm">
-                                <h3 class="font-bold text-gray-800">最大肩回転 (03. 肩の回旋の基礎)</h3>
-                                <p class="mt-1">
-                                    <span class="font-semibold text-green-700">適正範囲の目安:</span> 70°〜90°程度 (ドライバー)。<br>
-                                    <span class="text-red-600">マイナス値:</span> 目標線に対して肩がオープンになっている（捻転不足）可能性を示します。
-                                </p>
-                            </div>
-                            <div class="p-3 bg-white border border-gray-200 rounded-lg shadow-sm">
-                                <h3 class="font-bold text-gray-800">最小腰回転 (04. 腰の回旋の基礎)</h3>
-                                <p class="mt-1">
-                                    <span class="font-semibold text-green-700">適正範囲の目安:</span> 30°〜50°程度 (インパクト時)。<br>
-                                    <span class="text-red-600">マイナス値:</span> 腰の開きがほとんどないか、目標の逆を向いていることを示唆。回転不足やスウェイ（軸ブレ）の可能性。
-                                </p>
-                            </div>
-                            <div class="p-3 bg-white border border-gray-200 rounded-lg shadow-sm">
-                                <h3 class="font-bold text-gray-800">最大コック角 (05. 手首のメカニクスの基礎)</h3>
-                                <p class="mt-1">
-                                    <span class="font-semibold text-green-700">適正範囲の目安:</span> 90°〜110°程度 (トップスイング)。<br>
-                                    <span class="text-red-600">数値が大きい (160°超) :</span> 手首のタメが不足し、「アーリーリリース」の可能性が高いです。
-                                </p>
-                            </div>
-                            <div class="p-3 bg-white border border-gray-200 rounded-lg shadow-sm">
-                                <h3 class="font-bold text-gray-800">最大膝ブレ(Sway) (06. 下半身安定の基礎)</h3>
-                                <p class="mt-1">
-                                    <span class="font-semibold text-green-700">適正範囲の目安:</span> 最小限 (セットアップ時からのブレが少ない)。<br>
-                                    <span class="text-red-600">数値が大きい:</span> スイング中に下半身が水平方向に大きく移動している（スウェイ/スライド）ことを示します。軸が不安定になり、ミート率の低下やパワーロスにつながります。
-                                </p>
-                            </div>
-                        </div>
-                    </section>
-                `;
-                return page;
-            }}
-            
+            // createCriteriaPage 関数は削除
+
             function createSummaryPage() {{
                  const page = document.createElement('div');
                 page.id = 'summary';
@@ -983,16 +1042,14 @@ def get_report_web(report_id):
                         <p>このレポートは、お客様のスイング動画をAIが骨格レベルで分析し、その計測データに基づいて詳細な診断と改善戦略を提供するものです。左側のメニューから各診断項目を選択して、詳細をご確認ください。</p>
                         <p class="font-semibold mt-4">診断項目一覧:</p>
                         <ul class="list-disc ml-6 text-sm text-gray-600">
-                            <li>01. 骨格計測データ</li>
-                            <li>02. データ評価基準</li>
-                            <li>03. 肩の回旋</li>
-                            <li>04. 腰の回旋</li>
-                            <li>05. 手首のメカニクス</li>
-                            <li>06. 下半身の安定性</li>
-                            <li>07. 総合診断 (Key Diagnosis)</li>
-                            <li>08. 改善戦略とドリル (Improvement Strategy)</li>
-                            <li>09. フィッティング提案 (Fitting Recommendation)</li>
-                            <li>10. エグゼクティブサマリー (Executive Summary)</li>
+                            <li>01. 骨格計測データと評価目安</li>
+                            <li>03. AI総合評価</li>
+                            <li>04. トップオブスイングの課題と改善点</li>
+                            <li>05. ダウンスイングの課題と改善点</li>
+                            <li>06. インパクトとフォロースルーの課題と改善点</li>
+                            <li>07. 練習ドリルとアドバイス</li>
+                            <li>08. フィッティング提案</li>
+                            <li>09. エグゼクティブサマリー</li>
                         </ul>
                     </div>
                 `;
@@ -1058,7 +1115,9 @@ def get_report_web(report_id):
                     }}
                     
                     // 1. 基本データの挿入
-                    document.getElementById('report-id').textContent = reportId;
+                    // ヘッダーが削除されたため、この処理は不要
+                    // document.getElementById('report-id').textContent = reportId; 
+                    
                     let timestamp = 'N/A';
                     try {{
                         // Firestoreから返された文字列またはオブジェクトをパース
@@ -1072,7 +1131,7 @@ def get_report_web(report_id):
                         console.error("Timestamp parsing failed:", e);
                         timestamp = 'データ処理エラー';
                     }}
-                    document.getElementById('timestamp').textContent = timestamp;
+                    // document.getElementById('timestamp').textContent = timestamp;
                     
                     // 2. Markdownコンテンツの取得
                     const markdownText = data.ai_report_text || "";
