@@ -1,5 +1,6 @@
 import os
 import tempfile 
+import shutil
 import ffmpeg 
 import requests
 import numpy as np 
@@ -85,6 +86,7 @@ def save_report_to_firestore(user_id, report_id, report_data):
         doc_ref = db.collection('reports').document(report_id)
         report_data['user_id'] = user_id
         report_data['timestamp'] = firestore.SERVER_TIMESTAMP
+        report_data['status'] = report_data.get('status', 'COMPLETED') # デフォルトステータス
         doc_ref.set(report_data)
         return True
     except Exception as e:
@@ -139,9 +141,15 @@ def analyze_swing(video_path):
     knee_start_x = None
     max_knee_sway_x = 0
     
+    # ★修正: ファイルの存在確認を強化
+    if not os.path.exists(video_path):
+        app.logger.error(f"動画ファイルパスエラー: {video_path} が見つかりません。")
+        return {"error": f"動画ファイルが見つかりません: {os.path.basename(video_path)}"}
+    
     cap = cv2.VideoCapture(video_path)
     if not cap.isOpened():
-        return {"error": "動画ファイルを開けませんでした。"}
+        app.logger.error(f"cv2.VideoCaptureが開けませんでした。ファイル破損または不正な形式: {video_path}")
+        return {"error": "動画ファイルを開けませんでした。不正な形式の可能性があります。"}
 
     frame_count = 0
     
@@ -212,7 +220,7 @@ def analyze_swing(video_path):
                 if all(l is not None for l in [r_elbow, r_wrist, r_index]):
                     cock_angle = calculate_angle(r_elbow, r_wrist, r_index)
                     if cock_angle > max_wrist_cock:
-                         max_wrist_cock = cock_wrist
+                         max_wrist_cock = cock_angle # ★修正: cock_angle を代入
 
                 # 計測：最大膝ブレ（スウェイ）
                 mid_knee_x = (r_knee[0] + l_knee[0]) / 2
@@ -358,7 +366,7 @@ def webhook():
     try:
         handler.handle(body, signature)
     except InvalidSignatureError:
-        app.logger.error("Invalid signature. Check your channel access token/secret.")
+        app.logger.error("Invalid signature. Check your channel secret.")
         abort(400)
     except LineBotApiError as e:
         app.logger.error(f"LINE Bot API error: {e.status_code}, {e.error.message}")
@@ -465,6 +473,12 @@ def process_video_worker():
     """
     Cloud Tasksから呼び出される動画解析のWorkerエンドポイント
     """
+    report_id = None
+    original_video_path = None
+    compressed_video_path = None
+    user_id = None
+    temp_dir = None
+
     try:
         # Cloud Tasksから送られてくるJSONペイロードを解析
         task_data = request.get_json(silent=True)
@@ -497,42 +511,53 @@ def process_video_worker():
             return jsonify({'status': 'error', 'message': 'Failed to fetch video content from LINE'}), 500
 
         # 2. 動画の解析とAI診断の実行
-        original_video_path = None
-        compressed_video_path = None
         analysis_data = {}
         
+        # ★修正: 一時ディレクトリを作成し、その中にファイルを配置することでパーミッション問題を回避
+        temp_dir = tempfile.mkdtemp()
+        original_video_path = os.path.join(temp_dir, "original.mp4")
+        compressed_video_path = os.path.join(temp_dir, "compressed.mp4")
+
         try:
             # 2.1 オリジナル動画を一時ファイルに保存
-            with tempfile.NamedTemporaryFile(suffix="_original.mp4", delete=False) as tmp_file:
-                original_video_path = tmp_file.name
-                tmp_file.write(video_content)
+            with open(original_video_path, 'wb') as f:
+                f.write(video_content)
 
             # 2.2 動画の自動圧縮とリサイズ処理
-            compressed_video_path = tempfile.NamedTemporaryFile(suffix="_compressed.mp4", delete=False).name
             FFMPEG_PATH = '/usr/bin/ffmpeg' if os.path.exists('/usr/bin/ffmpeg') else 'ffmpeg'
             
+            # ffmpegコマンドをより安定化 (preset='veryfast'を維持)
             ffmpeg.input(original_video_path).output(
-                compressed_video_path, vf='scale=640:-1', crf=28, vcodec='libx264'
+                compressed_video_path, vf='scale=640:-1', crf=28, vcodec='libx264', preset='veryfast',
             ).overwrite_output().run(cmd=FFMPEG_PATH, capture_stdout=True, capture_stderr=True) 
 
             # 2.3 MediaPipe解析を実行
             analysis_data = analyze_swing(compressed_video_path)
             
+            if analysis_data.get("error"):
+                # analyze_swing内部で動画ファイルが開けない等のエラーが検出された場合
+                raise Exception(f"MediaPipe解析失敗: {analysis_data['error']}")
+                
             # 2.4 AIによる診断レポートの生成
             ai_report_markdown, summary_text = run_ai_analysis(analysis_data)
             
         except Exception as e:
-            app.logger.error(f"MediaPipe/FFmpeg/AI processing failed: {e}", exc_info=True)
-            # 解析失敗時も、タスクがリトライしないように200を返し、Firestoreでエラーを通知
+            # Worker内部での解析エラー
+            error_details = str(e)
+            app.logger.error(f"MediaPipe/FFmpeg/AI processing failed: {error_details}", exc_info=True)
+            
+            # Firestoreのステータスを更新 (ANALYSIS_FAILED)
             if db:
-                 db.collection('reports').document(report_id).update({'status': 'ANALYSIS_FAILED', 'summary': f'動画解析処理中に予期せぬエラーが発生しました: {str(e)[:100]}...'})
-            line_bot_api.push_message(user_id, TextSendMessage(text=f"【解析エラー】動画解析が失敗しました。全身が写っているかご確認ください。"))
-            return jsonify({'status': 'error', 'message': 'Analysis failed'}), 200 # 200を返すことでタスクのリトライを停止
+                 db.collection('reports').document(report_id).update({'status': 'ANALYSIS_FAILED', 'summary': f'動画解析処理中にエラーが発生しました。詳細: {error_details[:100]}...'})
+            
+            # ★修正: LINEへの通知にエラー詳細を追記 (デバッグ用)
+            line_bot_api.push_message(user_id, TextSendMessage(text=f"【解析エラー】動画解析が失敗しました。全身が写っているかご確認ください。エラー詳細: {error_details[:50]}..."))
+            return jsonify({'status': 'error', 'message': 'Analysis failed'}), 200 
         
         finally:
-            # 一時ファイルのクリーンアップ
-            if original_video_path and os.path.exists(original_video_path): os.remove(original_video_path)
-            if compressed_video_path and os.path.exists(compressed_video_path): os.remove(compressed_video_path)
+            # ★修正: 一時ディレクトリ全体を確実にクリーンアップ
+            if temp_dir and os.path.exists(temp_dir):
+                shutil.rmtree(temp_dir)
 
         
         # 3. 結果をFirestoreに保存（ステータsス: COMPLETED）
@@ -564,11 +589,12 @@ def process_video_worker():
             return jsonify({'status': 'error', 'message': 'Failed to save final report to Firestore'}), 500
 
     except Exception as e:
+        # Worker全体で予期せぬ致命的なエラーが発生した場合
         app.logger.error(f"Worker processing failed for task: {report_id}. Error: {e}")
         # Firestoreのステータスを更新 (処理失敗)
         if db:
              db.collection('reports').document(report_id).update({'status': 'FATAL_ERROR', 'summary': f'致命的なエラーが発生しました: {str(e)[:100]}...'})
-        # Cloud Tasksにリトライを依頼するため、HTTP 500を返す (LINE通知は既に処理済みのため、ここでは不要)
+        # Cloud Tasksにリトライを依頼するため、HTTP 500を返す
         return jsonify({'status': 'error', 'message': f'Internal Server Error: {e}'}), 500
 
 # ------------------------------------------------
@@ -595,15 +621,25 @@ def get_report_data(report_id):
         app.logger.info(f"Successfully retrieved data for report: {report_id}")
         
         # Webレポートのフロントエンドが必要なデータを構造化して返す
+        # Timestampオブジェクトをブラウザで扱える形式に変換する
+        timestamp_data = data.get('timestamp')
+        if hasattr(timestamp_data, 'isoformat'):
+             timestamp_str = timestamp_data.isoformat()
+        elif isinstance(timestamp_data, dict) and '_seconds' in timestamp_data:
+             timestamp_str = datetime.datetime.fromtimestamp(timestamp_data['_seconds']).isoformat()
+        else:
+             timestamp_str = str(timestamp_data)
+
         response_data = {
-            "timestamp": data.get('timestamp', {}), 
+            "timestamp": timestamp_str,
             "mediapipe_data": data.get('raw_data', {}),
             "ai_report_text": data.get('ai_report', 'AIレポートがありません。'),
             "summary": data.get('summary', '総合評価データなし。'),
             "status": data.get('status', 'UNKNOWN')
         }
         
-        json_output = json.dumps(response_data, ensure_ascii=False, default=str) # datetimeオブジェクトを文字列に変換
+        # JSONレスポンスを返す際は、Flaskのjsonifyを使用するか、json.dumpsのdefault=strでdatetimeオブジェクトを処理する
+        json_output = json.dumps(response_data, ensure_ascii=False)
         response = app.response_class(
             response=json_output,
             status=200,
@@ -624,8 +660,6 @@ def get_report_web(report_id):
     # 処理中の確認やエラー表示ロジックはブラウザ側のJavaScriptに任せ、ここではHTMLテンプレートを返す
     
     # HTMLレポートのコンテンツ（ページングとデザインを含む）
-    # HTML_REPORT_TEMPLATEをPythonコードから分離し、<script>タグでレポートIDを渡します。
-    
     # HTMLの動的テンプレートを返す
     html_content = f"""
     <!DOCTYPE html>
@@ -1001,7 +1035,7 @@ def get_report_web(report_id):
                     const response = await fetch(api_url);
                     
                     if (!response.ok) {{
-                        const errorData = await response.json().catch(() => ({{error: `サーバーエラー ${response.status}`}}));
+                        const errorData = await response.json().catch(() => ({{error: `サーバーエラー ${{response.status}}`}}));
                         // レポートが見つからない場合は404エラーを表示
                         if(response.status === 404) {{
                             displayFatalError("レポートが見つかりませんでした。", `ID: ${{reportId}}`);
@@ -1042,7 +1076,7 @@ def get_report_web(report_id):
                     document.getElementById('timestamp').textContent = timestamp;
                     
                     // 2. Markdownコンテンツの取得
-                    const markdownText = data.ai_report || "";
+                    const markdownText = data.ai_report_text || "";
                     
                     // 3. ページングレンダリング開始
                     if (markdownText) {{
