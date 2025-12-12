@@ -1,6 +1,6 @@
 @app.route("/report/<report_id>", methods=["GET"])
 def get_report_web(report_id):
-    html = f"""
+    html = """
 <!DOCTYPE html>
 <html lang="ja">
 <head>
@@ -16,7 +16,7 @@ def get_report_web(report_id):
       GATE AIスイングドクター
     </h1>
     <p class="text-center text-sm text-gray-500 mb-6">
-      診断レポートID：{report_id}
+      診断レポートID：<span id="report-id"></span>
     </p>
 
     <div id="loading" class="text-center py-10 text-gray-500">
@@ -25,14 +25,12 @@ def get_report_web(report_id):
 
     <div id="content" class="hidden">
 
-      <!-- 骨格データ -->
       <h2 class="text-2xl font-bold border-b-4 border-emerald-500 mb-4">
         01. 骨格計測データ
       </h2>
 
       <div id="metrics" class="grid grid-cols-2 md:grid-cols-3 gap-4 mb-8"></div>
 
-      <!-- AI レポート -->
       <h2 class="text-2xl font-bold border-b-4 border-emerald-500 mb-4">
         AIスイング診断レポート
       </h2>
@@ -43,25 +41,27 @@ def get_report_web(report_id):
   </div>
 
 <script>
-const reportId = "{report_id}";
+const reportId = window.location.pathname.split("/").pop();
+document.getElementById("report-id").innerText = reportId;
+
 const apiUrl = "/api/report_data/" + reportId;
 
-function card(title, value, unit="") {{
+function card(title, value, unit="") {
   return `
     <div class="bg-gray-50 border rounded-lg p-4 text-center shadow">
-      <div class="text-sm text-gray-500 mb-1">${{title}}</div>
-      <div class="text-2xl font-bold text-gray-800">${{value}}${{unit}}</div>
+      <div class="text-sm text-gray-500 mb-1">${title}</div>
+      <div class="text-2xl font-bold text-gray-800">${value}${unit}</div>
     </div>
   `;
-}}
+}
 
 fetch(apiUrl)
   .then(res => res.json())
-  .then(data => {{
+  .then(data => {
     document.getElementById("loading").classList.add("hidden");
     document.getElementById("content").classList.remove("hidden");
 
-    const m = data.mediapipe_data || {{}};
+    const m = data.mediapipe_data || {};
     const metrics = document.getElementById("metrics");
 
     metrics.innerHTML =
@@ -72,25 +72,26 @@ fetch(apiUrl)
       card("最大頭ブレ", m.max_head_drift_x ?? "N/A") +
       card("最大膝ブレ", m.max_knee_sway_x ?? "N/A");
 
-    // Markdown簡易変換
     let report = data.ai_report_text || data.summary || "";
     report = report
-      .replace(/\\n## (.*)/g, "<h2 class='text-xl font-bold mt-6 mb-2'>$1</h2>")
-      .replace(/\\n### (.*)/g, "<h3 class='text-lg font-semibold mt-4 mb-1'>$1</h3>")
+      .replace(/\\n## (.*)/g, "<h2>$1</h2>")
+      .replace(/\\n### (.*)/g, "<h3>$1</h3>")
       .replace(/\\n\\n/g, "<br><br>")
       .replace(/\\n/g, "<br>");
 
     document.getElementById("ai-report").innerHTML = report;
   })
-  .catch(err => {{
-    document.getElementById("loading").innerText = "レポートの読み込みに失敗しました。";
-  }});
+  .catch(() => {
+    document.getElementById("loading").innerText =
+      "レポートの読み込みに失敗しました。";
+  });
 </script>
 
 </body>
 </html>
 """
     return html, 200
+
 
 
 
