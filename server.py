@@ -9,7 +9,7 @@ from google.cloud import firestore, tasks_v2
 from google import genai
 
 # ==================================================
-# 環境変数
+# 環境変数（必須）
 # ==================================================
 LINE_CHANNEL_ACCESS_TOKEN = os.environ["LINE_CHANNEL_ACCESS_TOKEN"]
 LINE_CHANNEL_SECRET = os.environ["LINE_CHANNEL_SECRET"]
@@ -19,7 +19,8 @@ GCP_PROJECT_ID = os.environ["GCP_PROJECT_ID"]
 SERVICE_HOST_URL = os.environ["SERVICE_HOST_URL"]
 TASK_SA_EMAIL = os.environ["TASK_SA_EMAIL"]
 
-TASK_QUEUE_LOCATION = os.environ.get("TASK_QUEUE_LOCATION", "asia-northeast1")
+# ★ asia-northeast2（大阪）で完全固定 ★
+TASK_QUEUE_LOCATION = os.environ.get("TASK_QUEUE_LOCATION", "asia-northeast2")
 TASK_QUEUE_NAME = os.environ.get("TASK_QUEUE_NAME", "video-analysis-queue")
 
 # ==================================================
@@ -55,7 +56,7 @@ def webhook():
     return "OK"
 
 # ==================================================
-# 動画受信
+# 動画受信 → Cloud Tasks enqueue
 # ==================================================
 @handler.add(MessageEvent, message=VideoMessage)
 def handle_video(event):
@@ -97,7 +98,7 @@ def handle_video(event):
     )
 
 # ==================================================
-# Worker（Cloud Tasks → Cloud Run）
+# Worker（Cloud Tasks → Cloud Run / OIDC必須）
 # ==================================================
 @app.route("/worker/process_video", methods=["POST"])
 def process_video():
@@ -105,7 +106,7 @@ def process_video():
     report_id = data["report_id"]
     user_id = data["user_id"]
 
-    # ---- 骨格解析（ダミー：後で MediaPipe に差し替え）----
+    # ---- 骨格解析結果（仮：後で MediaPipe に差し替え）----
     analysis = {
         "frame_count": 73,
         "max_shoulder_rotation": -23.8,
@@ -115,7 +116,7 @@ def process_video():
         "max_knee_sway_x": 0.0375
     }
 
-    # ---- Gemini 診断 ----
+    # ---- Gemini（安定モデル）----
     client = genai.Client(api_key=GEMINI_API_KEY)
 
     prompt = (
@@ -125,7 +126,7 @@ def process_video():
     )
 
     response = client.models.generate_content(
-        model="gemini-2.5-flash",
+        model="gemini-1.5-flash",
         contents=prompt
     )
 
@@ -147,7 +148,7 @@ def process_video():
     return jsonify({"status": "ok"})
 
 # ==================================================
-# JSON API
+# JSON API（Web表示用）
 # ==================================================
 @app.route("/api/report_data/<report_id>")
 def api_report(report_id):
@@ -164,7 +165,7 @@ def api_report(report_id):
     })
 
 # ==================================================
-# Web レポート
+# Web レポート（HTML / PDF保存可）
 # ==================================================
 @app.route("/report/<report_id>")
 def report_view(report_id):
@@ -197,11 +198,11 @@ fetch("/api/report_data/" + rid)
     document.getElementById("content").innerText = "レポートが見つかりません";
     return;
   }
-  let html = "<h2>骨格データ</h2><ul>";
+  let html = "<h2 class='text-xl font-bold mb-2'>骨格データ</h2><ul>";
   for (const k in d.mediapipe_data) {
     html += "<li>" + k + " : " + d.mediapipe_data[k] + "</li>";
   }
-  html += "</ul><h2>総合診断</h2><p>";
+  html += "</ul><h2 class='text-xl font-bold mt-4 mb-2'>総合診断</h2><p>";
   html += (d.ai_report_text || "").replace(/\\n/g,"<br>");
   html += "</p>";
   document.getElementById("content").innerHTML = html;
@@ -216,3 +217,4 @@ fetch("/api/report_data/" + rid)
 # ==================================================
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=8080)
+
