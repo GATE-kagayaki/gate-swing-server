@@ -1,6 +1,8 @@
-flask
-google-cloud-firestore
-google-cloud-tasks
-line-bot-sdk
-opencv-python-headless
-mediapipe
+Flask==3.0.0
+line-bot-sdk==3.5.0
+google-cloud-firestore==2.13.0
+google-cloud-tasks==2.14.0
+mediapipe==0.10.9
+opencv-python-headless==4.8.1.78
+numpy==1.26.0
+gunicorn==21.2.0
