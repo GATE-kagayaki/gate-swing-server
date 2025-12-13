@@ -42,9 +42,8 @@ GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "").strip()
 
 ESTIMATED_SECONDS = int(os.environ.get("ESTIMATED_SECONDS", "180"))
 
-# ✅ 開発中は「常に有料版」を強制（あなたの要望）
-FORCE_PREMIUM_ALWAYS = True
-
+# 開発中は「常に有料版」を強制（あなたの要望）
+FORCE_PREMIUM_ALWAYS = os.environ.get("FORCE_PREMIUM_ALWAYS", "true").lower() in ("1", "true", "yes", "on")
 
 # ==================================================
 # App init
@@ -138,13 +137,20 @@ def make_initial_reply(report_id: str, mode_label: str) -> str:
     )
 
 
-def make_done_push(report_id: str) -> str:
+def make_done_push(report_id: str, is_premium: bool) -> str:
     report_url = f"{SERVICE_HOST_URL}/report/{report_id}"
+    if is_premium:
+        return (
+            "🎉 AIスイング診断が完了しました！\n\n"
+            "【診断レポートURL】\n"
+            f"{report_url}\n\n"
+            "詳細なレポートはURLからご確認ください。次の練習にお役立てください！"
+        )
     return (
-        "🎉 AIスイング診断が完了しました！\n\n"
-        "【診断レポートURL】\n"
+        "✅ 無料版AIスイング診断が完了しました。\n\n"
+        "【簡易レポートURL】\n"
         f"{report_url}\n\n"
-        "詳細なレポートはURLからご確認ください。次の練習にお役立てください！"
+        "骨格データ（01）と総合診断（07）をご確認いただけます。"
     )
 
 
@@ -195,7 +201,7 @@ def download_line_video_to_file(message_id: str, out_path: str) -> None:
 
 def transcode_to_mp4(in_path: str, out_path: str) -> None:
     """
-    短尺や可変fpsなどを吸収するため、H.264/AAC + yuv420p + faststart を強制
+    短尺 / 可変fps / コーデック差を吸収するため、H.264/AAC + yuv420p + faststart を強制
     """
     try:
         (
@@ -217,7 +223,7 @@ def transcode_to_mp4(in_path: str, out_path: str) -> None:
             .run(capture_stdout=True, capture_stderr=True)
         )
     except ffmpeg.Error as e:
-        err = (e.stderr or b"").decode("utf-8", errors="ignore")[:2000]
+        err = (e.stderr or b"").decode("utf-8", errors="ignore")[:3000]
         raise RuntimeError(f"動画の変換に失敗しました（ffmpeg）: {err}")
 
 
@@ -240,6 +246,11 @@ def _angle(p1, p2, p3) -> float:
 
 
 def analyze_swing(video_path: str) -> Dict[str, Any]:
+    """
+    ✅ 180°/異常値を避けるための完成版
+    - 極値取りではなく「トップ基準」
+    - 物理的に成立する範囲へクリップ
+    """
     cap = cv2.VideoCapture(video_path)
     if not cap.isOpened():
         raise RuntimeError("動画を読み込めませんでした。ファイル形式をご確認ください。")
@@ -253,28 +264,16 @@ def analyze_swing(video_path: str) -> Dict[str, Any]:
         min_tracking_confidence=0.5,
     )
 
-    frame_count = 0
-    max_shoulder_rot = -1e9
-    min_hip_rot = 1e9
-    max_wrist_cock = -1e9
+    frames = []
 
-    head_start_x = None
-    max_head_drift_x = 0.0
-
-    knee_center_start_x = None
-    max_knee_sway_x = 0.0
-
-    def _rot_deg(lx, ly, rx, ry):
-        dx = rx - lx
-        dy = ry - ly
-        return math.degrees(math.atan2(dy, dx))  # -180..180
+    def rot_deg(lx, ly, rx, ry):
+        return math.degrees(math.atan2(ry - ly, rx - lx))  # -180..180
 
     try:
         while True:
             ok, frame = cap.read()
             if not ok:
                 break
-            frame_count += 1
 
             rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
             res = pose.process(rgb)
@@ -294,58 +293,93 @@ def analyze_swing(video_path: str) -> Dict[str, Any]:
             R_WRI = mp_pose.PoseLandmark.RIGHT_WRIST.value
             R_IND = mp_pose.PoseLandmark.RIGHT_INDEX.value
 
-            sh_rot = _rot_deg(lm[L_SH].x, lm[L_SH].y, lm[R_SH].x, lm[R_SH].y)
-            max_shoulder_rot = max(max_shoulder_rot, sh_rot)
+            shoulder = rot_deg(lm[L_SH].x, lm[L_SH].y, lm[R_SH].x, lm[R_SH].y)
+            hip = rot_deg(lm[L_HIP].x, lm[L_HIP].y, lm[R_HIP].x, lm[R_HIP].y)
 
-            hip_rot = _rot_deg(lm[L_HIP].x, lm[L_HIP].y, lm[R_HIP].x, lm[R_HIP].y)
-            min_hip_rot = min(min_hip_rot, hip_rot)
-
-            w = _angle(
+            wrist = _angle(
                 (lm[R_ELB].x, lm[R_ELB].y),
                 (lm[R_WRI].x, lm[R_WRI].y),
                 (lm[R_IND].x, lm[R_IND].y),
             )
-            if not math.isnan(w):
-                max_wrist_cock = max(max_wrist_cock, w)
 
-            hx = lm[NOSE].x
-            if head_start_x is None:
-                head_start_x = hx
-            max_head_drift_x = max(max_head_drift_x, abs(hx - head_start_x))
+            head_x = lm[NOSE].x
+            knee_x = (lm[L_KNEE].x + lm[R_KNEE].x) / 2.0
 
-            kcx = (lm[L_KNEE].x + lm[R_KNEE].x) / 2.0
-            if knee_center_start_x is None:
-                knee_center_start_x = kcx
-            max_knee_sway_x = max(max_knee_sway_x, abs(kcx - knee_center_start_x))
+            frames.append({
+                "shoulder": shoulder,
+                "hip": hip,
+                "wrist": wrist,
+                "head_x": head_x,
+                "knee_x": knee_x,
+            })
 
     finally:
         cap.release()
         pose.close()
 
-    if frame_count < 10:
+    if len(frames) < 15:
         raise RuntimeError("解析に必要なフレーム数が不足しています。もう少し長めの動画でお試しください。")
 
-    def _clean(v, ndigits=4):
-        if v is None or (isinstance(v, float) and (math.isnan(v) or math.isinf(v))):
+    # トップ = 肩回転（絶対値）が最大のフレーム
+    top = max(frames, key=lambda f: abs(f["shoulder"]))
+
+    head_base = frames[0]["head_x"]
+    knee_base = frames[0]["knee_x"]
+
+    def clip(v, lo, hi):
+        return max(lo, min(hi, v))
+
+    def clean(v, nd=4):
+        if v is None:
             return None
-        return round(float(v), ndigits)
+        if isinstance(v, float) and (math.isnan(v) or math.isinf(v)):
+            return None
+        return round(float(v), nd)
+
+    max_shoulder = clean(clip(abs(top["shoulder"]), 0, 120), 1)
+    hip_rot = clean(clip(abs(top["hip"]), 0, 90), 1)
+    wrist_cock = clean(clip(top["wrist"], 0, 120), 1)
+    head_drift = clean(abs(top["head_x"] - head_base), 4)
+    knee_sway = clean(abs(top["knee_x"] - knee_base), 4)
 
     return {
-        "frame_count": int(frame_count),
-        "max_shoulder_rotation": _clean(max_shoulder_rot, 1),
-        "min_hip_rotation": _clean(min_hip_rot, 1),
-        "max_wrist_cock": _clean(max_wrist_cock, 1),
-        "max_head_drift_x": _clean(max_head_drift_x, 4),
-        "max_knee_sway_x": _clean(max_knee_sway_x, 4),
+        "frame_count": int(len(frames)),
+        "max_shoulder_rotation": max_shoulder,
+        "min_hip_rotation": hip_rot,
+        "max_wrist_cock": wrist_cock,
+        "max_head_drift_x": head_drift,
+        "max_knee_sway_x": knee_sway,
     }
 
 
 # ==================================================
-# Gemini: Full report prompt (01〜10)
+# Data split (章崩壊を物理的に防ぐ)
+# ==================================================
+def split_section_data(raw: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
+    return {
+        "section_01": {
+            "frame_count": raw.get("frame_count"),
+            "max_shoulder_rotation": raw.get("max_shoulder_rotation"),
+            "min_hip_rotation": raw.get("min_hip_rotation"),
+            "max_wrist_cock": raw.get("max_wrist_cock"),
+            "max_head_drift_x": raw.get("max_head_drift_x"),
+            "max_knee_sway_x": raw.get("max_knee_sway_x"),
+        },
+        "section_02": {"max_head_drift_x": raw.get("max_head_drift_x")},
+        "section_03": {"max_shoulder_rotation": raw.get("max_shoulder_rotation")},
+        "section_04": {"min_hip_rotation": raw.get("min_hip_rotation")},
+        "section_05": {"max_wrist_cock": raw.get("max_wrist_cock")},
+        "section_06": {"max_knee_sway_x": raw.get("max_knee_sway_x")},
+    }
+
+
+# ==================================================
+# Gemini
 # ==================================================
 def _choose_models() -> Tuple[str, ...]:
     if GEMINI_MODEL:
         return (GEMINI_MODEL,)
+    # 通りやすい順（環境差吸収）
     return (
         "gemini-2.0-flash",
         "models/gemini-2.0-flash",
@@ -356,20 +390,31 @@ def _choose_models() -> Tuple[str, ...]:
     )
 
 
+def _strip_code_fences(text: str) -> str:
+    t = (text or "").strip()
+    # 念のため：コードブロックを排除（Geminiが ``` を混ぜた時の保険）
+    t = t.replace("```json", "").replace("```JSON", "").replace("```", "")
+    return t.strip()
+
+
 def build_prompt_full(raw_data: Dict[str, Any], declared: Optional[Dict[str, Any]] = None) -> str:
     declared = declared or {}
+    sections = split_section_data(raw_data)
+
+    # ※あなたの確定仕様を厳守
     return f"""
 あなたはプロゴルファーを指導するゴルフコーチ兼フィッターです。
-以下の「骨格計測データ（数値）」のみに基づき、指定された構成・ルールを厳守して日本語の診断レポートを作成してください。
+以下の「章ごとの使用可能データ（数値）」のみに基づき、指定された構成・ルールを厳守して日本語の診断レポートを作成してください。
 
-【重要ルール】
+【絶対ルール（破ると不合格）】
 ・章番号、章タイトルは必ず指定どおりに出力
-・各章で扱う数値以外の話題を混ぜない（章のテーマを崩さない）
-・「説明」と「評価」を混同しない
-・推測で数値を補完しない
+・各章は「その章に提示されたデータのみ」を使う（他章の数値に触れない）
+・「説明」と「評価（プロ評価）」を混同しない
+・推測で数値を補完しない（未計測の話は禁止）
 ・商品名、メーカー名は一切出さない
-・全体のトーンは「ハイ（専門的だが読みやすい）」
-・Markdownのみ使用（```json などコードブロックは禁止）
+・全体トーンは「ハイ（専門的だが読みやすい）」
+・Markdownのみ使用（```json 等のコードブロックは禁止）
+・出力は必ず「## 01...」から開始し、最後は「10.」で締める（前置き禁止）
 
 【01の理想の目安（一般的な参考）】
 - 解析フレーム数：60フレーム以上
@@ -383,63 +428,81 @@ def build_prompt_full(raw_data: Dict[str, Any], declared: Optional[Dict[str, Any
 {json.dumps(declared, ensure_ascii=False, indent=2)}
 
 ────────────────
-【01. 骨格計測データ（AIが測った数値）】
+## 01. 骨格計測データ（AIが測った数値）
 必ず「表形式」。列は「計測項目｜測定値｜理想の目安」。
 対象6項目：解析フレーム数／最大肩回転／最小腰回転／最大コック角／最大頭ブレ（Sway）／最大膝ブレ（Sway）
 ※この章では「評価」「プロ評価」「改善提案」を書かない。
 ※表の直後に「### 各数値の見方（簡単な説明）」を必ず付け、6項目それぞれを **太字の見出し** にして1〜2文で説明を書く。
 ※ここでも「プロ評価」は書かない。
 
+使用可能データ：
+{json.dumps(sections["section_01"], ensure_ascii=False, indent=2)}
+
 ────────────────
-【02. 頭の安定性（軸のブレ）】
+## 02. 頭の安定性（軸のブレ）
 対象数値：最大頭ブレ（Sway）のみ
 構成：
 ・**測定値：xxxx**
 ・箇条書きの解説（最大3つ、少し詳しめ）
 ・プロ評価（1段落）
-※肩・腰・手首の話題は出さない（絶対）
+※肩・腰・手首・膝の話題は出さない（絶対）
+
+使用可能データ：
+{json.dumps(sections["section_02"], ensure_ascii=False, indent=2)}
 
 ────────────────
-【03. 肩の回旋（上半身のねじり）】
+## 03. 肩の回旋（上半身のねじり）
 対象数値：最大肩回転のみ
 ・**測定値：xxxx**
 ・箇条書き（最大3つ、少し詳しめ）
 ・プロ評価（1段落）
 
+使用可能データ：
+{json.dumps(sections["section_03"], ensure_ascii=False, indent=2)}
+
 ────────────────
-【04. 腰の回旋（下半身の動き）】
+## 04. 腰の回旋（下半身の動き）
 対象数値：最小腰回転のみ
 ・**測定値：xxxx**
 ・箇条書き（最大3つ、少し詳しめ）
 ・プロ評価（1段落）
 
+使用可能データ：
+{json.dumps(sections["section_04"], ensure_ascii=False, indent=2)}
+
 ────────────────
-【05. 手首のメカニクス（コック角）】
+## 05. 手首のメカニクス（コック角）
 対象数値：最大コック角のみ
 ・**測定値：xxxx**
 ・箇条書き（最大3つ、少し詳しめ）
 ・プロ評価（1段落）
 
+使用可能データ：
+{json.dumps(sections["section_05"], ensure_ascii=False, indent=2)}
+
 ────────────────
-【06. 下半身の安定性（膝のブレ）】
+## 06. 下半身の安定性（膝のブレ）
 対象数値：最大膝ブレ（Sway）のみ
 ・**測定値：xxxx**
 ・箇条書き（最大3つ、少し詳しめ）
 ・プロ評価（1段落）
 
+使用可能データ：
+{json.dumps(sections["section_06"], ensure_ascii=False, indent=2)}
+
 ────────────────
-【07. 総合診断】
+## 07. 総合診断
 以下の2項目のみ。各項目は箇条書き。
 ・安定している点
 ・改善が期待される点
 
 ────────────────
-【08. 改善戦略とドリル】
+## 08. 改善戦略とドリル
 最大3つ。必ず「表形式」。列：ドリル名｜目的｜やり方
 やり方は必ず「①②③」の3ステップで、初心者でも実行できる程度に“少し詳しめ”。
 
 ────────────────
-【09. スイング傾向補正型フィッティング（ドライバーのみ）】
+## 09. スイング傾向補正型フィッティング（ドライバーのみ）
 必ず「表形式」。列：項目｜推奨｜理由
 商品名禁止。対象項目：
 ①シャフト重量（40g台〜70g台）
@@ -452,13 +515,39 @@ def build_prompt_full(raw_data: Dict[str, Any], declared: Optional[Dict[str, Any
 リシャフトについては、お客様ご自身で実際に試打した上でご検討ください。」
 
 ────────────────
-【10. まとめ（次のステップ）】
+## 10. まとめ（次のステップ）
 “現状より一段ボリューム多め”で。
 最後は必ず次の締め文で終える：
 「お客様のゴルフライフが、より充実したものになることを切に願っています。」
+""".strip()
 
-【骨格計測データ】
-{json.dumps(raw_data, ensure_ascii=False, indent=2)}
+
+def build_prompt_free(raw_data: Dict[str, Any], declared: Optional[Dict[str, Any]] = None) -> str:
+    """
+    無料版：01 と 07 のみ（あなたの確定仕様）
+    """
+    declared = declared or {}
+    sections = split_section_data(raw_data)
+    return f"""
+あなたはゴルフコーチです。以下の数値だけに基づき、指定形式で「無料版レポート」を日本語で作成してください。
+
+【ルール】
+・出力は必ず「## 01...」から開始（前置き禁止）
+・章は 01 と 07 のみ（02〜06,08〜10は書かない）
+・Markdownのみ。コードブロック禁止（```禁止）
+・01は表（計測項目｜測定値｜理想の目安）＋「### 各数値の見方（簡単な説明）」を付ける（6項目）
+・07は「安定している点」「改善が期待される点」の2項目だけ、箇条書きで
+
+【01の理想の目安】
+- 解析フレーム数：60フレーム以上
+- 最大肩回転：約80°〜100°
+- 最小腰回転：約35°〜45°（目安）
+- 最大コック角：約90°〜120°
+- 最大頭ブレ（Sway）：0.05以下（小さいほど安定）
+- 最大膝ブレ（Sway）：0.05以下（小さいほど安定）
+
+使用可能データ：
+{json.dumps(sections["section_01"], ensure_ascii=False, indent=2)}
 """.strip()
 
 
@@ -472,11 +561,15 @@ def call_gemini(prompt: str) -> Tuple[str, str]:
     for model in _choose_models():
         try:
             resp = client.models.generate_content(model=model, contents=prompt)
-            text = (getattr(resp, "text", "") or "").strip()
+            text = _strip_code_fences(getattr(resp, "text", "") or "")
             if not text:
                 raise RuntimeError(f"Empty response from model: {model}")
-            # 念のためコードブロック除去
-            text = text.replace("```json", "").replace("```", "").strip()
+
+            # 保険：先頭が 01 から始まらない出力は軽く整形（前置き混入対策）
+            idx = text.find("## 01.")
+            if idx > 0:
+                text = text[idx:].strip()
+
             return text, f"AIレポート生成完了（model: {model}）"
         except (genai_errors.ClientError, genai_errors.ServerError) as e:
             last_err = e
@@ -536,8 +629,8 @@ def handle_video_message(event: MessageEvent):
     message_id = event.message.id
     report_id = f"{user_id}_{message_id}"
 
-    # ✅ 常に有料版
-    is_premium = True
+    # 開発中：常に有料版にする
+    is_premium = True if FORCE_PREMIUM_ALWAYS else False
 
     firestore_safe_set(
         report_id,
@@ -545,8 +638,8 @@ def handle_video_message(event: MessageEvent):
             "user_id": user_id,
             "message_id": message_id,
             "status": "PROCESSING",
-            "plan_type": "premium",
-            "is_premium": True,
+            "plan_type": "premium" if is_premium else "free",
+            "is_premium": is_premium,
             "summary": "動画解析を開始しました。",
             "created_at": firestore.SERVER_TIMESTAMP if db else None,
         },
@@ -577,7 +670,7 @@ def handle_video_message(event: MessageEvent):
         safe_line_reply(event.reply_token, "【システムエラー】動画解析ジョブの登録に失敗しました。")
         return
 
-    safe_line_reply(event.reply_token, make_initial_reply(report_id, mode_label="全機能プレビュー"))
+    safe_line_reply(event.reply_token, make_initial_reply(report_id, mode_label="全機能プレビュー" if is_premium else "無料版"))
 
 
 @app.route("/worker/process_video", methods=["POST"])
@@ -591,6 +684,9 @@ def process_video_worker():
     if not report_id or not user_id or not message_id:
         return jsonify({"status": "error", "message": "missing report_id/user_id/message_id"}), 400
 
+    meta = firestore_get(report_id) or {}
+    is_premium = bool(meta.get("is_premium", True))
+
     firestore_safe_update(report_id, {"status": "IN_PROGRESS", "summary": "動画解析を実行中です..."})
 
     temp_dir = tempfile.mkdtemp(prefix="gate_swing_")
@@ -602,10 +698,10 @@ def process_video_worker():
         transcode_to_mp4(raw_video, mp4_video)
         raw_data = analyze_swing(mp4_video)
 
-        meta = firestore_get(report_id) or {}
         declared = meta.get("declared") if isinstance(meta.get("declared"), dict) else {}
 
-        prompt = build_prompt_full(raw_data, declared=declared)
+        # レポート生成（無料/有料）
+        prompt = build_prompt_full(raw_data, declared=declared) if is_premium else build_prompt_free(raw_data, declared=declared)
         ai_report_md, summary_text = call_gemini(prompt)
 
         firestore_safe_update(
@@ -620,7 +716,7 @@ def process_video_worker():
             },
         )
 
-        safe_line_push(user_id, make_done_push(report_id))
+        safe_line_push(user_id, make_done_push(report_id, is_premium=is_premium))
         return jsonify({"status": "success", "report_id": report_id}), 200
 
     except Exception as e:
@@ -637,6 +733,7 @@ def process_video_worker():
             },
         )
         safe_line_push(user_id, "【解析エラー】動画の変換または解析に失敗しました。別角度や明るい場所で撮影してみてください。")
+        # Cloud Tasks は 200 を返すと無限リトライにならない
         return jsonify({"status": "error", "message": "analysis failed"}), 200
 
     finally:
@@ -669,6 +766,7 @@ def api_report_data(report_id: str):
 # ==================================================
 @app.route("/report/<report_id>", methods=["GET"])
 def report_view(report_id: str):
+    # f-string を使わない（JSの {} / ${} 事故防止）
     return r"""
 <!DOCTYPE html>
 <html lang="ja">
@@ -690,7 +788,6 @@ def report_view(report_id: str):
     .card { background:#fff; border:1px solid #e5e7eb; border-radius: 0.9rem; }
     .k { font-size:.75rem; color:#6b7280; }
     .v { font-size:1.35rem; font-weight:900; color:#111827; }
-    .sub { font-size:.75rem; color:#6b7280; line-height:1.4; margin-top:.35rem; }
     .pill { display:inline-block; padding:.2rem .6rem; border-radius:9999px; font-size:.75rem; background:#f3f4f6; color:#111827; }
   </style>
 </head>
@@ -730,7 +827,7 @@ def report_view(report_id: str):
       .replace(/>/g,"&gt;").replace(/"/g,"&quot;");
   }
 
-  // ✅ “確実に”Markdown表をHTMLにする（ブロック単位で処理）
+  // “確実に”Markdown表をHTMLにする（ブロック単位で処理）
   function renderTables(md){
     const lines = String(md || "").split("\\n");
     const out = [];
@@ -742,15 +839,13 @@ def report_view(report_id: str):
     }
     function isSepLine(line){
       const t = line.trim();
-      // |---|---:|:-:| などを許容
       return /^\\|\\s*[:-]-[-|\\s:]*\\|\\s*$/.test(t);
     }
 
     while(i < lines.length){
       if (isTableLine(lines[i]) && i+1 < lines.length && isSepLine(lines[i+1])){
-        // collect table block
         const header = lines[i].trim();
-        i += 2; // skip sep
+        i += 2;
         const rows = [];
         while(i < lines.length && isTableLine(lines[i])){
           rows.push(lines[i].trim());
@@ -763,7 +858,7 @@ def report_view(report_id: str):
         let html = "<table><thead><tr>";
         html += headCells.map(c=>`<th>${esc(c)}</th>`).join("");
         html += "</tr></thead><tbody>";
-        html += bodyRows.map(r=>"<tr>"+r.map(c=>`<td>${esc(c).replace(/<br>/g,"<br>")}</td>`).join("")+"</tr>").join("");
+        html += bodyRows.map(r=>"<tr>"+r.map(c=>`<td>${esc(c).replace(/&lt;br&gt;/g,"<br>")}</td>`).join("")+"</tr>").join("");
         html += "</tbody></table>";
         out.push(html);
         continue;
@@ -777,10 +872,10 @@ def report_view(report_id: str):
   function mdToHtml(md){
     let t = String(md || "").trim();
 
-    // 先に表をHTML化（残りはエスケープ済み文字列＋表HTMLが混在）
+    // 先に表をHTML化（残りはエスケープ済み + 表HTMLが混在）
     t = renderTables(t);
 
-    // 太字（esc済みテキスト中の ** ** をHTML化）
+    // 太字
     t = t.replace(/\\*\\*(.*?)\\*\\*/g, "<strong>$1</strong>");
 
     // 見出し
@@ -795,7 +890,7 @@ def report_view(report_id: str):
       return "<ul>" + items.map(it => "<li>"+it+"</li>").join("") + "</ul>";
     });
 
-    // 段落化：HTML要素（table/h2/h3/ul）はそのまま、それ以外は<p>
+    // 段落化：HTML要素（table/h2/h3/ul）はそのまま
     const parts = t.split(/\\n\\n+/).map(p => p.trim()).filter(Boolean);
     const out = parts.map(p => {
       if (p.startsWith("<h2>") || p.startsWith("<h3>") || p.startsWith("<table") || p.startsWith("<ul>")) return p;
@@ -846,4 +941,3 @@ def report_view(report_id: str):
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", "8080"))
     app.run(host="0.0.0.0", port=port)
-
