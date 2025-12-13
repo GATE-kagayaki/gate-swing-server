@@ -3,9 +3,9 @@ import json
 import time
 import math
 import shutil
-import traceback
 import tempfile
-from typing import Any, Dict, Optional, Tuple
+import traceback
+from typing import Dict, Any
 
 from flask import Flask, request, abort, jsonify
 
@@ -14,17 +14,15 @@ from linebot.exceptions import InvalidSignatureError, LineBotApiError
 from linebot.models import (
     MessageEvent,
     VideoMessage,
+    FileMessage,
     TextMessage,
     ImageMessage,
     StickerMessage,
-    FileMessage,
     TextSendMessage,
 )
 
 from google.cloud import firestore, tasks_v2
-from google.api_core.exceptions import NotFound, PermissionDenied
 from google import genai
-from google.genai import errors as genai_errors
 
 # ==================================================
 # ENV
@@ -35,11 +33,8 @@ GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
 GCP_PROJECT_ID = os.environ.get("GCP_PROJECT_ID", "")
 SERVICE_HOST_URL = os.environ.get("SERVICE_HOST_URL", "").rstrip("/")
 TASK_SA_EMAIL = os.environ.get("TASK_SA_EMAIL", "")
-TASK_QUEUE_LOCATION = os.environ.get("asia-northeast2", "asia-northeast2")
-TASK_QUEUE_NAME = os.environ.get("video-analysis-queue", "video-analysis-queue")
-
-GEMINI_MODEL_ENV = os.environ.get("GEMINI_MODEL", "").strip()
-FORCE_PREMIUM = os.environ.get("FORCE_PREMIUM", "true").lower() in ("1", "true", "yes", "on")
+TASK_QUEUE_LOCATION = os.environ.get("TASK_QUEUE_LOCATION", "asia-northeast2")
+TASK_QUEUE_NAME = os.environ.get("TASK_QUEUE_NAME", "video-analysis-queue")
 
 # ==================================================
 # App init
@@ -51,10 +46,12 @@ handler = WebhookHandler(LINE_CHANNEL_SECRET)
 
 db = firestore.Client(project=GCP_PROJECT_ID)
 tasks_client = tasks_v2.CloudTasksClient()
-queue_path = tasks_client.queue_path(GCP_PROJECT_ID, TASK_QUEUE_LOCATION, TASK_QUEUE_NAME)
+queue_path = tasks_client.queue_path(
+    GCP_PROJECT_ID, TASK_QUEUE_LOCATION, TASK_QUEUE_NAME
+)
 
 # ==================================================
-# Helpers
+# Utils
 # ==================================================
 def now_ts() -> float:
     return time.time()
@@ -221,39 +218,31 @@ def webhook():
     return "OK"
 
 
-@handler.add(MessageEvent, message=VideoMessage)
-def handle_video(event: MessageEvent):
+@handler.add(MessageEvent)
+def handle_any(event: MessageEvent):
+    msg = event.message
     user_id = event.source.user_id
-    message_id = event.message.id
-    report_id = f"{user_id}_{message_id}"
 
-    firestore_safe_set(
-        report_id,
-        {"status": "PROCESSING", "user_id": user_id, "created_at": firestore.SERVER_TIMESTAMP},
+    if isinstance(msg, (VideoMessage, FileMessage)):
+        report_id = f"{user_id}_{msg.id}"
+
+        firestore_safe_set(
+            report_id,
+            {
+                "user_id": user_id,
+                "status": "PROCESSING",
+                "created_at": firestore.SERVER_TIMESTAMP,
+            },
+        )
+
+        create_cloud_task(report_id, user_id, msg.id)
+        safe_line_reply(event.reply_token, make_initial_reply(report_id))
+        return
+
+    safe_line_reply(
+        event.reply_token,
+        "🎥 ゴルフスイングの動画を送ってください。\n（カメラ撮影・ファイル送信どちらでもOK）"
     )
-
-    create_cloud_task(report_id, user_id, message_id)
-    safe_line_reply(event.reply_token, make_initial_reply(report_id))
-
-
-@handler.add(MessageEvent, message=TextMessage)
-def handle_text(event):
-    safe_line_reply(event.reply_token, "動画を送信してください。")
-
-
-@handler.add(MessageEvent, message=ImageMessage)
-def handle_image(event):
-    safe_line_reply(event.reply_token, "画像では解析できません。動画を送ってください。")
-
-
-@handler.add(MessageEvent, message=StickerMessage)
-def handle_sticker(event):
-    safe_line_reply(event.reply_token, "動画を送ると解析できます。")
-
-
-@handler.add(MessageEvent, message=FileMessage)
-def handle_file(event):
-    safe_line_reply(event.reply_token, "ファイルではなく動画として送ってください。")
 
 
 @app.route("/worker/process_video", methods=["POST"])
@@ -312,14 +301,15 @@ def api_report_data(report_id):
 def report_view(report_id):
     return """
 <!DOCTYPE html>
-<html><head>
+<html lang="ja">
+<head>
 <meta charset="UTF-8">
 <script src="https://cdn.tailwindcss.com"></script>
 </head>
 <body class="bg-gray-100">
 <div class="max-w-4xl mx-auto p-6 bg-white shadow">
 <h1 class="text-2xl font-bold text-emerald-600">GATE AIスイングドクター</h1>
-<div id="metrics"></div>
+<div id="metrics" class="mt-4"></div>
 </div>
 <script>
 fetch("/api/report_data/""" + report_id + """")
@@ -327,12 +317,15 @@ fetch("/api/report_data/""" + report_id + """")
 .then(d=>{
  const m=d.mediapipe_data||{};
  document.getElementById("metrics").innerHTML=
-  `肩:${m.max_shoulder_rotation}°<br>
-   腰:${m.min_hip_rotation}°<br>
-   コック:${m.max_wrist_cock}°`;
+  `肩回旋: ${m.max_shoulder_rotation}°<br>
+   腰回旋: ${m.min_hip_rotation}°<br>
+   コック角: ${m.max_wrist_cock}°<br>
+   頭ブレ: ${m.max_head_drift_x}<br>
+   膝ブレ: ${m.max_knee_sway_x}`;
 });
 </script>
-</body></html>
+</body>
+</html>
 """
 
 
@@ -341,3 +334,4 @@ fetch("/api/report_data/""" + report_id + """")
 # ==================================================
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 8080)))
+
