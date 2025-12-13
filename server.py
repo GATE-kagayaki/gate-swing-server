@@ -1,13 +1,25 @@
 import os
 import json
 import time
+import math
+import shutil
 import traceback
+import tempfile
 from typing import Any, Dict, Optional, Tuple
 
 from flask import Flask, request, abort, jsonify
+
 from linebot import LineBotApi, WebhookHandler
 from linebot.exceptions import InvalidSignatureError, LineBotApiError
-from linebot.models import MessageEvent, VideoMessage, TextSendMessage
+from linebot.models import (
+    MessageEvent,
+    VideoMessage,
+    TextMessage,
+    ImageMessage,
+    StickerMessage,
+    FileMessage,
+    TextSendMessage,
+)
 
 from google.cloud import firestore, tasks_v2
 from google.api_core.exceptions import NotFound, PermissionDenied
@@ -23,79 +35,61 @@ GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
 GCP_PROJECT_ID = os.environ.get("GCP_PROJECT_ID", "")
 SERVICE_HOST_URL = os.environ.get("SERVICE_HOST_URL", "").rstrip("/")
 TASK_SA_EMAIL = os.environ.get("TASK_SA_EMAIL", "")
-TASK_QUEUE_LOCATION = os.environ.get("TASK_QUEUE_LOCATION", "asia-northeast2")
-TASK_QUEUE_NAME = os.environ.get("TASK_QUEUE_NAME", "video-analysis-queue")
+TASK_QUEUE_LOCATION = os.environ.get("asia-northeast2", "asia-northeast2")
+TASK_QUEUE_NAME = os.environ.get("video-analysis-queue", "video-analysis-queue")
 
-FORCE_PREMIUM = os.environ.get("FORCE_PREMIUM", "true").lower() in (
-    "1", "true", "yes", "on"
-)
+GEMINI_MODEL_ENV = os.environ.get("GEMINI_MODEL", "").strip()
+FORCE_PREMIUM = os.environ.get("FORCE_PREMIUM", "true").lower() in ("1", "true", "yes", "on")
 
 # ==================================================
 # App init
 # ==================================================
 app = Flask(__name__)
 
-line_bot_api = LineBotApi(LINE_CHANNEL_ACCESS_TOKEN) if LINE_CHANNEL_ACCESS_TOKEN else None
-handler = WebhookHandler(LINE_CHANNEL_SECRET) if LINE_CHANNEL_SECRET else None
+line_bot_api = LineBotApi(LINE_CHANNEL_ACCESS_TOKEN)
+handler = WebhookHandler(LINE_CHANNEL_SECRET)
 
-db = firestore.Client(project=GCP_PROJECT_ID) if GCP_PROJECT_ID else None
-tasks_client = tasks_v2.CloudTasksClient() if GCP_PROJECT_ID else None
-
-queue_path = None
-if tasks_client and GCP_PROJECT_ID:
-    queue_path = tasks_client.queue_path(
-        GCP_PROJECT_ID, TASK_QUEUE_LOCATION, TASK_QUEUE_NAME
-    )
+db = firestore.Client(project=GCP_PROJECT_ID)
+tasks_client = tasks_v2.CloudTasksClient()
+queue_path = tasks_client.queue_path(GCP_PROJECT_ID, TASK_QUEUE_LOCATION, TASK_QUEUE_NAME)
 
 # ==================================================
-# Utils
+# Helpers
 # ==================================================
 def now_ts() -> float:
     return time.time()
 
 
 def firestore_safe_set(report_id: str, data: Dict[str, Any]) -> None:
-    if not db:
-        return
     try:
         db.collection("reports").document(report_id).set(data, merge=True)
     except Exception:
-        print("[Firestore set error]")
         print(traceback.format_exc())
 
 
 def firestore_safe_update(report_id: str, patch: Dict[str, Any]) -> None:
-    if not db:
-        return
     try:
         db.collection("reports").document(report_id).update(patch)
     except Exception:
-        print("[Firestore update error]")
         print(traceback.format_exc())
 
 
 def safe_line_reply(reply_token: str, text: str) -> None:
-    if not line_bot_api:
-        return
     try:
         line_bot_api.reply_message(reply_token, TextSendMessage(text=text))
     except LineBotApiError:
-        print("[LINE reply error]")
         print(traceback.format_exc())
 
 
 def safe_line_push(user_id: str, text: str) -> None:
-    if not line_bot_api:
-        return
     try:
         line_bot_api.push_message(user_id, TextSendMessage(text=text))
     except LineBotApiError:
-        print("[LINE push error]")
         print(traceback.format_exc())
 
 
 # ==================================================
-# Message text
+# Messages
 # ==================================================
 def make_initial_reply(report_id: str) -> str:
     return (
@@ -120,52 +114,11 @@ def make_done_push(report_id: str) -> str:
 
 
 # ==================================================
-# Analysis (stub)
-# ==================================================
-def analyze_swing_stub() -> Dict[str, Any]:
-    return {
-        "frame_count": 72,
-        "max_shoulder_rotation": 46.1,
-        "min_hip_rotation": 26.3,
-        "max_wrist_cock": 94.8,
-        "max_head_drift_x": 0.019,
-        "max_knee_sway_x": 0.032,
-    }
-
-
-# ==================================================
-# Gemini
-# ==================================================
-def run_gemini_report(raw: Dict[str, Any]) -> str:
-    if not GEMINI_API_KEY:
-        return "AI診断レポートを生成できませんでした（APIキー未設定）。"
-
-    client = genai.Client(api_key=GEMINI_API_KEY)
-
-    prompt = (
-        "あなたはプロのゴルフスイングコーチです。\n"
-        "以下の骨格データをもとに、読みやすく実践的な日本語の診断レポートを作成してください。\n"
-        "最初にポジティブな評価を入れ、その後で最重要課題を1つ示してください。\n\n"
-        f"{json.dumps(raw, ensure_ascii=False, indent=2)}"
-    )
-
-    try:
-        resp = client.models.generate_content(
-            model="gemini-1.5-pro",
-            contents=prompt,
-        )
-        return resp.text or ""
-    except Exception as e:
-        print("[Gemini error]", e)
-        return "AI診断中にエラーが発生しました。"
-
-
-# ==================================================
 # Cloud Tasks
 # ==================================================
-def create_cloud_task(report_id: str, user_id: str) -> str:
+def create_cloud_task(report_id: str, user_id: str, message_id: str) -> None:
     payload = json.dumps(
-        {"report_id": report_id, "user_id": user_id}
+        {"report_id": report_id, "user_id": user_id, "message_id": message_id}
     ).encode("utf-8")
 
     task = {
@@ -180,26 +133,87 @@ def create_cloud_task(report_id: str, user_id: str) -> str:
             },
         }
     }
-    resp = tasks_client.create_task(parent=queue_path, task=task)
-    return resp.name
+    tasks_client.create_task(parent=queue_path, task=task)
+
+
+# ==================================================
+# MediaPipe Analysis
+# ==================================================
+def analyze_swing_with_mediapipe(video_path: str) -> Dict[str, Any]:
+    import cv2
+    import mediapipe as mp
+
+    mp_pose = mp.solutions.pose
+    cap = cv2.VideoCapture(video_path)
+
+    frame_count = 0
+    max_shoulder = 0.0
+    min_hip = 999.0
+    max_wrist = 0.0
+    max_head = 0.0
+    max_knee = 0.0
+
+    def angle(p1, p2, p3):
+        ax, ay = p1[0] - p2[0], p1[1] - p2[1]
+        bx, by = p3[0] - p2[0], p3[1] - p2[1]
+        dot = ax * bx + ay * by
+        na = math.hypot(ax, ay)
+        nb = math.hypot(bx, by)
+        if na * nb == 0:
+            return 0.0
+        c = max(-1.0, min(1.0, dot / (na * nb)))
+        return math.degrees(math.acos(c))
+
+    with mp_pose.Pose(model_complexity=1) as pose:
+        while cap.isOpened():
+            ok, frame = cap.read()
+            if not ok:
+                break
+
+            frame_count += 1
+            rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            res = pose.process(rgb)
+            if not res.pose_landmarks:
+                continue
+
+            lm = res.pose_landmarks.landmark
+            def xy(i): return (lm[i].x, lm[i].y)
+
+            LS = mp_pose.PoseLandmark.LEFT_SHOULDER.value
+            RS = mp_pose.PoseLandmark.RIGHT_SHOULDER.value
+            LH = mp_pose.PoseLandmark.LEFT_HIP.value
+            RH = mp_pose.PoseLandmark.RIGHT_HIP.value
+            LE = mp_pose.PoseLandmark.LEFT_ELBOW.value
+            LW = mp_pose.PoseLandmark.LEFT_WRIST.value
+            LI = mp_pose.PoseLandmark.LEFT_INDEX.value
+            NO = mp_pose.PoseLandmark.NOSE.value
+            LK = mp_pose.PoseLandmark.LEFT_KNEE.value
+
+            max_shoulder = max(max_shoulder, angle(xy(LS), xy(RS), xy(RH)))
+            min_hip = min(min_hip, angle(xy(LH), xy(RH), xy(LK)))
+            max_wrist = max(max_wrist, angle(xy(LE), xy(LW), xy(LI)))
+            max_head = max(max_head, abs(xy(NO)[0] - 0.5))
+            max_knee = max(max_knee, abs(xy(LK)[0] - 0.5))
+
+    cap.release()
+
+    return {
+        "frame_count": frame_count,
+        "max_shoulder_rotation": round(max_shoulder, 2),
+        "min_hip_rotation": round(min_hip, 2),
+        "max_wrist_cock": round(max_wrist, 2),
+        "max_head_drift_x": round(max_head, 4),
+        "max_knee_sway_x": round(max_knee, 4),
+    }
 
 
 # ==================================================
 # Routes
 # ==================================================
-@app.route("/health")
-def health():
-    return jsonify({"ok": True})
-
-
 @app.route("/webhook", methods=["POST"])
 def webhook():
-    if not handler:
-        abort(500)
-
     signature = request.headers.get("X-Line-Signature", "")
     body = request.get_data(as_text=True)
-
     try:
         handler.handle(body, signature)
     except InvalidSignatureError:
@@ -210,111 +224,115 @@ def webhook():
 @handler.add(MessageEvent, message=VideoMessage)
 def handle_video(event: MessageEvent):
     user_id = event.source.user_id
-    report_id = f"{user_id}_{event.message.id}"
+    message_id = event.message.id
+    report_id = f"{user_id}_{message_id}"
 
     firestore_safe_set(
         report_id,
-        {
-            "user_id": user_id,
-            "status": "PROCESSING",
-            "created_at": firestore.SERVER_TIMESTAMP,
-        },
+        {"status": "PROCESSING", "user_id": user_id, "created_at": firestore.SERVER_TIMESTAMP},
     )
 
-    try:
-        create_cloud_task(report_id, user_id)
-    except Exception as e:
-        firestore_safe_update(
-            report_id,
-            {"status": "TASK_ERROR", "summary": str(e)},
-        )
-        safe_line_reply(event.reply_token, "システムエラーが発生しました。")
-        return
-
+    create_cloud_task(report_id, user_id, message_id)
     safe_line_reply(event.reply_token, make_initial_reply(report_id))
+
+
+@handler.add(MessageEvent, message=TextMessage)
+def handle_text(event):
+    safe_line_reply(event.reply_token, "動画を送信してください。")
+
+
+@handler.add(MessageEvent, message=ImageMessage)
+def handle_image(event):
+    safe_line_reply(event.reply_token, "画像では解析できません。動画を送ってください。")
+
+
+@handler.add(MessageEvent, message=StickerMessage)
+def handle_sticker(event):
+    safe_line_reply(event.reply_token, "動画を送ると解析できます。")
+
+
+@handler.add(MessageEvent, message=FileMessage)
+def handle_file(event):
+    safe_line_reply(event.reply_token, "ファイルではなく動画として送ってください。")
 
 
 @app.route("/worker/process_video", methods=["POST"])
 def worker():
-    started = now_ts()
-    payload = request.get_json() or {}
-    report_id = payload.get("report_id")
-    user_id = payload.get("user_id")
+    payload = request.get_json()
+    report_id = payload["report_id"]
+    user_id = payload["user_id"]
+    message_id = payload["message_id"]
+
+    tmpdir = tempfile.mkdtemp()
+    video_path = os.path.join(tmpdir, f"{message_id}.mp4")
 
     try:
-        raw = analyze_swing_stub()
-        ai_report = run_gemini_report(raw)
+        content = line_bot_api.get_message_content(message_id)
+        with open(video_path, "wb") as f:
+            for c in content.iter_content():
+                f.write(c)
+
+        raw = analyze_swing_with_mediapipe(video_path)
 
         firestore_safe_update(
             report_id,
             {
                 "status": "COMPLETED",
                 "raw_data": raw,
-                "ai_report": ai_report,
-                "elapsed_sec": round(now_ts() - started, 2),
+                "completed_at": firestore.SERVER_TIMESTAMP,
             },
         )
+
         safe_line_push(user_id, make_done_push(report_id))
+
     except Exception as e:
-        firestore_safe_update(
-            report_id,
-            {"status": "FAILED", "summary": str(e)},
-        )
+        firestore_safe_update(report_id, {"status": "FAILED", "error": str(e)})
+
+    finally:
+        shutil.rmtree(tmpdir, ignore_errors=True)
 
     return jsonify({"ok": True})
 
 
 @app.route("/api/report_data/<report_id>")
-def api_report_data(report_id: str):
+def api_report_data(report_id):
     doc = db.collection("reports").document(report_id).get()
     if not doc.exists:
         return jsonify({"error": "not found"}), 404
-    data = doc.to_dict() or {}
+    d = doc.to_dict()
     return jsonify(
         {
-            "summary": data.get("summary", ""),
-            "mediapipe_data": data.get("raw_data", {}),
-            "ai_report_text": data.get("ai_report", ""),
+            "status": d.get("status"),
+            "mediapipe_data": d.get("raw_data", {}),
         }
     )
 
 
 @app.route("/report/<report_id>")
-def report_view(report_id: str):
+def report_view(report_id):
     return """
 <!DOCTYPE html>
-<html lang="ja">
-<head>
+<html><head>
 <meta charset="UTF-8">
-<title>GATE AIスイングドクター</title>
 <script src="https://cdn.tailwindcss.com"></script>
 </head>
 <body class="bg-gray-100">
-<div class="max-w-4xl mx-auto p-6">
-<div class="bg-white p-6 rounded shadow">
+<div class="max-w-4xl mx-auto p-6 bg-white shadow">
 <h1 class="text-2xl font-bold text-emerald-600">GATE AIスイングドクター</h1>
-<div id="summary" class="mt-4"></div>
-<div id="metrics" class="grid grid-cols-2 gap-3 mt-6"></div>
-<div id="report" class="mt-6"></div>
+<div id="metrics"></div>
 </div>
-</div>
-
 <script>
-const id = location.pathname.split("/").pop();
-fetch("/api/report_data/" + id)
-.then(r => r.json())
-.then(d => {
-  document.getElementById("summary").innerText = d.summary || "";
-  const m = d.mediapipe_data || {};
-  document.getElementById("metrics").innerHTML =
-    `<div>肩回旋: ${m.max_shoulder_rotation}</div>
-     <div>腰回旋: ${m.min_hip_rotation}</div>
-     <div>コック角: ${m.max_wrist_cock}</div>`;
-  document.getElementById("report").innerText = d.ai_report_text || "";
+fetch("/api/report_data/""" + report_id + """")
+.then(r=>r.json())
+.then(d=>{
+ const m=d.mediapipe_data||{};
+ document.getElementById("metrics").innerHTML=
+  `肩:${m.max_shoulder_rotation}°<br>
+   腰:${m.min_hip_rotation}°<br>
+   コック:${m.max_wrist_cock}°`;
 });
 </script>
-</body>
-</html>
+</body></html>
 """
 
 
@@ -322,6 +340,4 @@ fetch("/api/report_data/" + id)
 # Main
 # ==================================================
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", "8080"))
-    app.run(host="0.0.0.0", port=port)
-
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 8080)))
