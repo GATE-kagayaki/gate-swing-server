@@ -1,1 +1,55 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <title>GATE AIスイングドクター | SWING ANALYSIS REPORT（有料版）</title>
+  <style>
+    body { font-family: sans-serif; padding: 2rem; line-height: 1.6; }
+    h2 { border-bottom: 2px solid #ccc; padding-bottom: 0.2rem; }
+    table { border-collapse: collapse; margin-bottom: 2rem; }
+    table td, table th { border: 1px solid #ccc; padding: 0.5rem 1rem; }
+  </style>
+</head>
+<body>
+  <h1>GATE AIスイングドクター<br>SWING ANALYSIS REPORT（有料版）</h1>
+  <div id="report"></div>
+
+  <script>
+    const reportId = window.location.pathname.split("/").pop();
+    fetch(`/api/report_data/${reportId}`).then(res => res.json()).then(data => {
+      const el = document.getElementById("report");
+      if (!data.analysis) {
+        el.innerHTML = "<p>レポートが見つかりませんでした。</p>";
+        return;
+      }
+
+      const a = data.analysis;
+      Object.keys(a).forEach(k => {
+        const section = a[k];
+        el.innerHTML += `<h2>${k}. ${section.title}</h2>`;
+        if (section.data) {
+          el.innerHTML += "<table><tbody>" + Object.entries(section.data).map(
+            ([key, val]) => `<tr><td>${key}</td><td>${val}</td></tr>`
+          ).join("") + "</tbody></table>";
+        }
+        if (section.text) {
+          el.innerHTML += section.text.map(t => `<p>${t}</p>`).join("");
+        }
+        if (section.drills) {
+          el.innerHTML += "<table><thead><tr><th>ドリル名</th><th>目的</th><th>やり方</th></tr></thead><tbody>" +
+            section.drills.map(d =>
+              `<tr><td>${d["ドリル名"]}</td><td>${d["目的"]}</td><td>${d["やり方"]}</td></tr>`
+            ).join("") + "</tbody></table>";
+        }
+        if (section.fitting) {
+          el.innerHTML += "<table><thead><tr><th>項目</th><th>推奨</th></tr></thead><tbody>" +
+            Object.entries(section.fitting).map(
+              ([key, val]) => `<tr><td>${key}</td><td>${val}</td></tr>`
+            ).join("") + "</tbody></table>";
+        }
+      });
+    });
+  </script>
+</body>
+</html>
 
