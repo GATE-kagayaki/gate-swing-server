@@ -335,4 +335,104 @@ def handle_task():
         # 4. 課金ステータスに応じてJSONを構築 (HTMLの構造に完全に合わせる)
         is_premium = is_premium_user(user_id)
         
-        report_
+        report_data = {}
+
+        # 01. 数値データ
+        report_data["01"] = {
+            "title": "骨格計測データ（AIが測った数値）",
+            "data": {
+                "解析フレーム数": metrics["frame_count"],
+                "最大肩回転": f"{metrics['shoulder_rotation']}",
+                "最小腰回転": f"{metrics['hip_rotation']}",
+                "最大コック角": f"{metrics['wrist_cock']}",
+                "最大頭ブレ（Sway）": f"{metrics['sway']}",
+                "最大膝ブレ（Sway）": f"{metrics['knee_sway']}"
+            }
+        }
+        
+        # 07. 総合診断
+        report_data["07"] = {
+            "title": "総合診断",
+            "text": [
+                "**✅ 安定している点:**",
+                comments['summary_good'],
+                "**⚠️ 改善が期待される点:**",
+                comments['summary_bad'],
+                f"**👉 最終判定:** {comments['summary_msg']}"
+            ]
+        }
+
+        # 有料版セクション (02, 03, 04, 05, 06, 08, 09, 10)
+        if is_premium:
+            report_data["02"] = { "title": "頭の安定性（軸のブレ）", "text": [comments["head_main"], f"プロ視点では: {comments['head_pro']}"] }
+            report_data["03"] = { "title": "肩の回旋（上半身のねじり）", "text": [comments["shoulder_main"], f"プロ視点では: {comments['shoulder_pro']}"] }
+            report_data["04"] = { "title": "腰の回旋（下半身の動き）", "text": [comments["hip_main"], f"プロ視点では: {comments['hip_pro']}"] }
+            report_data["05"] = { "title": "手首のメカニクス（クラブ操作）", "text": [comments["wrist_main"], f"プロ視点では: {comments['wrist_pro']}"] }
+            report_data["06"] = { "title": "下半身の安定性", "text": [comments["knee_main"], f"プロ視点では: {comments['knee_pro']}"] }
+            
+            # 08. ドリル (HTMLの期待する日本語キーに変換)
+            drills_formatted = [{"ドリル名": d["name"], "目的": d["obj"], "やり方": d["method"]} for d in drills]
+            report_data["08"] = { "title": "改善戦略とドリル", "drills": drills_formatted }
+            
+            # 09. フィッティング
+            report_data["09"] = {
+                "title": "スイング傾向補正型フィッティング（ドライバーのみ）",
+                "fitting": {
+                    "シャフト重量": fitting.get("weight"), "フレックス": fitting.get("flex"), 
+                    "キックポイント": fitting.get("kick"), "トルク": fitting.get("torque"), "備考": fitting.get("備考")
+                }
+            }
+            report_data["10"] = { "title": "まとめ（次のステップ）", "text": [summary_text] }
+        else:
+             # 無料版の場合、有料版の項目に「有料会員限定」メッセージを格納
+            premium_text = ["この項目は有料会員限定です。詳細な診断、ドリル、フィッティングをご希望の方はプレミアムプランをご検討ください。"]
+            for i in range(2, 7):
+                 report_data[f"0{i}"] = {"title": f"0{i}. (有料限定)", "text": premium_text}
+            report_data["08"] = {"title": "08. (有料限定)", "text": premium_text}
+            report_data["09"] = {"title": "09. (有料限定)", "text": premium_text}
+            report_data["10"] = {"title": "10. (有料限定)", "text": premium_text}
+
+        # 5. Firestore更新とユーザーへの通知
+        doc_ref.update({
+            "status": "COMPLETED",
+            "analysis": report_data,
+            "raw_data": frames_data, 
+            "updated_at": SERVER_TIMESTAMP
+        })
+        
+        report_url = f"{SERVICE_HOST_URL}/report/{report_id}"
+        line_bot_api.push_message(user_id, TextSendMessage(text=f"✅ 診断が完了しました。\n以下のURLから診断内容をご確認ください。\n{report_url}"))
+        
+    except Exception as e:
+        print(f"Task Failed (Report ID: {report_id}): {traceback.format_exc()}")
+        doc_ref.update({"status": "FAILED", "error": f"Task error: {str(e)}"})
+        line_bot_api.push_message(user_id, TextSendMessage(text="システムエラーが発生し、解析を完了できませんでした。"))
+        return "Internal Error", 500
+    finally:
+        shutil.rmtree(tmpdir, ignore_errors=True)
+        
+    return jsonify({"ok": True}), 200
+
+# --- レポート表示API ---
+@app.route("/report/<report_id>")
+def serve_report(report_id):
+    """HTMLレポートを返す"""
+    return send_from_directory("templates", "report.html")
+
+@app.route("/api/report_data/<report_id>")
+def api_report_data(report_id):
+    """レポートデータをJSONで返す (フロントエンド用)"""
+    try:
+        doc = db.collection("reports").document(report_id).get()
+        if not doc.exists: return jsonify({"error": "not found"}), 404
+        d = doc.to_dict()
+        return jsonify({
+            "status": d.get("status"),
+            "analysis": d.get("analysis", {}),
+            "created_at": d.get("created_at")
+        })
+    except Exception:
+        return jsonify({"error": "internal error"}), 500
+
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 8080)))
