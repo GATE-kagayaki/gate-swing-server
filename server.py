@@ -257,7 +257,6 @@ def webhook():
     try: 
         handler.handle(body, signature)
     except InvalidSignatureError: 
-        # シグネチャが不正 (環境変数が間違っている可能性)
         abort(400)
     except LineBotApiError as e:
         print(f"LINE API Error: {e}")
