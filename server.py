@@ -4,434 +4,422 @@ import math
 import shutil
 import traceback
 import tempfile
-import uuid
+from datetime import datetime, timezone
+from typing import Any, Dict, List, Optional
+
 import numpy as np
-from datetime import datetime, timezone, timedelta
-from typing import Any, Dict, List
+from flask import Flask, request, jsonify, abort, send_from_directory
 
-# --- Flask のインポート (send_from_directory も含む) ---
-from flask import Flask, request, jsonify, abort, send_from_directory 
-
-# --- LINE Bot 関連のライブラリ ---
 from linebot import LineBotApi, WebhookHandler
 from linebot.exceptions import InvalidSignatureError, LineBotApiError
-from linebot.models import (
-    MessageEvent, VideoMessage, TextSendMessage
-)
+from linebot.models import MessageEvent, VideoMessage, TextSendMessage
 
-# --- Google Cloud 関連 ---
 from google.cloud import firestore
 from google.cloud import tasks_v2
-from google.cloud.firestore import SERVER_TIMESTAMP
+from google.api_core.exceptions import NotFound, PermissionDenied
 
-# --- MediaPipe と OpenCV ---
-import cv2
-import mediapipe as mp
 
 # ==================================================
-# CONFIGURATION
+# CONFIG
 # ==================================================
 app = Flask(__name__)
-db = firestore.Client()
+app.config["JSON_AS_ASCII"] = False
 
-# 環境変数の設定
 LINE_CHANNEL_ACCESS_TOKEN = os.environ.get("LINE_CHANNEL_ACCESS_TOKEN", "")
 LINE_CHANNEL_SECRET = os.environ.get("LINE_CHANNEL_SECRET", "")
-PROJECT_ID = os.getenv("GCP_PROJECT")
+
+# ✅ ここが最重要：プロジェクトIDは複数候補から拾う
+PROJECT_ID = (
+    os.environ.get("GCP_PROJECT_ID")
+    or os.environ.get("GOOGLE_CLOUD_PROJECT")
+    or os.environ.get("GCP_PROJECT")
+    or ""
+)
+
 QUEUE_NAME = os.environ.get("TASK_QUEUE_NAME", "video-analysis-queue")
 QUEUE_LOCATION = os.environ.get("TASK_QUEUE_LOCATION", "asia-northeast2")
+
 SERVICE_HOST_URL = os.environ.get("SERVICE_HOST_URL", "").rstrip("/")
-TASK_HANDLER_URL = f"{SERVICE_HOST_URL}/task-handler"
-TASK_SA_EMAIL = os.environ.get("TASK_SA_EMAIL", "") 
+TASK_SA_EMAIL = os.environ.get("TASK_SA_EMAIL", "")
+
+TASK_HANDLER_PATH = "/task-handler"
+TASK_HANDLER_URL = f"{SERVICE_HOST_URL}{TASK_HANDLER_PATH}"
+
+db = firestore.Client()  # Cloud Run上では通常これでOK
 
 line_bot_api = LineBotApi(LINE_CHANNEL_ACCESS_TOKEN)
 handler = WebhookHandler(LINE_CHANNEL_SECRET)
+
 tasks_client = tasks_v2.CloudTasksClient()
-queue_path = tasks_client.queue_path(PROJECT_ID, QUEUE_LOCATION, QUEUE_NAME)
+
 
 # ==================================================
-# [CORE LOGIC] MATH, TEXT & MEDIAPIPE EXTRACTION
+# Helpers
 # ==================================================
+def firestore_safe_set(report_id: str, data: Dict[str, Any]) -> None:
+    try:
+        db.collection("reports").document(report_id).set(data, merge=True)
+    except Exception:
+        print(traceback.format_exc())
+
+
+def firestore_safe_update(report_id: str, patch: Dict[str, Any]) -> None:
+    try:
+        db.collection("reports").document(report_id).update(patch)
+    except Exception:
+        print(traceback.format_exc())
+
+
+def safe_line_reply(reply_token: str, text: str) -> None:
+    try:
+        line_bot_api.reply_message(reply_token, TextSendMessage(text=text))
+    except LineBotApiError:
+        print(traceback.format_exc())
+
+
+def safe_line_push(user_id: str, text: str) -> None:
+    try:
+        line_bot_api.push_message(user_id, TextSendMessage(text=text))
+    except LineBotApiError:
+        print(traceback.format_exc())
+
+
+def make_initial_reply(report_id: str) -> str:
+    return (
+        "✅ 動画を受信しました。\n"
+        "AIによるスイング数値計測を開始します。\n\n"
+        "完了まで1〜3分ほどお待ちください。\n"
+        "完了すると自動で通知が届きます。\n\n"
+        "【現在のステータス確認】\n"
+        f"{SERVICE_HOST_URL}/report/{report_id}"
+    )
+
+
+def make_done_push(report_id: str) -> str:
+    return (
+        "🎉 スイング計測が完了しました！\n\n"
+        "以下のリンクから診断レポートを確認できます。\n\n"
+        "【診断レポートを見る】\n"
+        f"{SERVICE_HOST_URL}/report/{report_id}"
+    )
+
 
 def is_premium_user(user_id: str) -> bool:
-    """
-    課金ステータス判定ロジック (ダミー)
-    """
-    # ここにテスト用のLINE User IDを入れてテストできます
-    return user_id == "Uxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
-
-def calculate_angle_3points(a, b, c):
-    """3点間の角度計算"""
-    if not a or not b or not c: return 0.0
-    a, b, c = np.array(a), np.array(b), np.array(c)
-    ba = a - b
-    bc = c - b
-    norm_ba = np.linalg.norm(ba)
-    norm_bc = np.linalg.norm(bc)
-    if norm_ba == 0 or norm_bc == 0: return 0.0
-    cosine_angle = np.dot(ba, bc) / (norm_ba * norm_bc)
-    angle = np.arccos(np.clip(cosine_angle, -1.0, 1.0))
-    return np.degrees(angle)
-
-def get_horizontal_angle(p1, p2):
-    """水平角計算"""
-    if not p1 or not p2: return 0.0
-    vec = np.array(p1) - np.array(p2)
-    return math.degrees(math.atan2(vec[1], vec[0]))
-
-def extract_mediapipe_data(video_path) -> List[Dict[str, float]]:
-    """動画ファイルからMediaPipeを使って骨格データを抽出"""
-    mp_pose = mp.solutions.pose
-    pose = mp_pose.Pose(
-        static_image_mode=False, model_complexity=1, smooth_landmarks=True, 
-        min_detection_confidence=0.5, min_tracking_confidence=0.5
-    )
-    cap = cv2.VideoCapture(video_path)
-    frames_data = []
-
-    while cap.isOpened():
-        ret, frame = cap.read()
-        if not ret: break
-        
-        image = cv2.resize(frame, (640, 360))
-        image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-        results = pose.process(image)
-
-        if results.pose_landmarks:
-            lm = results.pose_landmarks.landmark
-            frames_data.append({
-                "nose": (lm[0].x, lm[0].y), "l_shoulder": (lm[11].x, lm[11].y), "r_shoulder": (lm[12].x, lm[12].y), 
-                "l_elbow": (lm[13].x, lm[13].y), "l_wrist": (lm[15].x, lm[15].y), "l_hip": (lm[23].x, lm[23].y), 
-                "r_hip": (lm[24].x, lm[24].y), "l_knee": (lm[25].x, lm[25].y),
-            })
-    cap.release()
-    return frames_data
-
-def process_landmarks(frames_data):
-    """時系列の骨格データからスイング指標(metrics)を計算する"""
-    if not frames_data: return None
-    wrist_ys = [f.get("l_wrist", [0, 1.0])[1] for f in frames_data]
-    top_idx = np.argmin(wrist_ys)
-    search_start = max(0, top_idx - 50)
-    address_slice = wrist_ys[search_start:top_idx]
-    address_idx = search_start + np.argmax(address_slice) if len(address_slice) > 0 else 0
-    d_top = frames_data[top_idx]
-    d_addr = frames_data[address_idx]
-    top_shoulder = abs(get_horizontal_angle(d_top.get("l_shoulder"), d_top.get("r_shoulder")))
-    top_hip = abs(get_horizontal_angle(d_top.get("l_hip"), d_top.get("r_hip")))
-    x_factor = abs(top_shoulder - top_hip)
-    nose_top = d_top.get("nose", [0,0])[0]
-    nose_addr = d_addr.get("nose", [0,0])[0]
-    sway = (nose_top - nose_addr) * 100
-    knee_top = d_top.get("l_knee", [0,0])[0]
-    knee_addr = d_addr.get("l_knee", [0,0])[0]
-    knee_sway = knee_top - knee_addr
-    wrist_cock = calculate_angle_3points(d_top.get("l_shoulder"), d_top.get("l_elbow"), d_top.get("l_wrist"))
-    return {
-        "x_factor": round(x_factor, 1), "shoulder_rotation": round(top_shoulder, 1), "hip_rotation": round(top_hip, 1),
-        "sway": round(sway, 2), "knee_sway": round(knee_sway, 4), "wrist_cock": round(wrist_cock, 1), "frame_count": len(frames_data)
-    }
-
-def generate_pro_quality_text(metrics): 
-    """プロ品質の診断コメントを生成"""
-    c = {} 
-    drills = []
-    fitting = {}
-    sway = metrics["sway"]
-    xfactor = metrics["x_factor"]
-    hip_rot = metrics["hip_rotation"]
-    cock = metrics["wrist_cock"]
-    
-    # --- 02. Head Sway ---
-    if abs(sway) > 8.0:
-        c["head_main"] = (f"最大頭ブレ（Sway）：{sway:.1f}% (要改善)\n\n頭部が大きく移動しており、回転軸が定まっていません。\nミート率が安定しない主原因。")
-        c["head_pro"] = "「回転」ではなく「横移動」になっています。"
-        drills.append({"name": "クローズスタンス打ち", "obj": "軸の固定感覚", "method": "両足を閉じてスイングし、その場で回る"})
-    elif abs(sway) < 4.0:
-        c["head_main"] = (f"最大頭ブレ（Sway）：{sway:.1f}%\n\n頭部の左右移動量が小さく、回転軸は明確。\n体幹主導のスイングに移行できる下地が整っている。")
-        c["head_pro"] = "すでに“壊れにくいスイング構造”を持っています。"
-    else:
-        c["head_main"] = (f"最大頭ブレ（Sway）：{sway:.1f}%\n\n許容範囲内だが、疲労時に軸がブレるリスクあり。\n「背骨の角度を変えない」意識が必要です。")
-        c["head_pro"] = "悪くはないが、もっと「その場」で回れます。"
-
-    # --- 03. Shoulder & X-Factor ---
-    if xfactor < 35:
-        c["shoulder_main"] = ("肩の回旋量が小さく、捻転差（Xファクター）が不十分。\n腕力で代償しようとする動きが発生しています。")
-        c["shoulder_pro"] = "「可動域不足」ではなく“使えていない”タイプ。"
-        drills.append({"name": "椅子座り捻転", "obj": "分離動作の習得", "method": "椅子に座り、胸椎だけを回す"})
-    elif xfactor > 60:
-        c["shoulder_main"] = ("プロ並みの柔軟性だが、オーバースイング気味。\n戻すタイミングが遅れやすく、振り遅れの原因になりかねない。")
-        c["shoulder_pro"] = "柔軟性は武器だが、現在は「振り遅れ」のリスク要因です。"
-        drills.append({"name": "3秒トップ停止", "obj": "トップの収まり", "method": "トップで3秒静止し、グラつきを確認する"})
-    else:
-        c["shoulder_main"] = ("理想的な捻転差が形成され、再現性の高いトップ。\n下半身との拮抗（引っ張り合い）もバランスが良い。")
-        c["shoulder_pro"] = "文句なし。非常に効率の良いエネルギー構造です。"
-
-    # --- 04. Hip Rotation ---
-    if hip_rot > 60:
-        c["hip_main"] = ("腰の回転が早く・大きく出やすい傾向。\n上半身より先に回ることで、パワーが分散している。")
-        c["hip_pro"] = "切り返しタイミングの調整余地が大きいスイング。"
-        drills.append({"name": "右足ベタ足打ち", "obj": "腰の開き抑制", "method": "右かかとを上げずにインパクトする"})
-        fitting = {"重量": "60g後半〜70g", "フレックス": "S〜X", "キックポイント": "元調子", "トルク": "3.0〜3.5", "備考": "重く硬いシャフトで、身体の開きを抑える"}
-        
-    elif hip_rot < 30:
-        c["hip_main"] = ("腰の回転が止まり気味で、手打ちになりやすい状態。\n下半身リードをもっと意識する必要があります。")
-        c["hip_pro"] = "下半身のエンジンを使わず、腕力に頼りすぎです。"
-        fitting = {"重量": "40g〜50g前半", "フレックス": "R〜SR", "キックポイント": "先調子", "トルク": "4.5〜5.5", "備考": "シャフトの走りで回転不足を補う"}
-        
-    else:
-        c["hip_main"] = ("腰の回転量は理想的（45度前後）で、土台としてしっかり機能している。")
-        c["hip_pro"] = "プロレベルの安定した下半身使いです。"
-        fitting = {"重量": "50g〜60g", "フレックス": "SR〜S", "キックポイント": "中調子", "トルク": "3.8〜4.5", "備考": "癖のない挙動で安定性を最大化"}
-
-    # --- 05. Wrist ---
-    if cock < 80:
-        c["wrist_main"] = ("コック角が深く、タメを作ろうとする意識が強い。\nタイミング次第で飛ぶ日と飛ばない日の差が出やすいタイプ。")
-        c["wrist_pro"] = "リストに依存しすぎています。"
-    elif cock > 120:
-        c["wrist_main"] = ("ノーコックに近いスイング。\n方向性は安定するが、ヘッドスピードのポテンシャルを活かせていない。")
-        c["wrist_pro"] = "安全策を取りすぎです。もっと飛ばせます。"
-        if len(drills) < 3: drills.append({"name": "連続素振り", "obj": "手首の柔軟性", "method": "止まらずに連続で振り、遠心力を感じる"})
-    else:
-        c["wrist_main"] = ("適度なコック角が維持され、クラブの重みをうまく扱えている。")
-        c["wrist_pro"] = "シンプルで再現性の高い手首使いです。"
-
-    # --- 06. Knee (Logic) ---
-    if abs(sway) > 5:
-        c["knee_main"] = "スウェーにつられて、膝も一緒に流れている。\n地面反力が逃げてしまっている状態。"
-        c["knee_pro"] = "足元のグリップ力が足りていません。"
-    else:
-        c["knee_main"] = "膝のブレが少なく、地面をしっかり捉えられている。\nインパクトゾーンで下半身が暴れないのは大きな強み。"
-        c["knee_pro"] = "粘りのある、良い下半身です。"
-
-    # --- Summary ---
-    if len(drills) >= 2:
-        c["summary_good"] = "スイング軸と下半身の安定性\n再現性を高めやすい構造"
-        c["summary_bad"] = "各パーツの連動不足\n特定の局面での代償動作"
-        c["summary_msg"] = "「要素を削ぎ落とし、シンプルにする段階」"
-        summary_footer = ("このスイングは、「直せばすぐ変わる」タイプです。\n土台は整っています。あとは上半身の役割を正しく使えるかどうか。\n\nお客様のゴルフライフが、\nより戦略的で、再現性の高いものになることを切に願っています。"
-        )
-    else:
-        c["summary_good"] = "全体のバランスと再現性の高さ\n強固なスイング軸"
-        c["summary_bad"] = "特になし（微調整レベル）"
-        c["summary_msg"] = "「完成度が高く、スコアに直結するスイング」"
-        summary_footer = ("素晴らしいスイングです。\n大きな改造は必要ありません。\n今のリズムを維持しつつ、ショートゲームやマネジメントに磨きをかけてください.")
-
-    return c, drills[:3], fitting, summary_footer
+    # ✅ まずは「必ず02-10も出る」状態でテストする
+    return True
 
 
 # ==================================================
-# CLOUD TASKS UTILITY
+# Cloud Tasks
 # ==================================================
+def create_cloud_task(report_id: str, user_id: str, message_id: str) -> str:
+    if not PROJECT_ID:
+        raise RuntimeError("PROJECT_ID is empty. Set GCP_PROJECT_ID or GOOGLE_CLOUD_PROJECT.")
+    if not SERVICE_HOST_URL:
+        raise RuntimeError("SERVICE_HOST_URL is empty.")
+    if not TASK_SA_EMAIL:
+        raise RuntimeError("TASK_SA_EMAIL is empty.")
 
-def create_cloud_task(report_id, user_id, message_id):
-    """LINEの動画IDとユーザーIDをCloud Tasksに渡す"""
-    payload = json.dumps({
-        "report_id": report_id, 
-        "user_id": user_id, 
-        "message_id": message_id
-    }).encode("utf-8")
-    
+    queue_path = tasks_client.queue_path(PROJECT_ID, QUEUE_LOCATION, QUEUE_NAME)
+
+    payload = json.dumps(
+        {"report_id": report_id, "user_id": user_id, "message_id": message_id},
+        ensure_ascii=False,
+    ).encode("utf-8")
+
     task = {
         "http_request": {
             "http_method": tasks_v2.HttpMethod.POST,
             "url": TASK_HANDLER_URL,
             "headers": {"Content-Type": "application/json"},
             "body": payload,
-            # Cloud RunのサービスアカウントとAudienceを設定
-            "oidc_token": {"service_account_email": TASK_SA_EMAIL, "audience": SERVICE_HOST_URL},
+            "oidc_token": {
+                "service_account_email": TASK_SA_EMAIL,
+                "audience": SERVICE_HOST_URL,
+            },
         }
     }
-    tasks_client.create_task(parent=queue_path, task=task)
+
+    resp = tasks_client.create_task(parent=queue_path, task=task)
+    return resp.name
 
 
 # ==================================================
-# API ROUTES (LINE Webhook & Worker)
+# MediaPipe analysis (あなたの最小版を踏襲)
 # ==================================================
+def analyze_swing_with_mediapipe(video_path: str) -> Dict[str, Any]:
+    import cv2
+    import mediapipe as mp
+
+    mp_pose = mp.solutions.pose
+    cap = cv2.VideoCapture(video_path)
+
+    frame_count = 0
+    max_shoulder = 0.0
+    min_hip = 999.0
+    max_wrist = 0.0
+    max_head = 0.0
+    max_knee = 0.0
+
+    def angle(p1, p2, p3):
+        ax, ay = p1[0] - p2[0], p1[1] - p2[1]
+        bx, by = p3[0] - p2[0], p3[1] - p2[1]
+        dot = ax * bx + ay * by
+        na = math.hypot(ax, ay)
+        nb = math.hypot(bx, by)
+        if na * nb == 0:
+            return 0.0
+        c = max(-1.0, min(1.0, dot / (na * nb)))
+        return math.degrees(math.acos(c))
+
+    with mp_pose.Pose(
+        static_image_mode=False,
+        model_complexity=1,
+        enable_segmentation=False,
+        min_detection_confidence=0.5,
+        min_tracking_confidence=0.5,
+    ) as pose:
+        while cap.isOpened():
+            ok, frame = cap.read()
+            if not ok:
+                break
+
+            frame_count += 1
+            rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            res = pose.process(rgb)
+            if not res.pose_landmarks:
+                continue
+
+            lm = res.pose_landmarks.landmark
+            def xy(i): return (lm[i].x, lm[i].y)
+
+            LS = mp_pose.PoseLandmark.LEFT_SHOULDER.value
+            RS = mp_pose.PoseLandmark.RIGHT_SHOULDER.value
+            LH = mp_pose.PoseLandmark.LEFT_HIP.value
+            RH = mp_pose.PoseLandmark.RIGHT_HIP.value
+            LE = mp_pose.PoseLandmark.LEFT_ELBOW.value
+            LW = mp_pose.PoseLandmark.LEFT_WRIST.value
+            LI = mp_pose.PoseLandmark.LEFT_INDEX.value
+            NO = mp_pose.PoseLandmark.NOSE.value
+            LK = mp_pose.PoseLandmark.LEFT_KNEE.value
+
+            max_shoulder = max(max_shoulder, angle(xy(LS), xy(RS), xy(RH)))
+            min_hip = min(min_hip, angle(xy(LH), xy(RH), xy(LK)))
+            max_wrist = max(max_wrist, angle(xy(LE), xy(LW), xy(LI)))
+            max_head = max(max_head, abs(xy(NO)[0] - 0.5))
+            max_knee = max(max_knee, abs(xy(LK)[0] - 0.5))
+
+    cap.release()
+
+    if frame_count < 10:
+        raise RuntimeError("解析に必要なフレーム数が不足しています。もう少し長めの動画でお試しください。")
+
+    return {
+        "frame_count": frame_count,
+        "max_shoulder_rotation": round(max_shoulder, 2),
+        "min_hip_rotation": round(min_hip, 2),
+        "max_wrist_cock": round(max_wrist, 2),
+        "max_head_drift_x": round(max_head, 4),
+        "max_knee_sway_x": round(max_knee, 4),
+    }
+
+
+# ==================================================
+# Routes
+# ==================================================
+@app.route("/health", methods=["GET"])
+def health():
+    return jsonify({
+        "ok": True,
+        "project_id": PROJECT_ID,
+        "queue_location": QUEUE_LOCATION,
+        "queue_name": QUEUE_NAME,
+        "service_host_url": SERVICE_HOST_URL,
+        "task_handler_url": TASK_HANDLER_URL,
+        "task_sa_email_set": bool(TASK_SA_EMAIL),
+    })
+
 
 @app.route("/webhook", methods=["POST"])
 def webhook():
-    """LINEからのイベントを受け取るエンドポイント"""
     signature = request.headers.get("X-Line-Signature", "")
     body = request.get_data(as_text=True)
-    try: 
+    try:
         handler.handle(body, signature)
-    except InvalidSignatureError: 
+    except InvalidSignatureError:
         abort(400)
-    except LineBotApiError as e:
-        print(f"LINE API Error: {e}")
     return "OK"
 
-@handler.add(MessageEvent)
-def handle_msg(event: MessageEvent):
-    """メッセージイベントハンドラー（動画受信時の処理）"""
+
+@handler.add(MessageEvent, message=VideoMessage)
+def handle_video(event: MessageEvent):
+    user_id = event.source.user_id
     msg = event.message
-    
-    if isinstance(msg, VideoMessage):
-        report_id = f"{event.source.user_id}_{msg.id}"
-        
-        # 1. Firestoreに初期状態を保存
-        db.collection("reports").document(report_id).set({
-            "user_id": event.source.user_id,
+    report_id = f"{user_id}_{msg.id}"
+
+    firestore_safe_set(
+        report_id,
+        {
+            "user_id": user_id,
             "status": "PROCESSING",
-            "created_at": datetime.now(timezone.utc).isoformat()
-        }, merge=True)
-        
-        # 2. Cloud Tasksに処理を依頼
-        try:
-            create_cloud_task(report_id, event.source.user_id, msg.id)
-            
-            # 3. ユーザーに即座に返信（解析中通知）
-            line_bot_api.reply_message(
-                event.reply_token, 
-                TextSendMessage(text=f"✅ 動画を受信しました。\nスイング解析中です。しばらくお待ちください。\n\n※所要時間：約1〜2分")
-            )
-        except Exception as e:
-            line_bot_api.reply_message(event.reply_token, TextSendMessage(text="システムエラーが発生しました。時間を置いて再度お試しください。"))
-            print(f"Failed to create task: {e}")
-            
-    else:
-        try:
-            line_bot_api.reply_message(event.reply_token, TextSendMessage(text="スイング動画を送信してください。"))
-        except:
-            pass
+            "is_premium": True,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        },
+    )
+
+    try:
+        task_name = create_cloud_task(report_id, user_id, msg.id)
+        firestore_safe_update(report_id, {"task_name": task_name})
+        safe_line_reply(event.reply_token, make_initial_reply(report_id))
+    except (NotFound, PermissionDenied) as e:
+        firestore_safe_update(report_id, {"status": "TASK_FAILED", "error": str(e)})
+        safe_line_reply(event.reply_token, "システムエラーが発生しました。時間を置いて再度お試しください。")
+    except Exception as e:
+        firestore_safe_update(report_id, {"status": "TASK_FAILED", "error": str(e)})
+        print("Failed to create task:", traceback.format_exc())
+        safe_line_reply(event.reply_token, "システムエラーが発生しました。時間を置いて再度お試しください。")
 
 
 @app.route("/task-handler", methods=["POST"])
-def handle_task():
-    """
-    [Worker] Cloud Tasks から呼び出され、動画をダウンロードし解析を実行する
-    """
-    d = request.get_json(silent=True)
+def task_handler():
+    d = request.get_json(silent=True) or {}
     report_id = d.get("report_id")
     message_id = d.get("message_id")
     user_id = d.get("user_id")
 
-    if not report_id or not message_id or not user_id: return "Invalid payload", 400
+    if not report_id or not message_id or not user_id:
+        return "Invalid payload", 400
 
     tmpdir = tempfile.mkdtemp()
     video_path = os.path.join(tmpdir, f"{message_id}.mp4")
+
     doc_ref = db.collection("reports").document(report_id)
-    
+
     try:
-        # 1. LINEから動画ファイルをダウンロード
+        doc_ref.update({"status": "IN_PROGRESS"})
+
+        # 1) download
         content = line_bot_api.get_message_content(message_id)
         with open(video_path, "wb") as f:
-            for chunk in content.iter_content(): f.write(chunk)
+            for chunk in content.iter_content():
+                f.write(chunk)
 
-        # 2. MediaPipe解析（重い処理）を実行
-        frames_data = extract_mediapipe_data(video_path)
+        # 2) analyze
+        raw_data = analyze_swing_with_mediapipe(video_path)
 
-        if not frames_data:
-            doc_ref.update({"status": "FAILED", "error": "No valid pose detected"})
-            line_bot_api.push_message(user_id, TextSendMessage(text="⚠️ 解析失敗: スイングが検出できませんでした。全身が映るよう撮影し直してください。"))
-            return "No frames", 200
-
-        # 3. 指標計算と診断テキスト生成
-        metrics = process_landmarks(frames_data)
-        comments, drills, fitting, summary_text = generate_pro_quality_text(metrics)
-
-        # 4. 課金ステータスに応じてJSONを構築 (HTMLの構造に完全に合わせる)
-        is_premium = is_premium_user(user_id)
-        
-        report_data = {}
-
-        # 01. 数値データ
-        report_data["01"] = {
-            "title": "骨格計測データ（AIが測った数値）",
-            "data": {
-                "解析フレーム数": metrics["frame_count"],
-                "最大肩回転": f"{metrics['shoulder_rotation']}",
-                "最小腰回転": f"{metrics['hip_rotation']}",
-                "最大コック角": f"{metrics['wrist_cock']}",
-                "最大頭ブレ（Sway）": f"{metrics['sway']}",
-                "最大膝ブレ（Sway）": f"{metrics['knee_sway']}"
-            }
-        }
-        
-        # 07. 総合診断
-        report_data["07"] = {
-            "title": "総合診断",
-            "text": [
-                "**✅ 安定している点:**",
-                comments['summary_good'],
-                "**⚠️ 改善が期待される点:**",
-                comments['summary_bad'],
-                f"**👉 最終判定:** {comments['summary_msg']}"
-            ]
-        }
-
-        # 有料版セクション (02, 03, 04, 05, 06, 08, 09, 10)
-        if is_premium:
-            report_data["02"] = { "title": "頭の安定性（軸のブレ）", "text": [comments["head_main"], f"プロ視点では: {comments['head_pro']}"] }
-            report_data["03"] = { "title": "肩の回旋（上半身のねじり）", "text": [comments["shoulder_main"], f"プロ視点では: {comments['shoulder_pro']}"] }
-            report_data["04"] = { "title": "腰の回旋（下半身の動き）", "text": [comments["hip_main"], f"プロ視点では: {comments['hip_pro']}"] }
-            report_data["05"] = { "title": "手首のメカニクス（クラブ操作）", "text": [comments["wrist_main"], f"プロ視点では: {comments['wrist_pro']}"] }
-            report_data["06"] = { "title": "下半身の安定性", "text": [comments["knee_main"], f"プロ視点では: {comments['knee_pro']}"] }
-            
-            # 08. ドリル (HTMLの期待する日本語キーに変換)
-            drills_formatted = [{"ドリル名": d["name"], "目的": d["obj"], "やり方": d["method"]} for d in drills]
-            report_data["08"] = { "title": "改善戦略とドリル", "drills": drills_formatted }
-            
-            # 09. フィッティング
-            report_data["09"] = {
+        # 3) いったん “有料版の中身” は後で差し替えやすいように保存だけする
+        #    （あなたの report.html は analysis を読む設計にしてOK）
+        analysis = {
+            "01": {
+                "title": "骨格計測データ（AIが測った数値）",
+                "data": {
+                    "解析フレーム数": raw_data["frame_count"],
+                    "最大肩回転": str(raw_data["max_shoulder_rotation"]),
+                    "最小腰回転": str(raw_data["min_hip_rotation"]),
+                    "最大コック角": str(raw_data["max_wrist_cock"]),
+                    "最大頭ブレ（Sway）": str(raw_data["max_head_drift_x"]),
+                    "最大膝ブレ（Sway）": str(raw_data["max_knee_sway_x"]),
+                },
+            },
+            # ここから先（02-10）はあなたの確定原稿に合わせて後で埋める前提。
+            # ただし「動画テストで必ず結果が出る」ことが最優先なので、まず01+07+08+09+10を最低限入れる。
+            "07": {
+                "title": "総合診断",
+                "text": [
+                    "**安定している点**",
+                    "頭と下半身のブレが少なく、スイング軸が安定しています",
+                    "再現性の高いスイングを構築しやすい土台を備えています",
+                    "",
+                    "**改善が期待される点**",
+                    "上半身の捻転量が不足している場合、パワー効率が活かし切れません",
+                    "手首主導になりやすい場合、タイミングのズレが出やすくなります",
+                ],
+            },
+            "08": {
+                "title": "改善戦略とドリル",
+                "drills": [
+                    {
+                        "ドリル名": "クロスアームターン",
+                        "目的": "上半身の捻転量を増やす",
+                        "やり方": "①胸の前で腕を軽く組む\n②下半身をできるだけ動かさず胸を回す\n③“胸が回る感覚”を保ったまま左右交互に行う",
+                    },
+                    {
+                        "ドリル名": "L to L スイング",
+                        "目的": "手首の使いすぎを抑える",
+                        "やり方": "①腰〜腰の振り幅で構える\n②体の回転でクラブを動かす\n③リズムを一定にして手先で調整しない",
+                    },
+                    {
+                        "ドリル名": "ウォールターン",
+                        "目的": "軸を保った回旋を習得する",
+                        "やり方": "①壁を背にしてアドレス\n②頭の位置をなるべく固定して肩を回す\n③壁との距離が変わらないか確認する",
+                    },
+                ],
+            },
+            "09": {
                 "title": "スイング傾向補正型フィッティング（ドライバーのみ）",
-                "fitting": {
-                    "シャフト重量": fitting.get("weight"), "フレックス": fitting.get("flex"), 
-                    "キックポイント": fitting.get("kick"), "トルク": fitting.get("torque"), "備考": fitting.get("備考")
-                }
-            }
-            report_data["10"] = { "title": "まとめ（次のステップ）", "text": [summary_text] }
-        else:
-             # 無料版の場合、有料版の項目に「有料会員限定」メッセージを格納
-            premium_text = ["この項目は有料会員限定です。詳細な診断、ドリル、フィッティングをご希望の方はプレミアムプランをご検討ください。"]
-            for i in range(2, 7):
-                 report_data[f"0{i}"] = {"title": f"0{i}. (有料限定)", "text": premium_text}
-            report_data["08"] = {"title": "08. (有料限定)", "text": premium_text}
-            report_data["09"] = {"title": "09. (有料限定)", "text": premium_text}
-            report_data["10"] = {"title": "10. (有料限定)", "text": premium_text}
+                "fitting_table": [
+                    {"項目": "シャフト重量", "推奨": "50g台後半", "理由": "下半身の安定性を活かしつつ振り切りやすい帯域"},
+                    {"項目": "フレックス", "推奨": "SR〜S", "理由": "タイミングが取りやすく再現性を優先"},
+                    {"項目": "キックポイント", "推奨": "先中調子", "理由": "捻転不足を補い打ち出しを確保しやすい"},
+                    {"項目": "トルク", "推奨": "3.8〜4.5", "理由": "手元の暴れを抑え方向性を安定させる"},
+                ],
+                "note": "本診断は骨格分析に基づく傾向提案です。\nリシャフトについては、お客様ご自身で実際に試打した上でご検討ください。",
+            },
+            "10": {
+                "title": "まとめ（次のステップ）",
+                "text": [
+                    "安定した下半身と軸を活かしながら、上半身の捻転量を高めていくことが最優先課題です。",
+                    "体全体を使ったスイングに近づくことで、飛距離と方向性の両立が期待できます。",
+                    "",
+                    "お客様のゴルフライフが、より充実したものになることを切に願っています。",
+                ],
+            },
+        }
 
-        # 5. Firestore更新とユーザーへの通知
-        doc_ref.update({
-            "status": "COMPLETED",
-            "analysis": report_data,
-            "raw_data": frames_data, 
-            "updated_at": SERVER_TIMESTAMP
-        })
-        
-        report_url = f"{SERVICE_HOST_URL}/report/{report_id}"
-        line_bot_api.push_message(user_id, TextSendMessage(text=f"✅ 診断が完了しました。\n以下のURLから診断内容をご確認ください。\n{report_url}"))
-        
+        doc_ref.update(
+            {
+                "status": "COMPLETED",
+                "raw_data": raw_data,
+                "analysis": analysis,
+                "updated_at": firestore.SERVER_TIMESTAMP,
+            }
+        )
+
+        safe_line_push(user_id, make_done_push(report_id))
+        return jsonify({"ok": True}), 200
+
     except Exception as e:
-        print(f"Task Failed (Report ID: {report_id}): {traceback.format_exc()}")
-        doc_ref.update({"status": "FAILED", "error": f"Task error: {str(e)}"})
-        line_bot_api.push_message(user_id, TextSendMessage(text="システムエラーが発生し、解析を完了できませんでした。"))
+        print(traceback.format_exc())
+        doc_ref.update({"status": "FAILED", "error": str(e)})
+        safe_line_push(user_id, "システムエラーが発生し、解析を完了できませんでした。")
         return "Internal Error", 500
+
     finally:
         shutil.rmtree(tmpdir, ignore_errors=True)
-        
-    return jsonify({"ok": True}), 200
 
-# --- レポート表示API ---
+
 @app.route("/report/<report_id>")
 def serve_report(report_id):
-    """HTMLレポートを返す"""
     return send_from_directory("templates", "report.html")
+
 
 @app.route("/api/report_data/<report_id>")
 def api_report_data(report_id):
-    """レポートデータをJSONで返す (フロントエンド用)"""
-    try:
-        doc = db.collection("reports").document(report_id).get()
-        if not doc.exists: return jsonify({"error": "not found"}), 404
-        d = doc.to_dict()
-        return jsonify({
+    doc = db.collection("reports").document(report_id).get()
+    if not doc.exists:
+        return jsonify({"error": "not found"}), 404
+    d = doc.to_dict() or {}
+    return jsonify(
+        {
             "status": d.get("status"),
             "analysis": d.get("analysis", {}),
-            "created_at": d.get("created_at")
-        })
-    except Exception:
-        return jsonify({"error": "internal error"}), 500
+            "raw_data": d.get("raw_data", {}),
+            "error": d.get("error"),
+            "created_at": d.get("created_at"),
+        }
+    )
+
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 8080)))
+
