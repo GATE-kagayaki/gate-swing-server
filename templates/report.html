@@ -1,67 +1,151 @@
-<<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="ja">
 <head>
-  <meta charset="UTF-8">
-  <title>GATE AIスイングドクター</title>
-  <style>
-    body { font-family: sans-serif; padding: 20px; line-height: 1.6; }
-    h1, h2 { border-left: 4px solid #3b82f6; padding-left: 10px; }
-    table { width: 100%; border-collapse: collapse; margin: 20px 0; }
-    td, th { border: 1px solid #ccc; padding: 8px; text-align: left; }
-    .note { font-size: 0.9em; color: #555; margin-top: 20px; }
-  </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>GATE AIスイングドクター｜SWING ANALYSIS REPORT（有料版）</title>
+
+<script src="https://cdn.tailwindcss.com"></script>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+JP:wght@400;700&display=swap" rel="stylesheet">
+
+<style>
+  body { font-family: 'Noto Serif JP', serif; background:#f3f4f6; }
+  .paper { background:#fff; max-width:900px; margin:auto; padding:32px; }
+  h2 { border-left:4px solid #111827; padding-left:12px; margin-top:32px; font-weight:700; }
+  table { width:100%; border-collapse:collapse; margin-top:12px; }
+  th,td { border:1px solid #e5e7eb; padding:8px; }
+  th { background:#f9fafb; }
+</style>
 </head>
+
 <body>
+<div class="paper">
 
-<h1>SWING ANALYSIS REPORT（有料版）</h1>
-<p><strong>REPORT ID:</strong> {{ report.report_id }}</p>
+  <h1 class="text-2xl font-bold text-center mb-2">GATE AIスイングドクター</h1>
+  <p class="text-center text-sm mb-6">SWING ANALYSIS REPORT（有料版）</p>
 
-<h2>01. 骨格計測データ（AIが測った数値）</h2>
-<table>
-  <tr><th>項目</th><th>測定値</th><th>理想の目安</th></tr>
-  <tr><td>肩の捻転</td><td>{{ report.shoulder_rotation }}°</td><td>約90〜100°</td></tr>
-  <tr><td>腰の回転</td><td>{{ report.hip_rotation }}°</td><td>約40〜45°</td></tr>
-  <tr><td>コック角</td><td>{{ report.cock_angle }}°</td><td>約90〜120°</td></tr>
-  <tr><td>頭のブレ</td><td>{{ report.head_sway }}px</td><td>0.05以下</td></tr>
-  <tr><td>膝の揺れ</td><td>{{ report.knee_sway }}px</td><td>0.05以下</td></tr>
-</table>
+  <p class="text-xs text-gray-500 mb-6">
+    REPORT ID：<span id="reportId"></span>
+  </p>
 
-<h2>02. 頭の安定性（軸のブレ）</h2>
-<p>最大頭ブレ（Sway）: 0.0264<br>
-頭部の左右移動量が小さく、回転軸は明確。切り返し局面でも頭の位置が保たれており、体幹主導のスイングに移行できる下地が整っている。</p>
+  <!-- 01 -->
+  <h2>01. 骨格計測データ（AIが測った数値）</h2>
+  <table>
+    <tr><th>計測項目</th><th>測定値</th></tr>
+    <tr><td>解析フレーム数</td><td id="frame"></td></tr>
+    <tr><td>最大肩回転</td><td id="shoulder">°</td></tr>
+    <tr><td>最小腰回転</td><td id="hip">°</td></tr>
+    <tr><td>最大コック角</td><td id="wrist">°</td></tr>
+    <tr><td>最大頭ブレ（Sway）</td><td id="head"></td></tr>
+    <tr><td>最大膝ブレ（Sway）</td><td id="knee"></td></tr>
+  </table>
 
-<h2>03. 肩の回旋（上半身のねじり）</h2>
-<p>肩の回旋量が小さく、捻転差が十分に形成されていない。下半身が安定しているため、捻転量を増やしてもスイングが崩れるリスクは低い。</p>
+  <!-- 02 -->
+  <h2>02. 頭の安定性（軸のブレ）</h2>
+  <p>
+    スイング中の頭部移動量は小さく、回転軸は明確です。  
+    切り返し局面でも頭の位置が保たれており、体幹主導のスイングに移行できる下地が整っています。  
+    上半身動作を改善した際、その効果がインパクト条件に反映されやすいタイプです。
+  </p>
 
-<!-- 04〜06 同様に省略せず表示 -->
+  <!-- 03 -->
+  <h2>03. 肩の回旋（上半身のねじり）</h2>
+  <p>
+    肩の回旋量が抑えられており、捻転差が十分に使われていません。  
+    可動域不足というより、動作配分として回旋を使えていない傾向が見られます。
+  </p>
 
-<h2>07. 総合診断</h2>
-<ul>
-  <li>軸と下半身の安定性が高く、再現性のあるスイング構造</li>
-  <li>上半身の捻転不足と手首主導の動きに改善余地あり</li>
-</ul>
+  <!-- 04 -->
+  <h2>04. 腰の回旋（下半身の動き）</h2>
+  <p>
+    腰の回転が先行しやすく、エネルギーが分散しやすい状態です。  
+    下半身主導意識は良好なため、「回す」より「待つ」意識が今後の課題です。
+  </p>
 
-<h2>08. 改善戦略とドリル</h2>
-<table>
-  <tr><th>ドリル名</th><th>目的</th><th>やり方</th></tr>
-  <tr><td>セパレーションターン</td><td>上下の捻転差を作る</td><td>下半身を止めて、胸だけを大きく回す</td></tr>
-  <tr><td>ハーフトップキープ</td><td>切り返しの安定</td><td>トップで一拍止めてから切り返す</td></tr>
-  <tr><td>体幹主導LtoL</td><td>手首の介入を抑制</td><td>腕を使わず体の回転で振る意識を持つ</td></tr>
-</table>
+  <!-- 05 -->
+  <h2>05. 手首のメカニクス（クラブ操作）</h2>
+  <p>
+    コック角が深く、タメを作ろうとする意識が強く表れています。  
+    捻転不足を手首動作で補う代償動作が見られ、再現性に影響する可能性があります。
+  </p>
 
-<h2>09. フィッティング提案</h2>
-<table>
-  <tr><th>項目</th><th>推奨</th><th>理由</th></tr>
-  <tr><td>重量</td><td>55〜65g</td><td>下半身の安定性を活かし操作性を確保</td></tr>
-  <tr><td>フレックス</td><td>SR〜S</td><td>タイミングが合わせやすい</td></tr>
-  <tr><td>キックポイント</td><td>先中</td><td>打ち出し角と初速を補正</td></tr>
-  <tr><td>トルク</td><td>3.8〜4.5</td><td>手元の暴れを抑制</td></tr>
-</table>
+  <!-- 06 -->
+  <h2>06. 下半身の安定性</h2>
+  <p>
+    膝の左右ブレが小さく、地面反力を活かしやすい状態です。  
+    スイング改造に対する耐性が高い点は大きな強みです。
+  </p>
 
-<h2>10. まとめ</h2>
-<p>このスイングは「直せばすぐ変わる」タイプです。土台は整っており、上半身の使い方が鍵です。今回の診断結果を参考に、継続的な練習に活かしてください。</p>
+  <!-- 07 -->
+  <h2>07. 総合診断</h2>
+  <ul class="list-disc ml-5">
+    <li>スイング軸と下半身の安定性</li>
+    <li>再現性を高めやすい構造</li>
+    <li>上半身捻転不足によるパワーロス</li>
+    <li>手首主導になりやすい動作配分</li>
+  </ul>
 
-<p class="note">Powered by GATE AIスイングドクター</p>
+  <!-- 08 -->
+  <h2>08. 改善戦略とドリル</h2>
+  <table>
+    <tr><th>ドリル</th><th>目的</th><th>やり方</th></tr>
+    <tr>
+      <td>クロスアームターン</td>
+      <td>上半身捻転向上</td>
+      <td>腕を胸の前で組み、下半身を止めた状態で肩と胸を大きく回す</td>
+    </tr>
+    <tr>
+      <td>L to L スイング</td>
+      <td>手首介入抑制</td>
+      <td>腰から腰の振り幅で、体の回転主体でスイングする</td>
+    </tr>
+    <tr>
+      <td>ウォールターン</td>
+      <td>軸保持</td>
+      <td>壁を背にし、頭の位置を保ったまま肩を回す</td>
+    </tr>
+  </table>
+
+  <!-- 09 -->
+  <h2>09. スイング傾向補正型フィッティング（ドライバーのみ）</h2>
+  <table>
+    <tr><th>項目</th><th>推奨</th><th>理由</th></tr>
+    <tr><td>シャフト重量</td><td>50g台後半</td><td>振り切りやすさと安定性の両立</td></tr>
+    <tr><td>フレックス</td><td>SR〜S</td><td>タイミングが合いやすい</td></tr>
+    <tr><td>キックポイント</td><td>先中調子</td><td>打ち出し角補正</td></tr>
+    <tr><td>トルク</td><td>3.8〜4.5</td><td>方向性安定</td></tr>
+  </table>
+  <p class="text-sm mt-2">
+    ※本診断は骨格分析に基づく傾向提案です。<br>
+    ※リシャフトについては、実際に試打した上でご検討ください。
+  </p>
+
+  <!-- 10 -->
+  <h2>10. まとめ（次のステップ）</h2>
+  <p>
+    土台はすでに整っています。  
+    上半身の役割を正しく使うことで、飛距離と再現性の両立が期待できます。  
+    お客様のゴルフライフが、より充実したものになることを切に願っています。
+  </p>
+
+</div>
+
+<script>
+const reportId = location.pathname.split("/").pop();
+document.getElementById("reportId").innerText = reportId;
+
+fetch(`/api/report_data/${reportId}`)
+  .then(r => r.json())
+  .then(d => {
+    const m = d.raw_data || {};
+    document.getElementById("frame").innerText = m.frame_count ?? "-";
+    document.getElementById("shoulder").innerText = m.max_shoulder_rotation ?? "-";
+    document.getElementById("hip").innerText = m.min_hip_rotation ?? "-";
+    document.getElementById("wrist").innerText = m.max_wrist_cock ?? "-";
+    document.getElementById("head").innerText = m.max_head_drift_x ?? "-";
+    document.getElementById("knee").innerText = m.max_knee_sway_x ?? "-";
+  });
+</script>
 
 </body>
 </html>
