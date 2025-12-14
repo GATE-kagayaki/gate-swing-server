@@ -3,130 +3,49 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>GATE AIスイングドクター｜SWING ANALYSIS REPORT（有料版）</title>
+<title>GATE AIスイングドクター｜SWING ANALYSIS REPORT</title>
 
 <script src="https://cdn.tailwindcss.com"></script>
-<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+JP:wght@400;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+JP:wght@400;700&family=Noto+Sans+JP:wght@400;700&display=swap" rel="stylesheet">
 
 <style>
-  body { font-family: 'Noto Serif JP', serif; background:#f3f4f6; }
-  .paper { background:#fff; max-width:900px; margin:auto; padding:32px; }
-  h2 { border-left:4px solid #111827; padding-left:12px; margin-top:32px; font-weight:700; }
-  table { width:100%; border-collapse:collapse; margin-top:12px; }
-  th,td { border:1px solid #e5e7eb; padding:8px; }
-  th { background:#f9fafb; }
+    body { font-family: 'Noto Sans JP', sans-serif; background:#f3f4f6; }
+    .paper { background:#fff; max-width:900px; margin:20px auto; padding:32px; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1); }
+    h2 { border-left:4px solid #111827; padding-left:12px; margin-top:32px; font-weight:700; font-family: 'Noto Serif JP', serif; }
+    table { width:100%; border-collapse:collapse; margin-top:12px; table-layout: fixed; }
+    th,td { border:1px solid #e5e7eb; padding:8px; font-size: 0.9rem; vertical-align: top; }
+    th { background:#f9fafb; font-weight: 700; width: 30%; }
+    .premium-alert { background: #fef2f2; color: #dc2626; border: 1px dashed #f87171; padding: 16px; margin-top: 10px; text-align: center; }
+    .loading { text-align: center; padding: 100px 0; }
 </style>
 </head>
 
 <body>
 <div class="paper">
 
-  <h1 class="text-2xl font-bold text-center mb-2">GATE AIスイングドクター</h1>
-  <p class="text-center text-sm mb-6">SWING ANALYSIS REPORT（有料版）</p>
+    <h1 class="text-2xl font-bold text-center mb-2">GATE AIスイングドクター</h1>
+    <p class="text-center text-sm mb-6 text-gray-600">SWING ANALYSIS REPORT</p>
 
-  <p class="text-xs text-gray-500 mb-6">
-    REPORT ID：<span id="reportId"></span>
-  </p>
+    <div id="loading" class="loading">
+        <div class="animate-spin h-8 w-8 border-4 border-gray-500 rounded-full border-t-transparent mx-auto"></div>
+        <p class="mt-4 text-gray-500 text-sm">レポートデータを読み込み中...</p>
+    </div>
 
-  <!-- 01 -->
-  <h2>01. 骨格計測データ（AIが測った数値）</h2>
-  <table>
-    <tr><th>計測項目</th><th>測定値</th></tr>
-    <tr><td>解析フレーム数</td><td id="frame"></td></tr>
-    <tr><td>最大肩回転</td><td id="shoulder">°</td></tr>
-    <tr><td>最小腰回転</td><td id="hip">°</td></tr>
-    <tr><td>最大コック角</td><td id="wrist">°</td></tr>
-    <tr><td>最大頭ブレ（Sway）</td><td id="head"></td></tr>
-    <tr><td>最大膝ブレ（Sway）</td><td id="knee"></td></tr>
-  </table>
+    <div id="report-content" class="hidden">
+        
+        <p class="text-xs text-gray-500 mb-6">
+            REPORT ID：<span id="reportId"></span>
+        </p>
 
-  <!-- 02 -->
-  <h2>02. 頭の安定性（軸のブレ）</h2>
-  <p>
-    スイング中の頭部移動量は小さく、回転軸は明確です。  
-    切り返し局面でも頭の位置が保たれており、体幹主導のスイングに移行できる下地が整っています。  
-    上半身動作を改善した際、その効果がインパクト条件に反映されやすいタイプです。
-  </p>
+        <section id="section-01">
+            <h2>01. 骨格計測データ（AIが測った数値）</h2>
+            <table>
+                <tbody id="data-01">
+                    </tbody>
+            </table>
+        </section>
 
-  <!-- 03 -->
-  <h2>03. 肩の回旋（上半身のねじり）</h2>
-  <p>
-    肩の回旋量が抑えられており、捻転差が十分に使われていません。  
-    可動域不足というより、動作配分として回旋を使えていない傾向が見られます。
-  </p>
-
-  <!-- 04 -->
-  <h2>04. 腰の回旋（下半身の動き）</h2>
-  <p>
-    腰の回転が先行しやすく、エネルギーが分散しやすい状態です。  
-    下半身主導意識は良好なため、「回す」より「待つ」意識が今後の課題です。
-  </p>
-
-  <!-- 05 -->
-  <h2>05. 手首のメカニクス（クラブ操作）</h2>
-  <p>
-    コック角が深く、タメを作ろうとする意識が強く表れています。  
-    捻転不足を手首動作で補う代償動作が見られ、再現性に影響する可能性があります。
-  </p>
-
-  <!-- 06 -->
-  <h2>06. 下半身の安定性</h2>
-  <p>
-    膝の左右ブレが小さく、地面反力を活かしやすい状態です。  
-    スイング改造に対する耐性が高い点は大きな強みです。
-  </p>
-
-  <!-- 07 -->
-  <h2>07. 総合診断</h2>
-  <ul class="list-disc ml-5">
-    <li>スイング軸と下半身の安定性</li>
-    <li>再現性を高めやすい構造</li>
-    <li>上半身捻転不足によるパワーロス</li>
-    <li>手首主導になりやすい動作配分</li>
-  </ul>
-
-  <!-- 08 -->
-  <h2>08. 改善戦略とドリル</h2>
-  <table>
-    <tr><th>ドリル</th><th>目的</th><th>やり方</th></tr>
-    <tr>
-      <td>クロスアームターン</td>
-      <td>上半身捻転向上</td>
-      <td>腕を胸の前で組み、下半身を止めた状態で肩と胸を大きく回す</td>
-    </tr>
-    <tr>
-      <td>L to L スイング</td>
-      <td>手首介入抑制</td>
-      <td>腰から腰の振り幅で、体の回転主体でスイングする</td>
-    </tr>
-    <tr>
-      <td>ウォールターン</td>
-      <td>軸保持</td>
-      <td>壁を背にし、頭の位置を保ったまま肩を回す</td>
-    </tr>
-  </table>
-
-  <!-- 09 -->
-  <h2>09. スイング傾向補正型フィッティング（ドライバーのみ）</h2>
-  <table>
-    <tr><th>項目</th><th>推奨</th><th>理由</th></tr>
-    <tr><td>シャフト重量</td><td>50g台後半</td><td>振り切りやすさと安定性の両立</td></tr>
-    <tr><td>フレックス</td><td>SR〜S</td><td>タイミングが合いやすい</td></tr>
-    <tr><td>キックポイント</td><td>先中調子</td><td>打ち出し角補正</td></tr>
-    <tr><td>トルク</td><td>3.8〜4.5</td><td>方向性安定</td></tr>
-  </table>
-  <p class="text-sm mt-2">
-    ※本診断は骨格分析に基づく傾向提案です。<br>
-    ※リシャフトについては、実際に試打した上でご検討ください。
-  </p>
-
-  <!-- 10 -->
-  <h2>10. まとめ（次のステップ）</h2>
-  <p>
-    土台はすでに整っています。  
-    上半身の役割を正しく使うことで、飛距離と再現性の両立が期待できます。  
-    お客様のゴルフライフが、より充実したものになることを切に願っています。
-  </p>
+        </div>
 
 </div>
 
@@ -134,18 +53,93 @@
 const reportId = location.pathname.split("/").pop();
 document.getElementById("reportId").innerText = reportId;
 
-fetch(`/api/report_data/${reportId}`)
-  .then(r => r.json())
-  .then(d => {
-    const m = d.raw_data || {};
-    document.getElementById("frame").innerText = m.frame_count ?? "-";
-    document.getElementById("shoulder").innerText = m.max_shoulder_rotation ?? "-";
-    document.getElementById("hip").innerText = m.min_hip_rotation ?? "-";
-    document.getElementById("wrist").innerText = m.max_wrist_cock ?? "-";
-    document.getElementById("head").innerText = m.max_head_drift_x ?? "-";
-    document.getElementById("knee").innerText = m.max_knee_sway_x ?? "-";
-  });
-</script>
+const reportContent = document.getElementById("report-content");
+const loadingElement = document.getElementById("loading");
 
+function renderSection(key, sectionData) {
+    const el = document.createElement('section');
+    el.id = `section-${key}`;
+    el.innerHTML += `<h2>${sectionData.title}</h2>`;
+
+    if (key === '01') {
+        // 01: 数値データはテーブルで表示
+        let tableBody = '';
+        Object.entries(sectionData.data).forEach(([k, v]) => {
+            let unit = '';
+            if (k.includes('回転') || k.includes('コック')) unit = '°';
+            if (k.includes('Sway')) unit = '%';
+
+            tableBody += `<tr><th>${k}</th><td>${v}${unit}</td></tr>`;
+        });
+        document.getElementById('data-01').innerHTML = tableBody;
+
+    } else if (sectionData.text) {
+        // 02, 03, 04, 05, 06, 07, 10: テキストは段落で表示
+        if (sectionData.title.includes('(有料限定)')) {
+            el.innerHTML += `<div class="premium-alert">${sectionData.text.join('<br>')}</div>`;
+        } else {
+             el.innerHTML += sectionData.text.map(t => `<p class="text-gray-700 whitespace-pre-line">${t}</p>`).join("");
+        }
+        reportContent.appendChild(el);
+
+    } else if (sectionData.drills) {
+        // 08: ドリルはテーブルで表示
+        let tableHtml = '<table><thead><tr><th>ドリル名</th><th>目的</th><th>やり方</th></tr></thead><tbody>';
+        sectionData.drills.forEach(d => {
+            tableHtml += `<tr><td>${d["ドリル名"]}</td><td>${d["目的"]}</td><td>${d["やり方"]}</td></tr>`;
+        });
+        tableHtml += '</tbody></table>';
+        el.innerHTML += tableHtml;
+        reportContent.appendChild(el);
+
+    } else if (sectionData.fitting) {
+        // 09: フィッティングはテーブルで表示
+        let tableHtml = '<table><thead><tr><th>項目</th><th>推奨</th><th>理由</th></tr></thead><tbody>';
+        Object.entries(sectionData.fitting).forEach(([k, v]) => {
+             // 理由を別行で表示しないため、ここでは理由キーをスキップ
+             if (k !== '備考' && k !== '理由') {
+                 tableHtml += `<tr><th>${k}</th><td>${v}</td>`;
+             }
+        });
+        tableHtml += `<tr><th>備考</th><td colspan="2">${sectionData.fitting['備考'] || sectionData.fitting['理由'] || 'ー'}</td></tr>`;
+        tableHtml += '</tbody></table>';
+        el.innerHTML += tableHtml;
+        reportContent.appendChild(el);
+    }
+}
+
+fetch(`/api/report_data/${reportId}`)
+    .then(r => {
+        if (!r.ok) throw new Error("API通信エラー: " + r.status);
+        return r.json();
+    })
+    .then(data => {
+        loadingElement.classList.add("hidden");
+
+        if (data.status === "completed" && data.analysis) {
+            reportContent.classList.remove("hidden");
+            const analysis = data.analysis;
+
+            // 01〜10まで順にレンダリング
+            Object.keys(analysis).sort().forEach(key => {
+                const sectionData = analysis[key];
+                if (sectionData) {
+                    renderSection(key, sectionData);
+                }
+            });
+
+        } else if (data.status === "pending" || data.status === "PROCESSING") {
+             loadingElement.querySelector('p').innerText = "解析処理中です。完了までしばらくお待ちください...";
+             loadingElement.classList.remove("hidden");
+        } else {
+            loadingElement.innerHTML = '<p class="text-red-600 font-bold">⚠️ レポートデータが見つからないか、解析に失敗しました。</p>';
+        }
+    })
+    .catch(error => {
+        loadingElement.innerHTML = `<p class="text-red-600 font-bold">⚠️ サーバーとの通信エラー: ${error.message}</p>`;
+        loadingElement.classList.remove("hidden");
+        console.error('Fetch Error:', error);
+    });
+</script>
 </body>
 </html>
