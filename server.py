@@ -1,4 +1,5 @@
 import os
+import json
 import math
 import shutil
 import traceback
@@ -13,6 +14,7 @@ from linebot.exceptions import InvalidSignatureError, LineBotApiError
 from linebot.models import MessageEvent, VideoMessage, TextSendMessage
 
 from google.cloud import firestore
+from google.cloud import tasks_v2
 
 
 # ==================================================
@@ -25,7 +27,20 @@ LINE_CHANNEL_ACCESS_TOKEN = os.environ.get("LINE_CHANNEL_ACCESS_TOKEN", "")
 LINE_CHANNEL_SECRET = os.environ.get("LINE_CHANNEL_SECRET", "")
 SERVICE_HOST_URL = os.environ.get("SERVICE_HOST_URL", "").rstrip("/")
 
+PROJECT_ID = (
+    os.environ.get("GCP_PROJECT_ID")
+    or os.environ.get("GOOGLE_CLOUD_PROJECT")
+    or ""
+)
+
+QUEUE_NAME = "video-analysis-queue"
+QUEUE_LOCATION = "asia-northeast2"
+TASK_HANDLER_PATH = "/task-handler"
+TASK_HANDLER_URL = f"{SERVICE_HOST_URL}{TASK_HANDLER_PATH}"
+TASK_SA_EMAIL = os.environ.get("TASK_SA_EMAIL", "")
+
 db = firestore.Client()
+tasks_client = tasks_v2.CloudTasksClient()
 
 line_bot_api = LineBotApi(LINE_CHANNEL_ACCESS_TOKEN)
 handler = WebhookHandler(LINE_CHANNEL_SECRET)
@@ -34,21 +49,14 @@ handler = WebhookHandler(LINE_CHANNEL_SECRET)
 # ==================================================
 # Helpers
 # ==================================================
-def firestore_safe_set(report_id: str, data: Dict[str, Any]) -> None:
-    try:
-        db.collection("reports").document(report_id).set(data, merge=True)
-    except Exception:
-        print(traceback.format_exc())
-
-
-def safe_line_reply(reply_token: str, text: str) -> None:
+def safe_line_reply(reply_token: str, text: str):
     try:
         line_bot_api.reply_message(reply_token, TextSendMessage(text=text))
     except LineBotApiError:
         print(traceback.format_exc())
 
 
-def safe_line_push(user_id: str, text: str) -> None:
+def safe_line_push(user_id: str, text: str):
     try:
         line_bot_api.push_message(user_id, TextSendMessage(text=text))
     except LineBotApiError:
@@ -60,7 +68,6 @@ def make_initial_reply(report_id: str) -> str:
         "✅ 動画を受信しました。\n"
         "AIによるスイング数値計測を開始します。\n\n"
         "完了すると自動で通知が届きます。\n\n"
-        "【現在のステータス確認】\n"
         f"{SERVICE_HOST_URL}/report/{report_id}"
     )
 
@@ -68,14 +75,41 @@ def make_initial_reply(report_id: str) -> str:
 def make_done_push(report_id: str) -> str:
     return (
         "🎉 スイング計測が完了しました！\n\n"
-        "以下のリンクから診断レポートを確認できます。\n\n"
         "【診断レポートを見る】\n"
         f"{SERVICE_HOST_URL}/report/{report_id}"
     )
 
 
 # ==================================================
-# MediaPipe Analysis（安全版）
+# Cloud Tasks enqueue
+# ==================================================
+def enqueue_task(report_id: str, user_id: str, message_id: str):
+    parent = tasks_client.queue_path(PROJECT_ID, QUEUE_LOCATION, QUEUE_NAME)
+
+    payload = json.dumps({
+        "report_id": report_id,
+        "user_id": user_id,
+        "message_id": message_id,
+    }).encode("utf-8")
+
+    task = {
+        "http_request": {
+            "http_method": tasks_v2.HttpMethod.POST,
+            "url": TASK_HANDLER_URL,
+            "headers": {"Content-Type": "application/json"},
+            "body": payload,
+            "oidc_token": {
+                "service_account_email": TASK_SA_EMAIL,
+                "audience": SERVICE_HOST_URL,
+            },
+        }
+    }
+
+    tasks_client.create_task(parent=parent, task=task)
+
+
+# ==================================================
+# MediaPipe Analysis
 # ==================================================
 def analyze_swing_with_mediapipe(video_path: str) -> Dict[str, Any]:
     import cv2
@@ -155,16 +189,20 @@ def analyze_swing_with_mediapipe(video_path: str) -> Dict[str, Any]:
 
 
 # ==================================================
-# Analysis runner
+# Task handler
 # ==================================================
-def run_analysis(report_id: str, user_id: str, message_id: str):
+@app.route("/task-handler", methods=["POST"])
+def task_handler():
+    data = request.get_json()
+    report_id = data["report_id"]
+    user_id = data["user_id"]
+    message_id = data["message_id"]
+
     tmpdir = tempfile.mkdtemp()
     video_path = os.path.join(tmpdir, f"{message_id}.mp4")
     doc_ref = db.collection("reports").document(report_id)
 
     try:
-        doc_ref.update({"status": "IN_PROGRESS"})
-
         content = line_bot_api.get_message_content(message_id)
         with open(video_path, "wb") as f:
             for chunk in content.iter_content():
@@ -174,7 +212,7 @@ def run_analysis(report_id: str, user_id: str, message_id: str):
 
         analysis = {
             "01": {
-                "title": "骨格計測データ（AIが測った数値）",
+                "title": "骨格計測データ",
                 "data": raw_data,
             }
         }
@@ -187,11 +225,13 @@ def run_analysis(report_id: str, user_id: str, message_id: str):
         })
 
         safe_line_push(user_id, make_done_push(report_id))
+        return jsonify({"ok": True})
 
     except Exception as e:
         doc_ref.update({"status": "FAILED", "error": str(e)})
         safe_line_push(user_id, "解析中にエラーが発生しました。")
         print(traceback.format_exc())
+        return "error", 500
 
     finally:
         shutil.rmtree(tmpdir, ignore_errors=True)
@@ -200,11 +240,6 @@ def run_analysis(report_id: str, user_id: str, message_id: str):
 # ==================================================
 # Routes
 # ==================================================
-@app.route("/health")
-def health():
-    return jsonify({"ok": True})
-
-
 @app.route("/webhook", methods=["POST"])
 def webhook():
     signature = request.headers.get("X-Line-Signature", "")
@@ -222,21 +257,18 @@ def handle_video(event: MessageEvent):
     msg = event.message
     report_id = f"{user_id}_{msg.id}"
 
-    firestore_safe_set(
-        report_id,
-        {
-            "user_id": user_id,
-            "status": "PROCESSING",
-            "created_at": datetime.now(timezone.utc).isoformat(),
-        },
-    )
+    db.collection("reports").document(report_id).set({
+        "user_id": user_id,
+        "status": "PROCESSING",
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    })
 
     safe_line_reply(event.reply_token, make_initial_reply(report_id))
-    run_analysis(report_id, user_id, msg.id)
+    enqueue_task(report_id, user_id, msg.id)
 
 
 @app.route("/report/<report_id>")
-def serve_report(report_id):
+def report_page(report_id):
     return render_template("report.html", report_id=report_id)
 
 
@@ -248,5 +280,6 @@ def api_report_data(report_id):
     return jsonify(doc.to_dict())
 
 
+# ==================================================
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 8080)))
