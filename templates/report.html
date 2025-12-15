@@ -2,143 +2,61 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>GATE AIスイングドクター｜SWING ANALYSIS REPORT</title>
-
+<title>GATE AIスイングドクター</title>
 <script src="https://cdn.tailwindcss.com"></script>
-<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+JP:wght@400;700&family=Noto+Sans+JP:wght@400;700&display=swap" rel="stylesheet">
-
-<style>
-    body { font-family: 'Noto Sans JP', sans-serif; background:#f3f4f6; }
-    .paper { background:#fff; max-width:900px; margin:20px auto; padding:32px; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1); }
-    h2 { border-left:4px solid #111827; padding-left:12px; margin-top:32px; font-weight:700; font-family: 'Noto Serif JP', serif; }
-    table { width:100%; border-collapse:collapse; margin-top:12px; table-layout: fixed; }
-    th,td { border:1px solid #e5e7eb; padding:8px; font-size: 0.9rem; vertical-align: top; }
-    th { background:#f9fafb; font-weight: 700; width: 30%; }
-    .premium-alert { background: #fef2f2; color: #dc2626; border: 1px dashed #f87171; padding: 16px; margin-top: 10px; text-align: center; }
-    .loading { text-align: center; padding: 100px 0; }
-</style>
 </head>
+<body class="bg-gray-100">
+<div class="max-w-3xl mx-auto bg-white p-6 mt-6 shadow">
 
-<body>
-<div class="paper">
+<h1 class="text-2xl font-bold text-center">GATE AIスイングドクター</h1>
+<p class="text-center text-sm text-gray-500 mb-4">SWING ANALYSIS REPORT</p>
 
-    <h1 class="text-2xl font-bold text-center mb-2">GATE AIスイングドクター</h1>
-    <p class="text-center text-sm mb-6 text-gray-600">SWING ANALYSIS REPORT</p>
-
-    <div id="loading" class="loading">
-        <div class="animate-spin h-8 w-8 border-4 border-gray-500 rounded-full border-t-transparent mx-auto"></div>
-        <p class="mt-4 text-gray-500 text-sm">レポートデータを読み込み中...</p>
-    </div>
-
-    <div id="report-content" class="hidden">
-        <p class="text-xs text-gray-500 mb-6">
-            REPORT ID：<span id="reportId"></span>
-        </p>
-
-        <section id="section-01">
-            <h2>01. 骨格計測データ（AIが測った数値）</h2>
-            <table>
-                <tbody id="data-01"></tbody>
-            </table>
-        </section>
-    </div>
+<div id="loading">解析処理中です...</div>
+<div id="content" class="hidden"></div>
 
 </div>
 
 <script>
-/* ==================================================
-   report_id 取得
-================================================== */
 const reportId = location.pathname.split("/").pop();
-document.getElementById("reportId").innerText = reportId;
 
-const reportContent = document.getElementById("report-content");
-const loadingElement = document.getElementById("loading");
-
-/* ==================================================
-   セクション描画
-================================================== */
-function renderSection(key, sectionData) {
-    const el = document.createElement('section');
-    el.id = `section-${key}`;
-    el.innerHTML += `<h2>${sectionData.title}</h2>`;
-
-    if (key === '01') {
-        let tableBody = '';
-        Object.entries(sectionData.data).forEach(([k, v]) => {
-            let unit = '';
-            if (k.includes('回転') || k.includes('コック')) unit = '°';
-            if (k.includes('Sway')) unit = '%';
-            tableBody += `<tr><th>${k}</th><td>${v}${unit}</td></tr>`;
-        });
-        document.getElementById('data-01').innerHTML = tableBody;
-
-    } else if (sectionData.text) {
-        el.innerHTML += sectionData.text
-            .map(t => `<p class="text-gray-700 whitespace-pre-line">${t}</p>`)
-            .join("");
-        reportContent.appendChild(el);
-
-    } else if (sectionData.drills) {
-        let tableHtml = '<table><thead><tr><th>ドリル名</th><th>目的</th><th>やり方</th></tr></thead><tbody>';
-        sectionData.drills.forEach(d => {
-            tableHtml += `<tr><td>${d["ドリル名"]}</td><td>${d["目的"]}</td><td>${d["やり方"]}</td></tr>`;
-        });
-        tableHtml += '</tbody></table>';
-        el.innerHTML += tableHtml;
-        reportContent.appendChild(el);
-
-    } else if (sectionData.fitting_table) {
-        let tableHtml = '<table><thead><tr><th>項目</th><th>推奨</th><th>理由</th></tr></thead><tbody>';
-        sectionData.fitting_table.forEach(row => {
-            tableHtml += `<tr><td>${row["項目"]}</td><td>${row["推奨"]}</td><td>${row["理由"]}</td></tr>`;
-        });
-        tableHtml += '</tbody></table>';
-        el.innerHTML += tableHtml;
-        reportContent.appendChild(el);
-    }
-}
-
-/* ==================================================
-   API 呼び出し（★修正版B：statusを小文字化）
-================================================== */
 fetch(`/api/report_data/${reportId}`)
-    .then(r => {
-        if (!r.ok) throw new Error("API通信エラー: " + r.status);
-        return r.json();
-    })
-    .then(data => {
-        const status = (data.status || "").toLowerCase();
-        loadingElement.classList.add("hidden");
+.then(r => r.json())
+.then(d => {
+  if (d.status !== "COMPLETED") return;
+  document.getElementById("loading").remove();
+  const root = document.getElementById("content");
+  root.classList.remove("hidden");
 
-        if (status === "completed" && data.analysis) {
-            reportContent.classList.remove("hidden");
+  Object.values(d.analysis).forEach(sec => {
+    const h = document.createElement("h2");
+    h.className = "mt-6 font-bold text-lg";
+    h.textContent = sec.title;
+    root.appendChild(h);
 
-            Object.keys(data.analysis)
-                .sort((a, b) => Number(a) - Number(b))
-                .forEach(key => {
-                    renderSection(key, data.analysis[key]);
-                });
+    if (sec.data) {
+      const t = document.createElement("table");
+      t.className = "w-full border mt-2";
+      Object.entries(sec.data).forEach(([k,v])=>{
+        t.innerHTML += `<tr><th class="border p-2">${k}</th><td class="border p-2">${v}</td></tr>`;
+      });
+      root.appendChild(t);
+    }
 
-        } else if (status === "processing" || status === "pending") {
-            loadingElement.querySelector('p').innerText =
-                "解析処理中です。完了までしばらくお待ちください...";
-            loadingElement.classList.remove("hidden");
+    if (sec.text) {
+      sec.text.forEach(p=>{
+        const el = document.createElement("p");
+        el.textContent = p;
+        root.appendChild(el);
+      });
+    }
 
-        } else {
-            loadingElement.innerHTML =
-                '<p class="text-red-600 font-bold">⚠️ レポートデータが見つからないか、解析に失敗しました。</p>';
-            loadingElement.classList.remove("hidden");
-        }
-    })
-    .catch(error => {
-        loadingElement.innerHTML =
-            `<p class="text-red-600 font-bold">⚠️ サーバーとの通信エラー: ${error.message}</p>`;
-        loadingElement.classList.remove("hidden");
-        console.error('Fetch Error:', error);
-    });
+    if (sec.drills) {
+      sec.drills.forEach(d=>{
+        root.innerHTML += `<p>【${d["ドリル名"]}】${d["やり方"]}</p>`;
+      });
+    }
+  });
+});
 </script>
 </body>
 </html>
-
