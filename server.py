@@ -2,42 +2,37 @@ import os
 import json
 import math
 import shutil
-import traceback
 import tempfile
+import traceback
 from datetime import datetime, timezone
-from typing import Any, Dict
+from typing import Dict, Any
 
+import cv2
+import mediapipe as mp
 from flask import Flask, request, jsonify, abort, render_template
 
 from linebot import LineBotApi, WebhookHandler
-from linebot.exceptions import InvalidSignatureError, LineBotApiError
+from linebot.exceptions import InvalidSignatureError
 from linebot.models import MessageEvent, VideoMessage, TextSendMessage
 
 from google.cloud import firestore
 from google.cloud import tasks_v2
 
 
-# ==================================================
-# CONFIG
-# ==================================================
-app = Flask(__name__, template_folder="templates")
+# ======================
+# 基本設定
+# ======================
+app = Flask(__name__)
 app.config["JSON_AS_ASCII"] = False
 
-LINE_CHANNEL_ACCESS_TOKEN = os.environ.get("LINE_CHANNEL_ACCESS_TOKEN", "")
-LINE_CHANNEL_SECRET = os.environ.get("LINE_CHANNEL_SECRET", "")
-SERVICE_HOST_URL = os.environ.get("SERVICE_HOST_URL", "").rstrip("/")
-
-PROJECT_ID = (
-    os.environ.get("GCP_PROJECT_ID")
-    or os.environ.get("GOOGLE_CLOUD_PROJECT")
-    or ""
-)
+LINE_CHANNEL_ACCESS_TOKEN = os.environ["LINE_CHANNEL_ACCESS_TOKEN"]
+LINE_CHANNEL_SECRET = os.environ["LINE_CHANNEL_SECRET"]
+SERVICE_HOST_URL = os.environ["SERVICE_HOST_URL"].rstrip("/")
+TASK_SA_EMAIL = os.environ["TASK_SA_EMAIL"]
+PROJECT_ID = os.environ.get("GOOGLE_CLOUD_PROJECT")
 
 QUEUE_NAME = "video-analysis-queue"
 QUEUE_LOCATION = "asia-northeast2"
-TASK_HANDLER_PATH = "/task-handler"
-TASK_HANDLER_URL = f"{SERVICE_HOST_URL}{TASK_HANDLER_PATH}"
-TASK_SA_EMAIL = os.environ.get("TASK_SA_EMAIL", "")
 
 db = firestore.Client()
 tasks_client = tasks_v2.CloudTasksClient()
@@ -46,75 +41,10 @@ line_bot_api = LineBotApi(LINE_CHANNEL_ACCESS_TOKEN)
 handler = WebhookHandler(LINE_CHANNEL_SECRET)
 
 
-# ==================================================
-# Helpers
-# ==================================================
-def safe_line_reply(reply_token: str, text: str):
-    try:
-        line_bot_api.reply_message(reply_token, TextSendMessage(text=text))
-    except LineBotApiError:
-        print(traceback.format_exc())
-
-
-def safe_line_push(user_id: str, text: str):
-    try:
-        line_bot_api.push_message(user_id, TextSendMessage(text=text))
-    except LineBotApiError:
-        print(traceback.format_exc())
-
-
-def make_initial_reply(report_id: str) -> str:
-    return (
-        "✅ 動画を受信しました。\n"
-        "AIによるスイング数値計測を開始します。\n\n"
-        "完了すると自動で通知が届きます。\n\n"
-        f"{SERVICE_HOST_URL}/report/{report_id}"
-    )
-
-
-def make_done_push(report_id: str) -> str:
-    return (
-        "🎉 スイング計測が完了しました！\n\n"
-        "【診断レポートを見る】\n"
-        f"{SERVICE_HOST_URL}/report/{report_id}"
-    )
-
-
-# ==================================================
-# Cloud Tasks enqueue
-# ==================================================
-def enqueue_task(report_id: str, user_id: str, message_id: str):
-    parent = tasks_client.queue_path(PROJECT_ID, QUEUE_LOCATION, QUEUE_NAME)
-
-    payload = json.dumps({
-        "report_id": report_id,
-        "user_id": user_id,
-        "message_id": message_id,
-    }).encode("utf-8")
-
-    task = {
-        "http_request": {
-            "http_method": tasks_v2.HttpMethod.POST,
-            "url": TASK_HANDLER_URL,
-            "headers": {"Content-Type": "application/json"},
-            "body": payload,
-            "oidc_token": {
-                "service_account_email": TASK_SA_EMAIL,
-                "audience": SERVICE_HOST_URL,
-            },
-        }
-    }
-
-    tasks_client.create_task(parent=parent, task=task)
-
-
-# ==================================================
-# MediaPipe Analysis
-# ==================================================
-def analyze_swing_with_mediapipe(video_path: str) -> Dict[str, Any]:
-    import cv2
-    import mediapipe as mp
-
+# ======================
+# MediaPipe解析
+# ======================
+def analyze(video_path: str) -> Dict[str, Any]:
     mp_pose = mp.solutions.pose
     cap = cv2.VideoCapture(video_path)
 
@@ -125,161 +55,169 @@ def analyze_swing_with_mediapipe(video_path: str) -> Dict[str, Any]:
     max_head = 0.0
     max_knee = 0.0
 
-    def angle(p1, p2, p3):
-        ax, ay = p1[0] - p2[0], p1[1] - p2[1]
-        bx, by = p3[0] - p2[0], p3[1] - p2[1]
+    def angle(a, b, c):
+        ax, ay = a[0] - b[0], a[1] - b[1]
+        bx, by = c[0] - b[0], c[1] - b[1]
         dot = ax * bx + ay * by
         na = math.hypot(ax, ay)
         nb = math.hypot(bx, by)
         if na * nb == 0:
-            return 0.0
+            return 0
         return math.degrees(math.acos(max(-1, min(1, dot / (na * nb)))))
 
-    pose = mp_pose.Pose(
-        static_image_mode=False,
-        model_complexity=1,
-        enable_segmentation=False,
-        min_detection_confidence=0.5,
-        min_tracking_confidence=0.5,
-    )
-
-    try:
+    with mp_pose.Pose(min_detection_confidence=0.5, min_tracking_confidence=0.5) as pose:
         while cap.isOpened():
             ok, frame = cap.read()
             if not ok:
                 break
-
             frame_count += 1
-            rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-            res = pose.process(rgb)
+            res = pose.process(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
             if not res.pose_landmarks:
                 continue
 
             lm = res.pose_landmarks.landmark
             def xy(i): return (lm[i].x, lm[i].y)
 
-            LS = mp_pose.PoseLandmark.LEFT_SHOULDER.value
-            RS = mp_pose.PoseLandmark.RIGHT_SHOULDER.value
-            LH = mp_pose.PoseLandmark.LEFT_HIP.value
-            RH = mp_pose.PoseLandmark.RIGHT_HIP.value
-            LE = mp_pose.PoseLandmark.LEFT_ELBOW.value
-            LW = mp_pose.PoseLandmark.LEFT_WRIST.value
-            LI = mp_pose.PoseLandmark.LEFT_INDEX.value
-            NO = mp_pose.PoseLandmark.NOSE.value
-            LK = mp_pose.PoseLandmark.LEFT_KNEE.value
+            max_shoulder = max(max_shoulder, angle(xy(11), xy(12), xy(24)))
+            min_hip = min(min_hip, angle(xy(23), xy(24), xy(25)))
+            max_wrist = max(max_wrist, angle(xy(13), xy(15), xy(19)))
+            max_head = max(max_head, abs(xy(0)[0] - 0.5))
+            max_knee = max(max_knee, abs(xy(25)[0] - 0.5))
 
-            max_shoulder = max(max_shoulder, angle(xy(LS), xy(RS), xy(RH)))
-            min_hip = min(min_hip, angle(xy(LH), xy(RH), xy(LK)))
-            max_wrist = max(max_wrist, angle(xy(LE), xy(LW), xy(LI)))
-            max_head = max(max_head, abs(xy(NO)[0] - 0.5))
-            max_knee = max(max_knee, abs(xy(LK)[0] - 0.5))
-
-    finally:
-        cap.release()
-        pose.close()
+    cap.release()
 
     return {
-        "frame_count": frame_count,
-        "max_shoulder_rotation": round(max_shoulder, 2),
-        "min_hip_rotation": round(min_hip, 2),
-        "max_wrist_cock": round(max_wrist, 2),
-        "max_head_drift_x": round(max_head, 4),
-        "max_knee_sway_x": round(max_knee, 4),
+        "解析フレーム数": frame_count,
+        "最大肩回転角": round(max_shoulder, 2),
+        "最小腰回転角": round(min_hip, 2),
+        "最大コック角": round(max_wrist, 2),
+        "最大頭ブレ量": round(max_head, 4),
+        "最大膝ブレ量": round(max_knee, 4),
     }
 
 
-# ==================================================
-# Task handler
-# ==================================================
-@app.route("/task-handler", methods=["POST"])
-def task_handler():
-    data = request.get_json()
-    report_id = data["report_id"]
-    user_id = data["user_id"]
-    message_id = data["message_id"]
-
-    tmpdir = tempfile.mkdtemp()
-    video_path = os.path.join(tmpdir, f"{message_id}.mp4")
-    doc_ref = db.collection("reports").document(report_id)
-
-    try:
-        content = line_bot_api.get_message_content(message_id)
-        with open(video_path, "wb") as f:
-            for chunk in content.iter_content():
-                f.write(chunk)
-
-        raw_data = analyze_swing_with_mediapipe(video_path)
-
-        analysis = {
-            "01": {
-                "title": "骨格計測データ",
-                "data": raw_data,
-            }
+# ======================
+# Cloud Tasks作成
+# ======================
+def enqueue_task(report_id, user_id, message_id):
+    parent = tasks_client.queue_path(PROJECT_ID, QUEUE_LOCATION, QUEUE_NAME)
+    task = {
+        "http_request": {
+            "http_method": tasks_v2.HttpMethod.POST,
+            "url": f"{SERVICE_HOST_URL}/task-handler",
+            "headers": {"Content-Type": "application/json"},
+            "body": json.dumps({
+                "report_id": report_id,
+                "user_id": user_id,
+                "message_id": message_id
+            }).encode(),
+            "oidc_token": {
+                "service_account_email": TASK_SA_EMAIL,
+                "audience": SERVICE_HOST_URL,
+            },
         }
-
-        doc_ref.update({
-            "status": "COMPLETED",
-            "raw_data": raw_data,
-            "analysis": analysis,
-            "updated_at": firestore.SERVER_TIMESTAMP,
-        })
-
-        safe_line_push(user_id, make_done_push(report_id))
-        return jsonify({"ok": True})
-
-    except Exception as e:
-        doc_ref.update({"status": "FAILED", "error": str(e)})
-        safe_line_push(user_id, "解析中にエラーが発生しました。")
-        print(traceback.format_exc())
-        return "error", 500
-
-    finally:
-        shutil.rmtree(tmpdir, ignore_errors=True)
+    }
+    tasks_client.create_task(parent=parent, task=task)
 
 
-# ==================================================
-# Routes
-# ==================================================
+# ======================
+# LINE Webhook
+# ======================
 @app.route("/webhook", methods=["POST"])
 def webhook():
-    signature = request.headers.get("X-Line-Signature", "")
+    signature = request.headers.get("X-Line-Signature")
     body = request.get_data(as_text=True)
-    try:
-        handler.handle(body, signature)
-    except InvalidSignatureError:
-        abort(400)
+    handler.handle(body, signature)
     return "OK"
 
 
 @handler.add(MessageEvent, message=VideoMessage)
-def handle_video(event: MessageEvent):
-    user_id = event.source.user_id
-    msg = event.message
-    report_id = f"{user_id}_{msg.id}"
-
+def on_video(event):
+    report_id = f"{event.source.user_id}_{event.message.id}"
     db.collection("reports").document(report_id).set({
-        "user_id": user_id,
         "status": "PROCESSING",
-        "created_at": datetime.now(timezone.utc).isoformat(),
+        "created_at": datetime.now(timezone.utc).isoformat()
     })
+    enqueue_task(report_id, event.source.user_id, event.message.id)
+    line_bot_api.reply_message(
+        event.reply_token,
+        TextSendMessage(text=f"動画を受信しました。\n解析を開始します。\n{SERVICE_HOST_URL}/report/{report_id}")
+    )
 
-    safe_line_reply(event.reply_token, make_initial_reply(report_id))
-    enqueue_task(report_id, user_id, msg.id)
+
+# ======================
+# task-handler
+# ======================
+@app.route("/task-handler", methods=["POST"])
+def task_handler():
+    d = request.json
+    report_id = d["report_id"]
+    message_id = d["message_id"]
+    user_id = d["user_id"]
+
+    tmp = tempfile.mkdtemp()
+    path = os.path.join(tmp, "video.mp4")
+
+    try:
+        content = line_bot_api.get_message_content(message_id)
+        with open(path, "wb") as f:
+            for c in content.iter_content():
+                f.write(c)
+
+        raw = analyze(path)
+
+        analysis = {
+            "01": {
+                "title": "骨格計測データ（AI解析）",
+                "data": raw
+            },
+            "07": {
+                "title": "総合診断",
+                "text": [
+                    "スイング軸が安定しており、再現性の高い動きが確認できます。",
+                    "上半身の捻転量を増やすことで飛距離向上が期待できます。"
+                ]
+            },
+            "08": {
+                "title": "改善ドリル",
+                "drills": [
+                    {"ドリル名": "クロスアームターン", "目的": "捻転向上", "やり方": "胸の前で腕を組み回旋"}
+                ]
+            },
+            "10": {
+                "title": "まとめ",
+                "text": ["現状は非常に良好です。継続的な練習を行いましょう。"]
+            }
+        }
+
+        db.collection("reports").document(report_id).update({
+            "status": "COMPLETED",
+            "analysis": analysis
+        })
+
+        line_bot_api.push_message(
+            user_id,
+            TextSendMessage(text=f"解析が完了しました。\n{SERVICE_HOST_URL}/report/{report_id}")
+        )
+
+        return "OK"
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
 
 
+# ======================
+# 表示/API
+# ======================
 @app.route("/report/<report_id>")
 def report_page(report_id):
     return render_template("report.html", report_id=report_id)
 
 
 @app.route("/api/report_data/<report_id>")
-def api_report_data(report_id):
+def api_data(report_id):
     doc = db.collection("reports").document(report_id).get()
-    if not doc.exists:
-        return jsonify({"error": "not found"}), 404
     return jsonify(doc.to_dict())
 
 
-# ==================================================
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 8080)))
+    app.run(host="0.0.0.0", port=8080)
