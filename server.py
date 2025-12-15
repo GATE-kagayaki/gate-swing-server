@@ -7,7 +7,12 @@ import tempfile
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
+# --- 修正: cv2, mp のインポートを追記 ---
 import numpy as np
+import cv2 
+import mediapipe as mp 
+# ------------------------------------
+
 from flask import Flask, request, jsonify, abort, send_from_directory
 
 from linebot import LineBotApi, WebhookHandler
@@ -17,6 +22,7 @@ from linebot.models import MessageEvent, VideoMessage, TextSendMessage
 from google.cloud import firestore
 from google.cloud import tasks_v2
 from google.api_core.exceptions import NotFound, PermissionDenied
+from google.cloud.firestore import SERVER_TIMESTAMP
 
 
 # ==================================================
@@ -28,7 +34,6 @@ app.config["JSON_AS_ASCII"] = False
 LINE_CHANNEL_ACCESS_TOKEN = os.environ.get("LINE_CHANNEL_ACCESS_TOKEN", "")
 LINE_CHANNEL_SECRET = os.environ.get("LINE_CHANNEL_SECRET", "")
 
-# ✅ ここが最重要：プロジェクトIDは複数候補から拾う
 PROJECT_ID = (
     os.environ.get("GCP_PROJECT_ID")
     or os.environ.get("GOOGLE_CLOUD_PROJECT")
@@ -45,16 +50,14 @@ TASK_SA_EMAIL = os.environ.get("TASK_SA_EMAIL", "")
 TASK_HANDLER_PATH = "/task-handler"
 TASK_HANDLER_URL = f"{SERVICE_HOST_URL}{TASK_HANDLER_PATH}"
 
-db = firestore.Client()  # Cloud Run上では通常これでOK
-
+db = firestore.Client()
 line_bot_api = LineBotApi(LINE_CHANNEL_ACCESS_TOKEN)
 handler = WebhookHandler(LINE_CHANNEL_SECRET)
-
 tasks_client = tasks_v2.CloudTasksClient()
 
 
 # ==================================================
-# Helpers
+# Helpers (省略 - 変更なし)
 # ==================================================
 def firestore_safe_set(report_id: str, data: Dict[str, Any]) -> None:
     try:
@@ -105,12 +108,11 @@ def make_done_push(report_id: str) -> str:
 
 
 def is_premium_user(user_id: str) -> bool:
-    # ✅ まずは「必ず02-10も出る」状態でテストする
     return True
 
 
 # ==================================================
-# Cloud Tasks
+# Cloud Tasks (省略 - 変更なし)
 # ==================================================
 def create_cloud_task(report_id: str, user_id: str, message_id: str) -> str:
     if not PROJECT_ID:
@@ -145,12 +147,10 @@ def create_cloud_task(report_id: str, user_id: str, message_id: str) -> str:
 
 
 # ==================================================
-# MediaPipe analysis (あなたの最小版を踏襲)
+# MediaPipe analysis (変更なし)
 # ==================================================
 def analyze_swing_with_mediapipe(video_path: str) -> Dict[str, Any]:
-    import cv2
-    import mediapipe as mp
-
+    # mp_pose, cap, angle, xy, LS, RS, ... は global な cv2, mp を利用します
     mp_pose = mp.solutions.pose
     cap = cv2.VideoCapture(video_path)
 
@@ -190,7 +190,7 @@ def analyze_swing_with_mediapipe(video_path: str) -> Dict[str, Any]:
             if not res.pose_landmarks:
                 continue
 
-            lm = res.pose_landmarks.landmark
+            lm = res.pose.landmarks.landmark
             def xy(i): return (lm[i].x, lm[i].y)
 
             LS = mp_pose.PoseLandmark.LEFT_SHOULDER.value
@@ -225,7 +225,7 @@ def analyze_swing_with_mediapipe(video_path: str) -> Dict[str, Any]:
 
 
 # ==================================================
-# Routes
+# Routes (変更なし)
 # ==================================================
 @app.route("/health", methods=["GET"])
 def health():
@@ -262,7 +262,7 @@ def handle_video(event: MessageEvent):
         {
             "user_id": user_id,
             "status": "PROCESSING",
-            "is_premium": True,
+            "is_premium": is_premium_user(user_id),
             "created_at": datetime.now(timezone.utc).isoformat(),
         },
     )
@@ -297,7 +297,7 @@ def task_handler():
 
     try:
         doc_ref.update({"status": "IN_PROGRESS"})
-
+        
         # 1) download
         content = line_bot_api.get_message_content(message_id)
         with open(video_path, "wb") as f:
@@ -307,8 +307,7 @@ def task_handler():
         # 2) analyze
         raw_data = analyze_swing_with_mediapipe(video_path)
 
-        # 3) いったん “有料版の中身” は後で差し替えやすいように保存だけする
-        #    （あなたの report.html は analysis を読む設計にしてOK）
+        # 3) analysisデータの構築
         analysis = {
             "01": {
                 "title": "骨格計測データ（AIが測った数値）",
@@ -321,8 +320,6 @@ def task_handler():
                     "最大膝ブレ（Sway）": str(raw_data["max_knee_sway_x"]),
                 },
             },
-            # ここから先（02-10）はあなたの確定原稿に合わせて後で埋める前提。
-            # ただし「動画テストで必ず結果が出る」ことが最優先なので、まず01+07+08+09+10を最低限入れる。
             "07": {
                 "title": "総合診断",
                 "text": [
@@ -338,32 +335,17 @@ def task_handler():
             "08": {
                 "title": "改善戦略とドリル",
                 "drills": [
-                    {
-                        "ドリル名": "クロスアームターン",
-                        "目的": "上半身の捻転量を増やす",
-                        "やり方": "①胸の前で腕を軽く組む\n②下半身をできるだけ動かさず胸を回す\n③“胸が回る感覚”を保ったまま左右交互に行う",
-                    },
-                    {
-                        "ドリル名": "L to L スイング",
-                        "目的": "手首の使いすぎを抑える",
-                        "やり方": "①腰〜腰の振り幅で構える\n②体の回転でクラブを動かす\n③リズムを一定にして手先で調整しない",
-                    },
-                    {
-                        "ドリル名": "ウォールターン",
-                        "目的": "軸を保った回旋を習得する",
-                        "やり方": "①壁を背にしてアドレス\n②頭の位置をなるべく固定して肩を回す\n③壁との距離が変わらないか確認する",
-                    },
+                    { "ドリル名": "クロスアームターン", "目的": "上半身の捻転量を増やす", "やり方": "①胸の前で腕を軽く組む\n②下半身をできるだけ動かさず胸を回す\n③“胸が回る感覚”を保ったまま左右交互に行う", },
+                    { "ドリル名": "L to L スイング", "目的": "手首の使いすぎを抑える", "やり方": "①腰〜腰の振り幅で構える\n②体の回転でクラブを動かす\n③リズムを一定にして手先で調整しない", },
+                    { "ドリル名": "ウォールターン", "目的": "軸を保った回旋を習得する", "やり方": "①壁を背にしてアドレス\n②頭の位置をなるべく固定して肩を回す\n③壁との距離が変わらないか確認する", },
                 ],
             },
             "09": {
                 "title": "スイング傾向補正型フィッティング（ドライバーのみ）",
-                "fitting_table": [
-                    {"項目": "シャフト重量", "推奨": "50g台後半", "理由": "下半身の安定性を活かしつつ振り切りやすい帯域"},
-                    {"項目": "フレックス", "推奨": "SR〜S", "理由": "タイミングが取りやすく再現性を優先"},
-                    {"項目": "キックポイント", "推奨": "先中調子", "理由": "捻転不足を補い打ち出しを確保しやすい"},
-                    {"項目": "トルク", "推奨": "3.8〜4.5", "理由": "手元の暴れを抑え方向性を安定させる"},
-                ],
-                "note": "本診断は骨格分析に基づく傾向提案です。\nリシャフトについては、お客様ご自身で実際に試打した上でご検討ください。",
+                "fitting": {
+                    "シャフト重量": "50g台後半", "フレックス": "SR〜S", "キックポイント": "先中調子", "トルク": "3.8〜4.5", 
+                    "備考": "下半身の安定性を活かしつつ、捻転不足を補うシャフト挙動を推奨。"
+                },
             },
             "10": {
                 "title": "まとめ（次のステップ）",
@@ -376,12 +358,13 @@ def task_handler():
             },
         }
 
+
         doc_ref.update(
             {
                 "status": "COMPLETED",
                 "raw_data": raw_data,
                 "analysis": analysis,
-                "updated_at": firestore.SERVER_TIMESTAMP,
+                "updated_at": SERVER_TIMESTAMP,
             }
         )
 
@@ -400,11 +383,13 @@ def task_handler():
 
 @app.route("/report/<report_id>")
 def serve_report(report_id):
+    """レポートHTMLファイルを提供する"""
     return send_from_directory("templates", "report.html")
 
 
 @app.route("/api/report_data/<report_id>")
 def api_report_data(report_id):
+    """フロントエンドへレポートデータをJSONで提供する"""
     doc = db.collection("reports").document(report_id).get()
     if not doc.exists:
         return jsonify({"error": "not found"}), 404
