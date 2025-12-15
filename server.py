@@ -1,4 +1,17 @@
-# server.py の analyze_swing_with_mediapipe 関数全体をこのコードに置き換えてください
+import os
+import json
+import math
+import shutil
+import traceback
+import tempfile
+from datetime import datetime, timezone
+# 【ここが重要】: NameErrorを解消するために必要です
+from typing import Any, Dict, List, Optional 
+
+import numpy as np
+import cv2 
+import mediapipe as mp 
+# ... (以降のインポート、コードが続く)# server.py の analyze_swing_with_mediapipe 関数全体をこのコードに置き換えてください
 
 # ==================================================
 # MediaPipe analysis (クラッシュ対策強化版)
