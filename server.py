@@ -1,5 +1,4 @@
 import os
-import json
 import math
 import shutil
 import traceback
@@ -7,7 +6,7 @@ import tempfile
 from datetime import datetime, timezone
 from typing import Any, Dict
 
-from flask import Flask, request, jsonify, abort, send_from_directory
+from flask import Flask, request, jsonify, abort, render_template
 
 from linebot import LineBotApi, WebhookHandler
 from linebot.exceptions import InvalidSignatureError, LineBotApiError
@@ -19,7 +18,7 @@ from google.cloud import firestore
 # ==================================================
 # CONFIG
 # ==================================================
-app = Flask(__name__)
+app = Flask(__name__, template_folder="templates")
 app.config["JSON_AS_ASCII"] = False
 
 LINE_CHANNEL_ACCESS_TOKEN = os.environ.get("LINE_CHANNEL_ACCESS_TOKEN", "")
@@ -38,13 +37,6 @@ handler = WebhookHandler(LINE_CHANNEL_SECRET)
 def firestore_safe_set(report_id: str, data: Dict[str, Any]) -> None:
     try:
         db.collection("reports").document(report_id).set(data, merge=True)
-    except Exception:
-        print(traceback.format_exc())
-
-
-def firestore_safe_update(report_id: str, patch: Dict[str, Any]) -> None:
-    try:
-        db.collection("reports").document(report_id).update(patch)
     except Exception:
         print(traceback.format_exc())
 
@@ -83,7 +75,7 @@ def make_done_push(report_id: str) -> str:
 
 
 # ==================================================
-# MediaPipe Analysis（構文安全版）
+# MediaPipe Analysis（安全版）
 # ==================================================
 def analyze_swing_with_mediapipe(video_path: str) -> Dict[str, Any]:
     import cv2
@@ -107,8 +99,7 @@ def analyze_swing_with_mediapipe(video_path: str) -> Dict[str, Any]:
         nb = math.hypot(bx, by)
         if na * nb == 0:
             return 0.0
-        c = max(-1.0, min(1.0, dot / (na * nb)))
-        return math.degrees(math.acos(c))
+        return math.degrees(math.acos(max(-1, min(1, dot / (na * nb)))))
 
     pose = mp_pose.Pose(
         static_image_mode=False,
@@ -153,9 +144,6 @@ def analyze_swing_with_mediapipe(video_path: str) -> Dict[str, Any]:
         cap.release()
         pose.close()
 
-    if frame_count < 10:
-        raise RuntimeError("解析に必要なフレーム数が不足しています。")
-
     return {
         "frame_count": frame_count,
         "max_shoulder_rotation": round(max_shoulder, 2),
@@ -167,7 +155,7 @@ def analyze_swing_with_mediapipe(video_path: str) -> Dict[str, Any]:
 
 
 # ==================================================
-# 直列解析実行（Cloud Tasks 不使用）
+# Analysis runner
 # ==================================================
 def run_analysis(report_id: str, user_id: str, message_id: str):
     tmpdir = tempfile.mkdtemp()
@@ -187,14 +175,7 @@ def run_analysis(report_id: str, user_id: str, message_id: str):
         analysis = {
             "01": {
                 "title": "骨格計測データ（AIが測った数値）",
-                "data": {
-                    "解析フレーム数": raw_data["frame_count"],
-                    "最大肩回転": raw_data["max_shoulder_rotation"],
-                    "最小腰回転": raw_data["min_hip_rotation"],
-                    "最大コック角": raw_data["max_wrist_cock"],
-                    "最大頭ブレ": raw_data["max_head_drift_x"],
-                    "最大膝ブレ": raw_data["max_knee_sway_x"],
-                },
+                "data": raw_data,
             }
         }
 
@@ -232,8 +213,6 @@ def webhook():
         handler.handle(body, signature)
     except InvalidSignatureError:
         abort(400)
-    except Exception:
-        print(traceback.format_exc())
     return "OK"
 
 
@@ -253,14 +232,12 @@ def handle_video(event: MessageEvent):
     )
 
     safe_line_reply(event.reply_token, make_initial_reply(report_id))
-
-    # ★ 直列実行
     run_analysis(report_id, user_id, msg.id)
 
 
 @app.route("/report/<report_id>")
 def serve_report(report_id):
-    return send_from_directory("templates", "report.html")
+    return render_template("report.html", report_id=report_id)
 
 
 @app.route("/api/report_data/<report_id>")
