@@ -32,7 +32,6 @@
     </div>
 
     <div id="report-content" class="hidden">
-        
         <p class="text-xs text-gray-500 mb-6">
             REPORT ID：<span id="reportId"></span>
         </p>
@@ -40,50 +39,48 @@
         <section id="section-01">
             <h2>01. 骨格計測データ（AIが測った数値）</h2>
             <table>
-                <tbody id="data-01">
-                    </tbody>
+                <tbody id="data-01"></tbody>
             </table>
         </section>
-
-        </div>
+    </div>
 
 </div>
 
 <script>
+/* ==================================================
+   report_id 取得
+================================================== */
 const reportId = location.pathname.split("/").pop();
 document.getElementById("reportId").innerText = reportId;
 
 const reportContent = document.getElementById("report-content");
 const loadingElement = document.getElementById("loading");
 
+/* ==================================================
+   セクション描画
+================================================== */
 function renderSection(key, sectionData) {
     const el = document.createElement('section');
     el.id = `section-${key}`;
     el.innerHTML += `<h2>${sectionData.title}</h2>`;
 
     if (key === '01') {
-        // 01: 数値データはテーブルで表示
         let tableBody = '';
         Object.entries(sectionData.data).forEach(([k, v]) => {
             let unit = '';
             if (k.includes('回転') || k.includes('コック')) unit = '°';
             if (k.includes('Sway')) unit = '%';
-
             tableBody += `<tr><th>${k}</th><td>${v}${unit}</td></tr>`;
         });
         document.getElementById('data-01').innerHTML = tableBody;
 
     } else if (sectionData.text) {
-        // 02, 03, 04, 05, 06, 07, 10: テキストは段落で表示
-        if (sectionData.title.includes('(有料限定)')) {
-            el.innerHTML += `<div class="premium-alert">${sectionData.text.join('<br>')}</div>`;
-        } else {
-             el.innerHTML += sectionData.text.map(t => `<p class="text-gray-700 whitespace-pre-line">${t}</p>`).join("");
-        }
+        el.innerHTML += sectionData.text
+            .map(t => `<p class="text-gray-700 whitespace-pre-line">${t}</p>`)
+            .join("");
         reportContent.appendChild(el);
 
     } else if (sectionData.drills) {
-        // 08: ドリルはテーブルで表示
         let tableHtml = '<table><thead><tr><th>ドリル名</th><th>目的</th><th>やり方</th></tr></thead><tbody>';
         sectionData.drills.forEach(d => {
             tableHtml += `<tr><td>${d["ドリル名"]}</td><td>${d["目的"]}</td><td>${d["やり方"]}</td></tr>`;
@@ -92,54 +89,56 @@ function renderSection(key, sectionData) {
         el.innerHTML += tableHtml;
         reportContent.appendChild(el);
 
-    } else if (sectionData.fitting) {
-        // 09: フィッティングはテーブルで表示
+    } else if (sectionData.fitting_table) {
         let tableHtml = '<table><thead><tr><th>項目</th><th>推奨</th><th>理由</th></tr></thead><tbody>';
-        Object.entries(sectionData.fitting).forEach(([k, v]) => {
-             // 理由を別行で表示しないため、ここでは理由キーをスキップ
-             if (k !== '備考' && k !== '理由') {
-                 tableHtml += `<tr><th>${k}</th><td>${v}</td>`;
-             }
+        sectionData.fitting_table.forEach(row => {
+            tableHtml += `<tr><td>${row["項目"]}</td><td>${row["推奨"]}</td><td>${row["理由"]}</td></tr>`;
         });
-        tableHtml += `<tr><th>備考</th><td colspan="2">${sectionData.fitting['備考'] || sectionData.fitting['理由'] || 'ー'}</td></tr>`;
         tableHtml += '</tbody></table>';
         el.innerHTML += tableHtml;
         reportContent.appendChild(el);
     }
 }
 
+/* ==================================================
+   API 呼び出し（★修正版B：statusを小文字化）
+================================================== */
 fetch(`/api/report_data/${reportId}`)
     .then(r => {
         if (!r.ok) throw new Error("API通信エラー: " + r.status);
         return r.json();
     })
     .then(data => {
+        const status = (data.status || "").toLowerCase();
         loadingElement.classList.add("hidden");
 
-        if (data.status === "completed" && data.analysis) {
+        if (status === "completed" && data.analysis) {
             reportContent.classList.remove("hidden");
-            const analysis = data.analysis;
 
-            // 01〜10まで順にレンダリング
-            Object.keys(analysis).sort().forEach(key => {
-                const sectionData = analysis[key];
-                if (sectionData) {
-                    renderSection(key, sectionData);
-                }
-            });
+            Object.keys(data.analysis)
+                .sort((a, b) => Number(a) - Number(b))
+                .forEach(key => {
+                    renderSection(key, data.analysis[key]);
+                });
 
-        } else if (data.status === "pending" || data.status === "PROCESSING") {
-             loadingElement.querySelector('p').innerText = "解析処理中です。完了までしばらくお待ちください...";
-             loadingElement.classList.remove("hidden");
+        } else if (status === "processing" || status === "pending") {
+            loadingElement.querySelector('p').innerText =
+                "解析処理中です。完了までしばらくお待ちください...";
+            loadingElement.classList.remove("hidden");
+
         } else {
-            loadingElement.innerHTML = '<p class="text-red-600 font-bold">⚠️ レポートデータが見つからないか、解析に失敗しました。</p>';
+            loadingElement.innerHTML =
+                '<p class="text-red-600 font-bold">⚠️ レポートデータが見つからないか、解析に失敗しました。</p>';
+            loadingElement.classList.remove("hidden");
         }
     })
     .catch(error => {
-        loadingElement.innerHTML = `<p class="text-red-600 font-bold">⚠️ サーバーとの通信エラー: ${error.message}</p>`;
+        loadingElement.innerHTML =
+            `<p class="text-red-600 font-bold">⚠️ サーバーとの通信エラー: ${error.message}</p>`;
         loadingElement.classList.remove("hidden");
         console.error('Fetch Error:', error);
     });
 </script>
 </body>
 </html>
+
