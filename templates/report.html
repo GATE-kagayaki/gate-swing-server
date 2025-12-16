@@ -23,7 +23,7 @@ body {
 h2 {
     border-left: 4px solid #111827;
     padding-left: 12px;
-    margin-top: 32px;
+    margin-top: 40px;
     font-weight: 700;
 }
 table {
@@ -45,6 +45,12 @@ th {
     text-align: center;
     padding: 80px 0;
 }
+.eval-good {
+    color: #065f46;
+}
+.eval-bad {
+    color: #7c2d12;
+}
 </style>
 </head>
 
@@ -64,11 +70,21 @@ th {
 REPORT ID：<span id="reportId"></span>
 </p>
 
+<!-- ===================== -->
+<!-- 01 骨格計測データ -->
+<!-- ===================== -->
 <h2>01. 骨格計測データ（AIが測定）</h2>
 
 <table>
 <tbody id="data-table"></tbody>
 </table>
+
+<!-- ===================== -->
+<!-- 07 総合評価 -->
+<!-- ===================== -->
+<h2>07. 総合評価</h2>
+
+<div id="summary" class="mt-4 text-gray-700 leading-relaxed space-y-4"></div>
 
 </div>
 </div>
@@ -80,6 +96,7 @@ document.getElementById("reportId").innerText = reportId;
 const loading = document.getElementById("loading");
 const content = document.getElementById("content");
 const table = document.getElementById("data-table");
+const summary = document.getElementById("summary");
 
 const meta = {
     "解析フレーム数": {
@@ -114,16 +131,14 @@ fetch(`/api/report_data/${reportId}`)
     loading.classList.add("hidden");
     content.classList.remove("hidden");
 
-    const analysis = data.analysis || {};
+    const a = data.analysis || {};
 
+    /* -------- 01 表示 -------- */
     Object.keys(meta).forEach(key => {
-        if (!(key in analysis)) return;
+        if (!(key in a)) return;
 
-        const value = analysis[key];
-        const unit =
-            key.includes("角") ? "°" :
-            key.includes("フレーム") ? "" :
-            "";
+        const value = a[key];
+        const unit = key.includes("角") ? "°" : "";
 
         table.innerHTML += `
         <tr>
@@ -133,13 +148,40 @@ fetch(`/api/report_data/${reportId}`)
                 <strong>説明：</strong>${meta[key].desc}<br><br>
                 <strong>目安：</strong>${meta[key].guide}
             </td>
-        </tr>
-        `;
+        </tr>`;
     });
-})
-.catch(err => {
-    loading.innerHTML = "<p class='text-red-600'>レポートデータの取得に失敗しました。</p>";
-    console.error(err);
+
+    /* -------- 07 総合評価 -------- */
+    const good = [];
+    const bad = [];
+
+    if (a["最大頭部ブレ"] <= 0.15 && a["最大膝ブレ"] <= 0.2) {
+        good.push("頭部および下半身のブレが少なく、スイング軸が安定しています。");
+    } else {
+        bad.push("頭部または下半身にブレが見られ、再現性に影響する可能性があります。");
+    }
+
+    if (a["最大肩回転角"] >= 80 && a["最大肩回転角"] <= 110) {
+        good.push("上半身の回旋量が適正範囲にあり、効率よくパワーを生み出せています。");
+    } else {
+        bad.push("肩の回転量が適正範囲から外れており、パワーロスの要因になる可能性があります。");
+    }
+
+    if (a["最小腰回転角"] < 35) {
+        bad.push("下半身の回旋がやや不足しており、上半身主導になりやすい傾向があります。");
+    }
+
+    let html = "";
+    if (good.length) {
+        html += "<p class='eval-good'><strong>良い点</strong><br>" + good.join("<br>") + "</p>";
+    }
+    if (bad.length) {
+        html += "<p class='eval-bad'><strong>改善点</strong><br>" + bad.join("<br>") + "</p>";
+    }
+
+    html += "<p>全体として、安定性をベースにしたスイングができており、適切な調整を行うことでさらなるレベルアップが期待できます。</p>";
+
+    summary.innerHTML = html;
 });
 </script>
 
