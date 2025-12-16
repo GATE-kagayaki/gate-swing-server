@@ -2,61 +2,146 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<title>GATE AIスイングドクター</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>GATE AIスイングドクター｜SWING ANALYSIS REPORT</title>
+
 <script src="https://cdn.tailwindcss.com"></script>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;700&display=swap" rel="stylesheet">
+
+<style>
+body {
+    font-family: 'Noto Sans JP', sans-serif;
+    background: #f3f4f6;
+}
+.paper {
+    background: #ffffff;
+    max-width: 900px;
+    margin: 20px auto;
+    padding: 32px;
+    box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+}
+h2 {
+    border-left: 4px solid #111827;
+    padding-left: 12px;
+    margin-top: 32px;
+    font-weight: 700;
+}
+table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 12px;
+}
+th, td {
+    border: 1px solid #e5e7eb;
+    padding: 10px;
+    font-size: 0.95rem;
+    vertical-align: top;
+}
+th {
+    background: #f9fafb;
+    width: 35%;
+}
+.loading {
+    text-align: center;
+    padding: 80px 0;
+}
+</style>
 </head>
-<body class="bg-gray-100">
-<div class="max-w-3xl mx-auto bg-white p-6 mt-6 shadow">
 
-<h1 class="text-2xl font-bold text-center">GATE AIスイングドクター</h1>
-<p class="text-center text-sm text-gray-500 mb-4">SWING ANALYSIS REPORT</p>
+<body>
+<div class="paper">
 
-<div id="loading">解析処理中です...</div>
-<div id="content" class="hidden"></div>
+<h1 class="text-2xl font-bold text-center mb-2">GATE AIスイングドクター</h1>
+<p class="text-center text-sm mb-6 text-gray-600">SWING ANALYSIS REPORT</p>
 
+<div id="loading" class="loading">
+    <p class="text-gray-500 text-sm">レポートデータを読み込み中です…</p>
+</div>
+
+<div id="content" class="hidden">
+
+<p class="text-xs text-gray-500 mb-6">
+REPORT ID：<span id="reportId"></span>
+</p>
+
+<h2>01. 骨格計測データ（AIが測定）</h2>
+
+<table>
+<tbody id="data-table"></tbody>
+</table>
+
+</div>
 </div>
 
 <script>
 const reportId = location.pathname.split("/").pop();
+document.getElementById("reportId").innerText = reportId;
+
+const loading = document.getElementById("loading");
+const content = document.getElementById("content");
+const table = document.getElementById("data-table");
+
+const meta = {
+    "解析フレーム数": {
+        desc: "動画から解析できたフレーム数です。数が多いほど、動作全体を安定して解析できています。",
+        guide: "150～300 フレーム"
+    },
+    "最大肩回転角": {
+        desc: "スイング中に肩がどれだけ回転したかを示す角度です。上半身の回旋量の指標になります。",
+        guide: "80～110°"
+    },
+    "最小腰回転角": {
+        desc: "スイング中に腰が最も回転した瞬間の角度です。下半身の回旋量を表します。",
+        guide: "35～45°"
+    },
+    "最大手首コック角": {
+        desc: "スイング中に手首が最も折れた角度です。クラブのコック量の指標になります。",
+        guide: "120～150°"
+    },
+    "最大頭部ブレ": {
+        desc: "スイング中に頭の位置が左右にどれだけ動いたかを示します。スイング軸の安定性を表します。",
+        guide: "0.05～0.15"
+    },
+    "最大膝ブレ": {
+        desc: "スイング中に膝が左右にどれだけ動いたかを示します。下半身の安定性の指標です。",
+        guide: "0.05～0.20"
+    }
+};
 
 fetch(`/api/report_data/${reportId}`)
-.then(r => r.json())
-.then(d => {
-  if (d.status !== "COMPLETED") return;
-  document.getElementById("loading").remove();
-  const root = document.getElementById("content");
-  root.classList.remove("hidden");
+.then(res => res.json())
+.then(data => {
+    loading.classList.add("hidden");
+    content.classList.remove("hidden");
 
-  Object.values(d.analysis).forEach(sec => {
-    const h = document.createElement("h2");
-    h.className = "mt-6 font-bold text-lg";
-    h.textContent = sec.title;
-    root.appendChild(h);
+    const analysis = data.analysis || {};
 
-    if (sec.data) {
-      const t = document.createElement("table");
-      t.className = "w-full border mt-2";
-      Object.entries(sec.data).forEach(([k,v])=>{
-        t.innerHTML += `<tr><th class="border p-2">${k}</th><td class="border p-2">${v}</td></tr>`;
-      });
-      root.appendChild(t);
-    }
+    Object.keys(meta).forEach(key => {
+        if (!(key in analysis)) return;
 
-    if (sec.text) {
-      sec.text.forEach(p=>{
-        const el = document.createElement("p");
-        el.textContent = p;
-        root.appendChild(el);
-      });
-    }
+        const value = analysis[key];
+        const unit =
+            key.includes("角") ? "°" :
+            key.includes("フレーム") ? "" :
+            "";
 
-    if (sec.drills) {
-      sec.drills.forEach(d=>{
-        root.innerHTML += `<p>【${d["ドリル名"]}】${d["やり方"]}</p>`;
-      });
-    }
-  });
+        table.innerHTML += `
+        <tr>
+            <th>${key}</th>
+            <td>
+                <strong>計測結果：</strong>${value}${unit}<br><br>
+                <strong>説明：</strong>${meta[key].desc}<br><br>
+                <strong>目安：</strong>${meta[key].guide}
+            </td>
+        </tr>
+        `;
+    });
+})
+.catch(err => {
+    loading.innerHTML = "<p class='text-red-600'>レポートデータの取得に失敗しました。</p>";
+    console.error(err);
 });
 </script>
+
 </body>
 </html>
