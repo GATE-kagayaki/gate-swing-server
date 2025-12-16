@@ -1,255 +1,328 @@
 <!DOCTYPE html>
 <html lang="ja">
 <head>
-  <meta charset="UTF-8">
-  <title>GATE AIスイングドクター｜スイング解析レポート</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>GATE AIスイングドクター｜SWING ANALYSIS REPORT</title>
+
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+JP:wght@400;700&family=Noto+Sans+JP:wght@400;700&display=swap" rel="stylesheet">
 
   <style>
-    body {
-      font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, sans-serif;
-      background: #f7f7f7;
-      color: #222;
-      line-height: 1.7;
-      margin: 0;
-      padding: 0;
-    }
-
-    .container {
-      max-width: 820px;
-      margin: 0 auto;
-      padding: 24px 16px 60px;
-      background: #ffffff;
-    }
-
-    h1 {
-      text-align: center;
-      margin-bottom: 32px;
-      font-size: 26px;
-      letter-spacing: 0.04em;
-    }
-
-    h2 {
-      margin-top: 48px;
-      margin-bottom: 12px;
-      font-size: 20px;
-      border-left: 6px solid #111;
-      padding-left: 10px;
-    }
-
-    h3 {
-      margin-top: 20px;
-      margin-bottom: 6px;
-      font-size: 16px;
-    }
-
-    .section {
-      margin-bottom: 36px;
-    }
-
-    .value-box {
-      background: #f0f0f0;
-      padding: 10px 14px;
-      border-radius: 6px;
-      margin: 10px 0 14px;
-      font-weight: bold;
-    }
-
-    .desc {
-      font-size: 14px;
-      color: #444;
-      margin-bottom: 10px;
-    }
-
-    .guide {
-      font-size: 14px;
-      color: #666;
-      margin-bottom: 8px;
-    }
-
-    ul {
-      padding-left: 20px;
-      margin-top: 6px;
-      margin-bottom: 14px;
-    }
-
-    li {
-      margin-bottom: 6px;
-    }
-
-    .pro {
-      background: #fafafa;
-      border-left: 4px solid #999;
-      padding: 10px 14px;
-      font-size: 14px;
-      margin-top: 10px;
-    }
-
-    .paid-note {
-      margin-top: 60px;
-      padding: 20px;
-      background: #f8f8f8;
-      border-radius: 8px;
-      text-align: center;
-      font-size: 14px;
-      color: #333;
-    }
-
-    .divider {
-      margin: 40px 0;
-      border-top: 1px solid #ddd;
-    }
+    body { font-family: 'Noto Sans JP', sans-serif; background:#f3f4f6; }
+    .paper { background:#fff; max-width:960px; margin:18px auto; padding:28px; box-shadow: 0 4px 14px rgba(0,0,0,.08); border-radius: 16px; }
+    h2 { border-left:4px solid #111827; padding-left:12px; margin-top:28px; font-weight:700; font-family: 'Noto Serif JP', serif; }
+    table { width:100%; border-collapse:collapse; margin-top:10px; table-layout: fixed; }
+    th,td { border:1px solid #e5e7eb; padding:10px; font-size: 0.95rem; vertical-align: top; }
+    th { background:#f9fafb; font-weight:700; width: 28%; }
+    .muted { color:#6b7280; font-size:0.85rem; line-height: 1.35; }
+    .card { border:1px solid #e5e7eb; border-radius:14px; padding:14px 14px; background:#fff; }
+    .pill { display:inline-block; padding:4px 10px; border-radius:999px; font-size:12px; font-weight:700; }
+    .pill-ok { background:#ecfdf5; color:#047857; border:1px solid #a7f3d0; }
+    .pill-bad { background:#fef2f2; color:#b91c1c; border:1px solid #fecaca; }
+    .pill-pro { background:#eff6ff; color:#1d4ed8; border:1px solid #bfdbfe; }
+    .loading { text-align:center; padding:80px 0; }
+    .line { margin-top:10px; line-height: 1.8; }
+    .sp { margin-top:12px; }
+    .probox { background:#eff6ff; border:1px solid #bfdbfe; padding:12px; border-radius:12px; margin-top:12px; }
+    .note { background:#f9fafb; border:1px dashed #d1d5db; padding:12px; border-radius:12px; margin-top:12px; color:#374151; }
   </style>
 </head>
 
 <body>
-<div class="container">
+  <div class="paper">
 
-  <h1>GATE AIスイングドクター<br>SWING ANALYSIS REPORT</h1>
-
-  <!-- ===================== -->
-  <!-- 01 基本データ -->
-  <!-- ===================== -->
-  <div class="section">
-    <h2>01. 骨格計測データ</h2>
-
-    <h3>解析フレーム数</h3>
-    <div class="value-box">{{ analysis.frame_count }}</div>
-    <div class="desc">
-      動画から解析できたフレーム数です。数が多いほど、スイング全体を安定して解析できています。
+    <div class="flex items-center justify-between gap-3">
+      <div>
+        <h1 class="text-2xl font-bold">GATE AIスイングドクター</h1>
+        <p class="text-sm text-gray-600 mt-1">SWING ANALYSIS REPORT</p>
+      </div>
+      <div id="statusPill" class="pill pill-pro">Loading</div>
     </div>
-    <div class="guide">目安：150～300 フレーム</div>
 
-    <h3>最大肩回転角（°）</h3>
-    <div class="value-box">{{ analysis.max_shoulder_rotation }}</div>
-    <div class="guide">目安：80～110°</div>
+    <p class="text-xs text-gray-500 mt-4">
+      REPORT ID：<span id="reportId"></span>
+    </p>
 
-    <h3>最小腰回転角（°）</h3>
-    <div class="value-box">{{ analysis.min_hip_rotation }}</div>
-    <div class="guide">目安：35～45°</div>
+    <div id="loading" class="loading">
+      <div class="animate-spin h-8 w-8 border-4 border-gray-500 rounded-full border-t-transparent mx-auto"></div>
+      <p class="mt-4 text-gray-500 text-sm" id="loadingText">レポートデータを読み込み中...</p>
+      <p class="mt-2 text-gray-400 text-xs">※解析完了まで数分かかる場合があります</p>
+    </div>
 
-    <h3>最大手首コック角（°）</h3>
-    <div class="value-box">{{ analysis.max_wrist_cock }}</div>
-    <div class="guide">目安：120～150°</div>
+    <div id="report-content" class="hidden">
+      <!-- 01 -->
+      <section id="section-01">
+        <h2 id="title-01">01</h2>
+        <div class="card mt-3">
+          <table>
+            <tbody id="items-01"></tbody>
+          </table>
+          <p class="muted mt-3">
+            ※「目安」は一般的な参考レンジです。フォームや撮影条件により前後します。
+          </p>
+        </div>
+      </section>
 
-    <h3>最大頭部ブレ</h3>
-    <div class="value-box">{{ analysis.max_head_drift_x }}</div>
-    <div class="guide">目安：0.05～0.15</div>
+      <!-- 02-06（有料のみ） -->
+      <div id="section-02-06" class="hidden">
+        <section id="section-02"></section>
+        <section id="section-03"></section>
+        <section id="section-04"></section>
+        <section id="section-05"></section>
+        <section id="section-06"></section>
+      </div>
 
-    <h3>最大膝ブレ</h3>
-    <div class="value-box">{{ analysis.max_knee_sway_x }}</div>
-    <div class="guide">目安：0.05～0.20</div>
+      <!-- 07 -->
+      <section id="section-07" class="hidden">
+        <h2 id="title-07">07</h2>
+        <div class="card mt-3" id="text-07"></div>
+      </section>
+
+      <!-- 08（有料のみ） -->
+      <section id="section-08" class="hidden">
+        <h2 id="title-08">08</h2>
+        <div class="card mt-3">
+          <table>
+            <thead>
+              <tr>
+                <th>ドリル名</th>
+                <th>目的</th>
+                <th>やり方</th>
+              </tr>
+            </thead>
+            <tbody id="drills-08"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- 09（有料のみ） -->
+      <section id="section-09" class="hidden">
+        <h2 id="title-09">09</h2>
+        <div class="card mt-3">
+          <table>
+            <thead>
+              <tr>
+                <th>項目</th>
+                <th>目安</th>
+                <th>理由</th>
+              </tr>
+            </thead>
+            <tbody id="fit-09"></tbody>
+          </table>
+          <div id="note-09" class="note"></div>
+        </div>
+      </section>
+
+      <!-- 10（有料のみ） -->
+      <section id="section-10" class="hidden">
+        <h2 id="title-10">10</h2>
+        <div class="card mt-3" id="text-10"></div>
+      </section>
+
+    </div>
   </div>
 
-  <!-- ===================== -->
-  <!-- 02〜06 有料版評価 -->
-  <!-- ===================== -->
-  {% if is_paid %}
+<script>
+  const reportId = location.pathname.split("/").pop();
+  document.getElementById("reportId").innerText = reportId;
 
-  <div class="divider"></div>
+  const reportContent = document.getElementById("report-content");
+  const loadingElement = document.getElementById("loading");
+  const loadingText = document.getElementById("loadingText");
+  const statusPill = document.getElementById("statusPill");
 
-  <div class="section">
-    <h2>02. Shoulder Rotation（肩回転）</h2>
-    <ul>
-      {% for p in evaluation.shoulder.good %}
-      <li>{{ p }}</li>
-      {% endfor %}
-    </ul>
-    <ul>
-      {% for p in evaluation.shoulder.bad %}
-      <li>{{ p }}</li>
-      {% endfor %}
-    </ul>
-    <div class="pro">{{ evaluation.shoulder.pro }}</div>
-  </div>
+  const esc = (s) => String(s ?? "").replace(/[&<>"']/g, m => ({
+    "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"
+  }[m]));
 
-  <div class="section">
-    <h2>03. Hip Rotation（腰回転）</h2>
-    <ul>
-      {% for p in evaluation.hip.good %}
-      <li>{{ p }}</li>
-      {% endfor %}
-    </ul>
-    <ul>
-      {% for p in evaluation.hip.bad %}
-      <li>{{ p }}</li>
-      {% endfor %}
-    </ul>
-    <div class="pro">{{ evaluation.hip.pro }}</div>
-  </div>
+  function setStatusPill(status) {
+    const s = String(status || "").toUpperCase();
+    if (s.includes("COMP")) {
+      statusPill.className = "pill pill-ok";
+      statusPill.innerText = "COMPLETED";
+    } else if (s.includes("PROG") || s.includes("PROCESS")) {
+      statusPill.className = "pill pill-pro";
+      statusPill.innerText = "PROCESSING";
+    } else if (s.includes("FAIL") || s.includes("ERR")) {
+      statusPill.className = "pill pill-bad";
+      statusPill.innerText = "FAILED";
+    } else {
+      statusPill.className = "pill pill-pro";
+      statusPill.innerText = s || "UNKNOWN";
+    }
+  }
 
-  <div class="section">
-    <h2>04. Wrist Cock（コック角）</h2>
-    <ul>
-      {% for p in evaluation.wrist.good %}
-      <li>{{ p }}</li>
-      {% endfor %}
-    </ul>
-    <ul>
-      {% for p in evaluation.wrist.bad %}
-      <li>{{ p }}</li>
-      {% endfor %}
-    </ul>
-    <div class="pro">{{ evaluation.wrist.pro }}</div>
-  </div>
+  function render01(section) {
+    document.getElementById("title-01").innerText = section.title || "01. 骨格計測データ";
+    const tbody = document.getElementById("items-01");
+    tbody.innerHTML = "";
 
-  <div class="section">
-    <h2>05. Head Stability（頭部ブレ）</h2>
-    <ul>
-      {% for p in evaluation.head.good %}
-      <li>{{ p }}</li>
-      {% endfor %}
-    </ul>
-    <ul>
-      {% for p in evaluation.head.bad %}
-      <li>{{ p }}</li>
-      {% endfor %}
-    </ul>
-    <div class="pro">{{ evaluation.head.pro }}</div>
-  </div>
+    (section.items || []).forEach(i => {
+      tbody.innerHTML += `
+        <tr>
+          <th>${esc(i.name)}</th>
+          <td>
+            <div class="text-lg font-bold text-gray-900">${esc(i.value)}</div>
+            ${i.description ? `<div class="muted sp">${esc(i.description)}</div>` : ``}
+            ${i.guide ? `<div class="muted sp">目安：<span class="font-bold">${esc(i.guide)}</span></div>` : ``}
+          </td>
+        </tr>
+      `;
+    });
+  }
 
-  <div class="section">
-    <h2>06. Knee Stability（膝ブレ）</h2>
-    <ul>
-      {% for p in evaluation.knee.good %}
-      <li>{{ p }}</li>
-      {% endfor %}
-    </ul>
-    <ul>
-      {% for p in evaluation.knee.bad %}
-      <li>{{ p }}</li>
-      {% endfor %}
-    </ul>
-    <div class="pro">{{ evaluation.knee.pro }}</div>
-  </div>
+  function renderScoreSection(key, section) {
+    const el = document.getElementById(`section-${key}`);
+    el.innerHTML = `
+      <h2>${esc(section.title || `${key}.`)}</h2>
+      <div class="card mt-3">
+        <div class="flex flex-wrap gap-2">
+          <span class="pill pill-ok">良い点</span>
+          <span class="pill pill-bad">改善点</span>
+          <span class="pill pill-pro">プロ目線</span>
+        </div>
 
-  <div class="divider"></div>
+        <div class="mt-3">
+          <ul class="list-disc pl-6 space-y-2">
+            ${(section.good || []).slice(0,3).map(t => `<li>${esc(t)}</li>`).join("") || `<li class="muted">—</li>`}
+          </ul>
+        </div>
 
-  <div class="section">
-    <h2>07. 総合評価</h2>
-    <p>{{ evaluation.summary }}</p>
-  </div>
+        <div class="mt-4">
+          <ul class="list-disc pl-6 space-y-2">
+            ${(section.bad || []).slice(0,3).map(t => `<li>${esc(t)}</li>`).join("") || `<li class="muted">—</li>`}
+          </ul>
+        </div>
 
-  {% else %}
+        ${section.pro_comment ? `
+          <div class="probox">
+            <div class="text-sm font-bold text-blue-700">プロ目線（ひと言）</div>
+            <div class="line">${esc(section.pro_comment)}</div>
+          </div>` : ``}
+      </div>
+    `;
+  }
 
-  <!-- ===================== -->
-  <!-- 無料版 総合評価 -->
-  <!-- ===================== -->
-  <div class="section">
-    <h2>07. 総合評価</h2>
-    <p>{{ free_summary }}</p>
-  </div>
+  function renderTextBlock(containerId, titleId, section) {
+    if (titleId) document.getElementById(titleId).innerText = section.title || "";
+    const box = document.getElementById(containerId);
+    box.innerHTML = "";
+    (section.text || []).forEach(line => {
+      if (!line) {
+        box.innerHTML += `<div class="h-3"></div>`;
+      } else {
+        box.innerHTML += `<p class="line text-gray-800">${esc(line)}</p>`;
+      }
+    });
+  }
 
-  <div class="paid-note">
-    より詳しい分析をご希望の方へ<br><br>
-    本レポートでは、スイング全体の傾向を<br>
-    骨格データに基づいて評価しています。<br><br>
-    ご自身のスイングを深く理解したい方は、<br>
-    ぜひフルレポートをご活用ください。
-  </div>
+  function render08(section) {
+    document.getElementById("title-08").innerText = section.title || "08. Training Drills";
+    const tbody = document.getElementById("drills-08");
+    tbody.innerHTML = "";
 
-  {% endif %}
+    (section.drills || []).slice(0,3).forEach(d => {
+      tbody.innerHTML += `
+        <tr>
+          <td class="font-bold">${esc(d.name)}</td>
+          <td>${esc(d.purpose)}</td>
+          <td class="whitespace-pre-line">${esc(d.how)}</td>
+        </tr>
+      `;
+    });
+  }
 
-</div>
+  function render09(section) {
+    document.getElementById("title-09").innerText = section.title || "09. Shaft Fitting Guide";
+    const tbody = document.getElementById("fit-09");
+    tbody.innerHTML = "";
+
+    (section.table || []).forEach(r => {
+      tbody.innerHTML += `
+        <tr>
+          <td class="font-bold">${esc(r.item)}</td>
+          <td>${esc(r.guide)}</td>
+          <td>${esc(r.reason)}</td>
+        </tr>
+      `;
+    });
+
+    document.getElementById("note-09").innerText = section.note || "";
+  }
+
+  async function load() {
+    try {
+      const r = await fetch(`/api/report_data/${reportId}`);
+      if (!r.ok) throw new Error(`API通信エラー: ${r.status}`);
+      const data = await r.json();
+
+      setStatusPill(data.status);
+
+      const analysis = data.analysis || {};
+      const status = String(data.status || "").toUpperCase();
+
+      // 解析中
+      if (status.includes("PROCESS") || status.includes("PROG") || status === "" || status.includes("PEND")) {
+        loadingText.innerText = "解析処理中です。完了までしばらくお待ちください...";
+        loadingElement.classList.remove("hidden");
+        reportContent.classList.add("hidden");
+        return;
+      }
+
+      // 完了
+      loadingElement.classList.add("hidden");
+      reportContent.classList.remove("hidden");
+
+      // 01
+      if (analysis["01"]) render01(analysis["01"]);
+
+      // 02-06（あれば表示）
+      const hasPaidCore = ["02","03","04","05","06"].some(k => analysis[k]);
+      if (hasPaidCore) {
+        document.getElementById("section-02-06").classList.remove("hidden");
+        ["02","03","04","05","06"].forEach(k => {
+          if (analysis[k]) renderScoreSection(k, analysis[k]);
+          else document.getElementById(`section-${k}`).innerHTML = "";
+        });
+      }
+
+      // 07
+      if (analysis["07"]) {
+        document.getElementById("section-07").classList.remove("hidden");
+        document.getElementById("title-07").innerText = analysis["07"].title || "07. 総合評価";
+        renderTextBlock("text-07", null, analysis["07"]);
+      }
+
+      // 08
+      if (analysis["08"]) {
+        document.getElementById("section-08").classList.remove("hidden");
+        render08(analysis["08"]);
+      }
+
+      // 09
+      if (analysis["09"]) {
+        document.getElementById("section-09").classList.remove("hidden");
+        render09(analysis["09"]);
+      }
+
+      // 10
+      if (analysis["10"]) {
+        document.getElementById("section-10").classList.remove("hidden");
+        document.getElementById("title-10").innerText = analysis["10"].title || "10. Summary";
+        renderTextBlock("text-10", null, analysis["10"]);
+      }
+
+    } catch (e) {
+      setStatusPill("FAILED");
+      loadingElement.classList.remove("hidden");
+      reportContent.classList.add("hidden");
+      loadingElement.innerHTML = `<p class="text-red-600 font-bold">⚠️ サーバーとの通信エラー: ${esc(e.message)}</p>`;
+      console.error(e);
+    }
+  }
+
+  load();
+</script>
 </body>
 </html>
