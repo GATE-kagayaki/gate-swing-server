@@ -1,219 +1,227 @@
 <!DOCTYPE html>
 <html lang="ja">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <meta charset="UTF-8">
   <title>GATE AIスイングドクター｜SWING ANALYSIS REPORT</title>
-
-  <script src="https://cdn.tailwindcss.com"></script>
-  <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+JP:wght@400;700&family=Noto+Sans+JP:wght@400;700&display=swap" rel="stylesheet">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
 
   <style>
-    body { font-family: 'Noto Sans JP', sans-serif; background:#f3f4f6; }
-    .paper { background:#fff; max-width:900px; margin:20px auto; padding:32px; box-shadow: 0 4px 6px -1px rgba(0,0,0,.1); }
-    h2 { border-left:4px solid #111827; padding-left:12px; margin-top:32px; font-weight:700; font-family:'Noto Serif JP', serif; }
-    table { width:100%; border-collapse:collapse; margin-top:12px; table-layout: fixed; }
-    th,td { border:1px solid #e5e7eb; padding:10px; font-size:.92rem; vertical-align: top; }
-    th { background:#f9fafb; font-weight:700; width: 32%; }
-    .loading { text-align:center; padding:100px 0; }
-    .note { color:#6b7280; font-size:.85rem; margin-top:8px; }
-    .pro { background:#f8fafc; border:1px solid #e5e7eb; padding:10px; border-radius:8px; margin-top:10px; }
-    .bullet { margin-left: 1.2rem; list-style: disc; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", "Segoe UI", sans-serif;
+      background: #f7f7f7;
+      color: #222;
+      margin: 0;
+      padding: 0;
+    }
+
+    .container {
+      max-width: 900px;
+      margin: 0 auto;
+      padding: 24px 16px 48px;
+      background: #fff;
+    }
+
+    h1 {
+      font-size: 22px;
+      margin-bottom: 8px;
+      text-align: center;
+    }
+
+    .subtitle {
+      text-align: center;
+      font-size: 13px;
+      color: #666;
+      margin-bottom: 32px;
+    }
+
+    section {
+      margin-bottom: 40px;
+    }
+
+    section > h2 {
+      font-size: 18px;
+      border-left: 4px solid #111;
+      padding-left: 10px;
+      margin-bottom: 16px;
+    }
+
+    .metric-box {
+      background: #fafafa;
+      border: 1px solid #ddd;
+      padding: 12px 14px;
+      margin-bottom: 12px;
+      border-radius: 4px;
+    }
+
+    .metric-title {
+      font-weight: bold;
+      margin-bottom: 4px;
+    }
+
+    .metric-value {
+      font-size: 16px;
+      margin-bottom: 6px;
+    }
+
+    .metric-desc {
+      font-size: 13px;
+      color: #555;
+      line-height: 1.6;
+    }
+
+    ul {
+      margin: 8px 0 12px 20px;
+      padding: 0;
+    }
+
+    li {
+      margin-bottom: 6px;
+      line-height: 1.6;
+    }
+
+    .label-good {
+      font-weight: bold;
+      margin-top: 12px;
+    }
+
+    .label-bad {
+      font-weight: bold;
+      margin-top: 12px;
+    }
+
+    .pro-comment {
+      background: #f0f4ff;
+      border-left: 4px solid #4a6cf7;
+      padding: 10px 12px;
+      margin-top: 12px;
+      font-size: 14px;
+    }
+
+    .cta-box {
+      margin-top: 40px;
+      padding: 20px;
+      background: #f9f9f9;
+      border: 1px dashed #aaa;
+      text-align: center;
+      font-size: 14px;
+      line-height: 1.8;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 12px;
+    }
+
+    th, td {
+      border: 1px solid #ccc;
+      padding: 8px 10px;
+      font-size: 14px;
+    }
+
+    th {
+      background: #f0f0f0;
+      text-align: left;
+    }
   </style>
 </head>
 
 <body>
-<div class="paper">
-  <h1 class="text-2xl font-bold text-center mb-2">GATE AIスイングドクター</h1>
-  <p class="text-center text-sm mb-6 text-gray-600">SWING ANALYSIS REPORT</p>
+<div class="container">
 
-  <div id="loading" class="loading">
-    <div class="animate-spin h-8 w-8 border-4 border-gray-500 rounded-full border-t-transparent mx-auto"></div>
-    <p class="mt-4 text-gray-500 text-sm" id="loading-text">レポートデータを読み込み中...</p>
-  </div>
+  <h1>GATE AIスイングドクター</h1>
+  <div class="subtitle">SWING ANALYSIS REPORT</div>
 
-  <div id="report-content" class="hidden">
-    <p class="text-xs text-gray-500 mb-6">REPORT ID：<span id="reportId"></span></p>
-    <div id="sections"></div>
+  <!-- 01 -->
+  <section>
+    <h2>01. 骨格計測データ（AIが測定）</h2>
+
+    {% for item in analysis.basic_metrics %}
+    <div class="metric-box">
+      <div class="metric-title">{{ item.name }}</div>
+      <div class="metric-value">計測値：{{ item.value }}</div>
+      <div class="metric-desc">
+        {{ item.description }}<br>
+        <strong>目安：</strong>{{ item.guide }}
+      </div>
+    </div>
+    {% endfor %}
+  </section>
+
+  <!-- 02〜06（有料のみ） -->
+  {% if is_paid %}
+    {% for section in analysis.details %}
+    <section>
+      <h2>{{ section.title }}</h2>
+
+      <div class="metric-value">計測値：{{ section.value }}</div>
+
+      <div class="label-good">良い点</div>
+      <ul>
+        {% for g in section.good %}
+        <li>{{ g }}</li>
+        {% endfor %}
+      </ul>
+
+      <div class="label-bad">改善が期待できる点</div>
+      <ul>
+        {% for b in section.bad %}
+        <li>{{ b }}</li>
+        {% endfor %}
+      </ul>
+
+      <div class="pro-comment">
+        <strong>プロ視点：</strong>{{ section.pro }}
+      </div>
+    </section>
+    {% endfor %}
+  {% endif %}
+
+  <!-- 07 -->
+  <section>
+    <h2>07. 総合評価</h2>
+    <p style="line-height:1.8;">
+      {{ analysis.summary }}
+    </p>
+
+    {% if is_paid %}
+    <div class="pro-comment">
+      <strong>プロ視点：</strong>{{ analysis.summary_pro }}
+    </div>
+    {% endif %}
+  </section>
+
+  <!-- 無料版CTA -->
+  {% if not is_paid %}
+  <div class="cta-box">
+    <strong>より詳しい分析をご希望の方へ</strong><br><br>
+    本レポートでは、スイング全体の傾向を<br>
+    骨格データに基づいて評価しています。<br><br>
+    ご自身のスイングを深く理解したい方は、<br>
+    ぜひフルレポートをご活用ください。
   </div>
+  {% endif %}
+
+  <!-- 08〜10（有料のみ） -->
+  {% if is_paid %}
+  <section>
+    <h2>08. 練習ドリル</h2>
+    {{ analysis.drills | safe }}
+  </section>
+
+  <section>
+    <h2>09. シャフトフィッティング（推奨）</h2>
+    {{ analysis.fitting | safe }}
+  </section>
+
+  <section>
+    <h2>10. まとめ</h2>
+    <p style="line-height:1.8;">
+      {{ analysis.conclusion }}
+    </p>
+  </section>
+  {% endif %}
+
 </div>
-
-<script>
-  const reportId = location.pathname.split("/").pop();
-  document.getElementById("reportId").innerText = reportId;
-
-  const reportContent = document.getElementById("report-content");
-  const loadingElement = document.getElementById("loading");
-  const loadingText = document.getElementById("loading-text");
-  const sectionsRoot = document.getElementById("sections");
-
-  function el(tag, cls) {
-    const e = document.createElement(tag);
-    if (cls) e.className = cls;
-    return e;
-  }
-
-  function render01(sec) {
-    const s = el("section");
-    s.innerHTML = `<h2>${sec.title}</h2>`;
-    const table = el("table");
-    const tbody = el("tbody");
-
-    sec.items.forEach(item => {
-      const tr = el("tr");
-      const th = el("th");
-      th.textContent = item.name;
-      const td = el("td");
-
-      td.innerHTML =
-        `<div class="text-lg font-bold">${item.value}</div>` +
-        `<div class="mt-1 text-gray-700 whitespace-pre-line">${item.description || ""}</div>` +
-        `<div class="mt-2 text-xs text-gray-500">目安：${item.guide || ""}</div>`;
-
-      tr.appendChild(th);
-      tr.appendChild(td);
-      tbody.appendChild(tr);
-    });
-
-    table.appendChild(tbody);
-    s.appendChild(table);
-    return s;
-  }
-
-  function renderTextSection(sec) {
-    const s = el("section");
-    s.innerHTML = `<h2>${sec.title}</h2>`;
-    (sec.text || []).forEach(line => {
-      const p = el("p", "text-gray-700 whitespace-pre-line mt-2");
-      p.textContent = line;
-      s.appendChild(p);
-    });
-    return s;
-  }
-
-  function renderEvalSection(sec) {
-    const s = el("section");
-    s.innerHTML = `<h2>${sec.title}</h2>`;
-
-    const valueLine = el("p", "text-sm text-gray-600 mt-2");
-    if (sec.value !== undefined) valueLine.innerHTML = `計測値：<strong>${sec.value}</strong>`;
-    s.appendChild(valueLine);
-
-    const goodTitle = el("p", "mt-3 font-bold");
-    goodTitle.textContent = "良い点";
-    s.appendChild(goodTitle);
-    const goodUl = el("ul", "bullet");
-    (sec.good || []).forEach(x => {
-      const li = el("li", "text-gray-700 mt-1");
-      li.textContent = x;
-      goodUl.appendChild(li);
-    });
-    s.appendChild(goodUl);
-
-    const badTitle = el("p", "mt-4 font-bold");
-    badTitle.textContent = "改善が期待できる点";
-    s.appendChild(badTitle);
-    const badUl = el("ul", "bullet");
-    (sec.bad || []).forEach(x => {
-      const li = el("li", "text-gray-700 mt-1");
-      li.textContent = x;
-      badUl.appendChild(li);
-    });
-    s.appendChild(badUl);
-
-    if (sec.pro_comment) {
-      const pro = el("div", "pro");
-      pro.innerHTML = `<div class="font-bold mb-1">プロ視点</div><div class="text-gray-700 whitespace-pre-line">${sec.pro_comment}</div>`;
-      s.appendChild(pro);
-    }
-    return s;
-  }
-
-  function renderDrills(sec) {
-    const s = el("section");
-    s.innerHTML = `<h2>${sec.title}</h2>`;
-
-    const table = el("table");
-    table.innerHTML = `<thead><tr><th>ドリル名</th><th>目的</th><th>やり方</th></tr></thead>`;
-    const tbody = el("tbody");
-
-    (sec.drills || []).forEach(d => {
-      const tr = el("tr");
-      tr.innerHTML = `<td>${d.name}</td><td>${d.purpose}</td><td class="whitespace-pre-line">${d.how}</td>`;
-      tbody.appendChild(tr);
-    });
-
-    table.appendChild(tbody);
-    s.appendChild(table);
-    return s;
-  }
-
-  function renderFitting(sec) {
-    const s = el("section");
-    s.innerHTML = `<h2>${sec.title}</h2>`;
-
-    const table = el("table");
-    table.innerHTML = `<thead><tr><th>項目</th><th>目安</th><th>理由</th></tr></thead>`;
-    const tbody = el("tbody");
-
-    (sec.table || []).forEach(r => {
-      const tr = el("tr");
-      tr.innerHTML = `<td>${r.item}</td><td>${r.guide}</td><td>${r.reason}</td>`;
-      tbody.appendChild(tr);
-    });
-    table.appendChild(tbody);
-    s.appendChild(table);
-
-    if (sec.note) {
-      const note = el("p", "note whitespace-pre-line");
-      note.textContent = sec.note;
-      s.appendChild(note);
-    }
-    return s;
-  }
-
-  function renderSection(key, sec) {
-    if (!sec) return null;
-    if (key === "01") return render01(sec);
-    if (["02","03","04","05","06"].includes(key)) return renderEvalSection(sec);
-    if (key === "08") return renderDrills(sec);
-    if (key === "09") return renderFitting(sec);
-    // 07/10 は text
-    if (sec.text) return renderTextSection(sec);
-    return null;
-  }
-
-  fetch(`/api/report_data/${reportId}`)
-    .then(r => {
-      if (!r.ok) throw new Error("API通信エラー: " + r.status);
-      return r.json();
-    })
-    .then(data => {
-      const st = (data.status || "").toUpperCase();
-
-      if (st === "COMPLETED" && data.analysis) {
-        loadingElement.classList.add("hidden");
-        reportContent.classList.remove("hidden");
-
-        const analysis = data.analysis;
-        Object.keys(analysis).sort().forEach(key => {
-          const node = renderSection(key, analysis[key]);
-          if (node) sectionsRoot.appendChild(node);
-        });
-        return;
-      }
-
-      if (st === "PROCESSING" || st === "IN_PROGRESS") {
-        loadingText.textContent = "解析処理中です。完了までしばらくお待ちください...";
-        return;
-      }
-
-      loadingElement.innerHTML = `<p class="text-red-600 font-bold">⚠️ レポートデータが見つからないか、解析に失敗しました。</p>`;
-    })
-    .catch(err => {
-      loadingElement.innerHTML = `<p class="text-red-600 font-bold">⚠️ 通信エラー: ${err.message}</p>`;
-      console.error(err);
-    });
-</script>
 </body>
 </html>
