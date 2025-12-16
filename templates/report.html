@@ -1,136 +1,206 @@
 <!DOCTYPE html>
 <html lang="ja">
 <head>
-  <meta charset="UTF-8">
-  <title>GATE AIスイングドクター｜SWING ANALYSIS REPORT</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <script src="https://cdn.tailwindcss.com"></script>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>GATE AIスイングドクター｜SWING ANALYSIS REPORT</title>
+
+<script src="https://cdn.tailwindcss.com"></script>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+JP:wght@400;700&family=Noto+Sans+JP:wght@400;700&display=swap" rel="stylesheet">
+
+<style>
+  body { font-family: 'Noto Sans JP', sans-serif; background:#f3f4f6; }
+  .paper { background:#fff; max-width:900px; margin:20px auto; padding:32px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); }
+  h2 { border-left:4px solid #111827; padding-left:12px; margin-top:32px; font-weight:700; font-family:'Noto Serif JP', serif; }
+  table { width:100%; border-collapse:collapse; margin-top:12px; table-layout: fixed; }
+  th,td { border:1px solid #e5e7eb; padding:10px; font-size: 0.92rem; vertical-align: top; }
+  th { background:#f9fafb; font-weight: 700; }
+  .loading { text-align:center; padding: 90px 0; }
+  .badge { display:inline-block; padding:3px 8px; border-radius:999px; font-size:.75rem; background:#111827; color:#fff; }
+  .muted { color:#6b7280; }
+</style>
 </head>
 
-<body class="bg-gray-100 text-gray-800">
-<div class="max-w-3xl mx-auto bg-white p-6 my-6 shadow">
+<body>
+<div class="paper">
+  <h1 class="text-2xl font-bold text-center mb-2">GATE AIスイングドクター</h1>
+  <p class="text-center text-sm mb-6 text-gray-600">SWING ANALYSIS REPORT</p>
 
-  <h1 class="text-2xl font-bold text-center mb-1">
-    GATE AIスイングドクター
-  </h1>
-  <p class="text-center text-sm text-gray-500 mb-6">
-    SWING ANALYSIS REPORT
-  </p>
-
-  <p class="text-xs text-gray-400 mb-6">
-    REPORT ID：<span id="reportId"></span>
-  </p>
-
-  <div id="loading" class="text-center py-12 text-gray-500">
-    解析処理中です。完了までしばらくお待ちください...
+  <div class="flex items-center justify-between mb-4">
+    <p class="text-xs text-gray-500">REPORT ID：<span id="reportId"></span></p>
+    <span id="planBadge" class="badge">読み込み中</span>
   </div>
 
-  <div id="report" class="hidden"></div>
+  <div id="loading" class="loading">
+    <div class="animate-spin h-8 w-8 border-4 border-gray-500 rounded-full border-t-transparent mx-auto"></div>
+    <p class="mt-4 text-gray-500 text-sm" id="loadingText">レポートデータを読み込み中...</p>
+  </div>
 
+  <div id="report-content" class="hidden"></div>
 </div>
 
 <script>
 const reportId = location.pathname.split("/").pop();
-document.getElementById("reportId").textContent = reportId;
+document.getElementById("reportId").innerText = reportId;
 
-fetch(`/api/report_data/${reportId}`)
-  .then(res => res.json())
-  .then(data => {
-    if (!data.analysis) return;
+const reportContent = document.getElementById("report-content");
+const loadingElement = document.getElementById("loading");
+const loadingText = document.getElementById("loadingText");
+const planBadge = document.getElementById("planBadge");
 
-    document.getElementById("loading").classList.add("hidden");
-    const report = document.getElementById("report");
-    report.classList.remove("hidden");
+function el(tag, cls="") {
+  const e = document.createElement(tag);
+  if (cls) e.className = cls;
+  return e;
+}
 
-    const isPremium = data.is_premium === true;
-    const analysis = data.analysis;
+function render01(sectionData) {
+  const sec = el("section");
+  sec.innerHTML = `<h2>${sectionData.title}</h2>`;
 
-    // 共通：01
-    renderSection(report, "01", analysis["01"]);
+  const table = el("table");
+  table.innerHTML = `
+    <thead>
+      <tr>
+        <th style="width:24%">項目</th>
+        <th style="width:18%">計測結果</th>
+        <th style="width:18%">目安</th>
+        <th style="width:40%">説明</th>
+      </tr>
+    </thead>
+    <tbody></tbody>
+  `;
+  const tbody = table.querySelector("tbody");
 
-    // 有料のみ：02〜06
-    if (isPremium) {
-      ["02","03","04","05","06"].forEach(key => {
-        if (analysis[key]) renderSection(report, key, analysis[key]);
-      });
-    }
-
-    // 07：無料／有料で内容切り替え
-    if (analysis["07"]) {
-      renderSection(report, "07", analysis["07"]);
-    }
-
-    // 無料版の最後に案内文
-    if (!isPremium) {
-      report.insertAdjacentHTML("beforeend", `
-        <div class="mt-10 p-5 border border-gray-300 bg-gray-50 text-sm">
-          <p class="font-bold mb-2">より詳しい分析をご希望の方へ</p>
-          <p>
-            本レポートでは、スイング全体の傾向を
-            骨格データに基づいて評価しています。
-          </p>
-          <p class="mt-2">
-            ご自身のスイングを深く理解したい方は、
-            ぜひフルレポートをご活用ください。
-          </p>
-        </div>
-      `);
-    }
+  (sectionData.items || []).forEach(it => {
+    const tr = el("tr");
+    const v = (it.value ?? "—") + (it.unit || "");
+    tr.innerHTML = `
+      <th>${it.name || "—"}</th>
+      <td>${v}</td>
+      <td>${it.guide || "—"}</td>
+      <td class="muted">${it.desc || "—"}</td>
+    `;
+    tbody.appendChild(tr);
   });
 
-function renderSection(container, key, section) {
-  let html = `
-    <section class="mt-8">
-      <h2 class="text-lg font-bold border-l-4 border-gray-800 pl-3 mb-3">
-        ${key}. ${section.title}
-      </h2>
-  `;
-
-  if (section.data) {
-    html += `<table class="w-full text-sm border">`;
-    Object.entries(section.data).forEach(([k, v]) => {
-      html += `
-        <tr class="border-t">
-          <th class="w-1/3 bg-gray-50 p-2 text-left">${k}</th>
-          <td class="p-2">${v}</td>
-        </tr>`;
-    });
-    html += `</table>`;
-  }
-
-  if (section.result) {
-    html += `<p class="text-sm mb-2">計測結果：<strong>${section.result}</strong></p>`;
-  }
-
-  if (section.good || section.bad) {
-    if (section.good) {
-      html += `<p class="font-bold mt-3">良い点</p><ul class="list-disc ml-5">`;
-      section.good.forEach(t => html += `<li>${t}</li>`);
-      html += `</ul>`;
-    }
-    if (section.bad) {
-      html += `<p class="font-bold mt-3">悪い点</p><ul class="list-disc ml-5">`;
-      section.bad.forEach(t => html += `<li>${t}</li>`);
-      html += `</ul>`;
-    }
-  }
-
-  if (section.pro_comment) {
-    html += `
-      <p class="mt-3 text-sm text-gray-700">
-        <strong>プロ評価：</strong>${section.pro_comment}
-      </p>`;
-  }
-
-  if (section.text) {
-    section.text.forEach(t => {
-      html += `<p class="text-sm mt-2">${t}</p>`;
-    });
-  }
-
-  html += `</section>`;
-  container.insertAdjacentHTML("beforeend", html);
+  sec.appendChild(table);
+  reportContent.appendChild(sec);
 }
+
+function renderEval(sectionData) {
+  const sec = el("section");
+  sec.innerHTML = `<h2>${sectionData.title}</h2>`;
+
+  if (sectionData.value_line) {
+    sec.innerHTML += `<p class="text-sm text-gray-700 mb-2"><b>計測値：</b>${sectionData.value_line}</p>`;
+  }
+
+  const wrap = el("div", "grid grid-cols-1 md:grid-cols-2 gap-3 mt-2");
+
+  const good = el("div", "p-3 rounded-lg border");
+  good.innerHTML = `<p class="font-bold mb-2">良い点</p>` + (sectionData.good || []).slice(0,3).map(x => `<li class="text-sm text-gray-700">${x}</li>`).join("");
+
+  const bad = el("div", "p-3 rounded-lg border");
+  bad.innerHTML = `<p class="font-bold mb-2">悪い点</p>` + (sectionData.bad || []).slice(0,3).map(x => `<li class="text-sm text-gray-700">${x}</li>`).join("");
+
+  wrap.appendChild(good);
+  wrap.appendChild(bad);
+  sec.appendChild(wrap);
+
+  if (sectionData.pro) {
+    sec.innerHTML += `<p class="mt-3 text-sm text-gray-800"><b>プロ目線：</b>${sectionData.pro}</p>`;
+  }
+
+  reportContent.appendChild(sec);
+}
+
+function renderText(sectionData) {
+  const sec = el("section");
+  sec.innerHTML = `<h2>${sectionData.title}</h2>`;
+  (sectionData.text || []).forEach(t => {
+    const p = el("p", "text-gray-700 whitespace-pre-line text-sm");
+    p.innerText = t;
+    sec.appendChild(p);
+  });
+  reportContent.appendChild(sec);
+}
+
+function renderDrills(sectionData) {
+  const sec = el("section");
+  sec.innerHTML = `<h2>${sectionData.title}</h2>`;
+
+  let html = '<table><thead><tr><th style="width:22%">ドリル名</th><th style="width:25%">目的</th><th>やり方</th></tr></thead><tbody>';
+  (sectionData.drills || []).forEach(d => {
+    html += `<tr><td>${d["ドリル名"]||"—"}</td><td>${d["目的"]||"—"}</td><td class="whitespace-pre-line">${(d["やり方"]||"—")}</td></tr>`;
+  });
+  html += '</tbody></table>';
+
+  sec.innerHTML += html;
+  reportContent.appendChild(sec);
+}
+
+function renderFitting(sectionData) {
+  const sec = el("section");
+  sec.innerHTML = `<h2>${sectionData.title}</h2>`;
+
+  let html = '<table><thead><tr><th style="width:22%">項目</th><th style="width:22%">推奨</th><th>理由</th></tr></thead><tbody>';
+  (sectionData.fitting_table || []).forEach(r => {
+    html += `<tr><td>${r["項目"]||"—"}</td><td>${r["推奨"]||"—"}</td><td>${r["理由"]||"—"}</td></tr>`;
+  });
+  html += '</tbody></table>';
+
+  sec.innerHTML += html;
+
+  if (sectionData.note) {
+    sec.innerHTML += `<p class="mt-2 text-sm text-gray-700">${sectionData.note}</p>`;
+  }
+  reportContent.appendChild(sec);
+}
+
+function renderSection(key, sectionData) {
+  if (!sectionData) return;
+
+  if (key === "01") return render01(sectionData);
+  if (["02","03","04","05","06"].includes(key)) return renderEval(sectionData);
+  if (key === "07" || key === "10") return renderText(sectionData);
+  if (key === "08") return renderDrills(sectionData);
+  if (key === "09") return renderFitting(sectionData);
+}
+
+fetch(`/api/report_data/${reportId}`)
+  .then(r => {
+    if (!r.ok) throw new Error("API通信エラー: " + r.status);
+    return r.json();
+  })
+  .then(data => {
+    loadingElement.classList.add("hidden");
+
+    const premium = !!data.is_premium;
+    planBadge.innerText = premium ? "有料（フル）" : "無料";
+    planBadge.style.background = premium ? "#111827" : "#6b7280";
+
+    if (data.status === "completed" && data.analysis) {
+      reportContent.classList.remove("hidden");
+      const analysis = data.analysis || {};
+      Object.keys(analysis).sort().forEach(k => renderSection(k, analysis[k]));
+      return;
+    }
+
+    if (data.status === "processing" || data.status === "in_progress") {
+      loadingText.innerText = "解析処理中です。完了までしばらくお待ちください...";
+      loadingElement.classList.remove("hidden");
+      return;
+    }
+
+    loadingElement.innerHTML = '<p class="text-red-600 font-bold">⚠️ レポートデータが見つからないか、解析に失敗しました。</p>';
+    loadingElement.classList.remove("hidden");
+  })
+  .catch(err => {
+    loadingElement.innerHTML = `<p class="text-red-600 font-bold">⚠️ サーバーとの通信エラー: ${err.message}</p>`;
+    loadingElement.classList.remove("hidden");
+    console.error(err);
+  });
 </script>
 </body>
 </html>
