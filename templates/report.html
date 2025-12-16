@@ -1,24 +1,25 @@
 <!DOCTYPE html>
 <html lang="ja">
 <head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>GATE AIスイングドクター｜SWING ANALYSIS REPORT</title>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>GATE AIスイングドクター｜SWING ANALYSIS REPORT</title>
 
-<script src="https://cdn.tailwindcss.com"></script>
-<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+JP:wght@400;700&family=Noto+Sans+JP:wght@400;700&display=swap" rel="stylesheet">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+JP:wght@400;700&family=Noto+Sans+JP:wght@400;700&display=swap" rel="stylesheet">
 
-<style>
-  body { font-family: 'Noto Sans JP', sans-serif; background:#f3f4f6; }
-  .paper { background:#fff; max-width:900px; margin:20px auto; padding:32px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); }
-  h2 { border-left:4px solid #111827; padding-left:12px; margin-top:32px; font-weight:700; font-family:'Noto Serif JP', serif; }
-  table { width:100%; border-collapse:collapse; margin-top:12px; table-layout: fixed; }
-  th,td { border:1px solid #e5e7eb; padding:10px; font-size: 0.92rem; vertical-align: top; }
-  th { background:#f9fafb; font-weight: 700; }
-  .loading { text-align:center; padding: 90px 0; }
-  .badge { display:inline-block; padding:3px 8px; border-radius:999px; font-size:.75rem; background:#111827; color:#fff; }
-  .muted { color:#6b7280; }
-</style>
+  <style>
+    body { font-family: 'Noto Sans JP', sans-serif; background:#f3f4f6; }
+    .paper { background:#fff; max-width:900px; margin:20px auto; padding:32px; box-shadow: 0 4px 6px -1px rgba(0,0,0,.1); }
+    h2 { border-left:4px solid #111827; padding-left:12px; margin-top:32px; font-weight:700; font-family:'Noto Serif JP', serif; }
+    table { width:100%; border-collapse:collapse; margin-top:12px; table-layout: fixed; }
+    th,td { border:1px solid #e5e7eb; padding:10px; font-size:.92rem; vertical-align: top; }
+    th { background:#f9fafb; font-weight:700; width: 32%; }
+    .loading { text-align:center; padding:100px 0; }
+    .note { color:#6b7280; font-size:.85rem; margin-top:8px; }
+    .pro { background:#f8fafc; border:1px solid #e5e7eb; padding:10px; border-radius:8px; margin-top:10px; }
+    .bullet { margin-left: 1.2rem; list-style: disc; }
+  </style>
 </head>
 
 <body>
@@ -26,181 +27,193 @@
   <h1 class="text-2xl font-bold text-center mb-2">GATE AIスイングドクター</h1>
   <p class="text-center text-sm mb-6 text-gray-600">SWING ANALYSIS REPORT</p>
 
-  <div class="flex items-center justify-between mb-4">
-    <p class="text-xs text-gray-500">REPORT ID：<span id="reportId"></span></p>
-    <span id="planBadge" class="badge">読み込み中</span>
-  </div>
-
   <div id="loading" class="loading">
     <div class="animate-spin h-8 w-8 border-4 border-gray-500 rounded-full border-t-transparent mx-auto"></div>
-    <p class="mt-4 text-gray-500 text-sm" id="loadingText">レポートデータを読み込み中...</p>
+    <p class="mt-4 text-gray-500 text-sm" id="loading-text">レポートデータを読み込み中...</p>
   </div>
 
-  <div id="report-content" class="hidden"></div>
+  <div id="report-content" class="hidden">
+    <p class="text-xs text-gray-500 mb-6">REPORT ID：<span id="reportId"></span></p>
+    <div id="sections"></div>
+  </div>
 </div>
 
 <script>
-const reportId = location.pathname.split("/").pop();
-document.getElementById("reportId").innerText = reportId;
+  const reportId = location.pathname.split("/").pop();
+  document.getElementById("reportId").innerText = reportId;
 
-const reportContent = document.getElementById("report-content");
-const loadingElement = document.getElementById("loading");
-const loadingText = document.getElementById("loadingText");
-const planBadge = document.getElementById("planBadge");
+  const reportContent = document.getElementById("report-content");
+  const loadingElement = document.getElementById("loading");
+  const loadingText = document.getElementById("loading-text");
+  const sectionsRoot = document.getElementById("sections");
 
-function el(tag, cls="") {
-  const e = document.createElement(tag);
-  if (cls) e.className = cls;
-  return e;
-}
-
-function render01(sectionData) {
-  const sec = el("section");
-  sec.innerHTML = `<h2>${sectionData.title}</h2>`;
-
-  const table = el("table");
-  table.innerHTML = `
-    <thead>
-      <tr>
-        <th style="width:24%">項目</th>
-        <th style="width:18%">計測結果</th>
-        <th style="width:18%">目安</th>
-        <th style="width:40%">説明</th>
-      </tr>
-    </thead>
-    <tbody></tbody>
-  `;
-  const tbody = table.querySelector("tbody");
-
-  (sectionData.items || []).forEach(it => {
-    const tr = el("tr");
-    const v = (it.value ?? "—") + (it.unit || "");
-    tr.innerHTML = `
-      <th>${it.name || "—"}</th>
-      <td>${v}</td>
-      <td>${it.guide || "—"}</td>
-      <td class="muted">${it.desc || "—"}</td>
-    `;
-    tbody.appendChild(tr);
-  });
-
-  sec.appendChild(table);
-  reportContent.appendChild(sec);
-}
-
-function renderEval(sectionData) {
-  const sec = el("section");
-  sec.innerHTML = `<h2>${sectionData.title}</h2>`;
-
-  if (sectionData.value_line) {
-    sec.innerHTML += `<p class="text-sm text-gray-700 mb-2"><b>計測値：</b>${sectionData.value_line}</p>`;
+  function el(tag, cls) {
+    const e = document.createElement(tag);
+    if (cls) e.className = cls;
+    return e;
   }
 
-  const wrap = el("div", "grid grid-cols-1 md:grid-cols-2 gap-3 mt-2");
+  function render01(sec) {
+    const s = el("section");
+    s.innerHTML = `<h2>${sec.title}</h2>`;
+    const table = el("table");
+    const tbody = el("tbody");
 
-  const good = el("div", "p-3 rounded-lg border");
-  good.innerHTML = `<p class="font-bold mb-2">良い点</p>` + (sectionData.good || []).slice(0,3).map(x => `<li class="text-sm text-gray-700">${x}</li>`).join("");
+    sec.items.forEach(item => {
+      const tr = el("tr");
+      const th = el("th");
+      th.textContent = item.name;
+      const td = el("td");
 
-  const bad = el("div", "p-3 rounded-lg border");
-  bad.innerHTML = `<p class="font-bold mb-2">悪い点</p>` + (sectionData.bad || []).slice(0,3).map(x => `<li class="text-sm text-gray-700">${x}</li>`).join("");
+      td.innerHTML =
+        `<div class="text-lg font-bold">${item.value}</div>` +
+        `<div class="mt-1 text-gray-700 whitespace-pre-line">${item.description || ""}</div>` +
+        `<div class="mt-2 text-xs text-gray-500">目安：${item.guide || ""}</div>`;
 
-  wrap.appendChild(good);
-  wrap.appendChild(bad);
-  sec.appendChild(wrap);
+      tr.appendChild(th);
+      tr.appendChild(td);
+      tbody.appendChild(tr);
+    });
 
-  if (sectionData.pro) {
-    sec.innerHTML += `<p class="mt-3 text-sm text-gray-800"><b>プロ目線：</b>${sectionData.pro}</p>`;
+    table.appendChild(tbody);
+    s.appendChild(table);
+    return s;
   }
 
-  reportContent.appendChild(sec);
-}
-
-function renderText(sectionData) {
-  const sec = el("section");
-  sec.innerHTML = `<h2>${sectionData.title}</h2>`;
-  (sectionData.text || []).forEach(t => {
-    const p = el("p", "text-gray-700 whitespace-pre-line text-sm");
-    p.innerText = t;
-    sec.appendChild(p);
-  });
-  reportContent.appendChild(sec);
-}
-
-function renderDrills(sectionData) {
-  const sec = el("section");
-  sec.innerHTML = `<h2>${sectionData.title}</h2>`;
-
-  let html = '<table><thead><tr><th style="width:22%">ドリル名</th><th style="width:25%">目的</th><th>やり方</th></tr></thead><tbody>';
-  (sectionData.drills || []).forEach(d => {
-    html += `<tr><td>${d["ドリル名"]||"—"}</td><td>${d["目的"]||"—"}</td><td class="whitespace-pre-line">${(d["やり方"]||"—")}</td></tr>`;
-  });
-  html += '</tbody></table>';
-
-  sec.innerHTML += html;
-  reportContent.appendChild(sec);
-}
-
-function renderFitting(sectionData) {
-  const sec = el("section");
-  sec.innerHTML = `<h2>${sectionData.title}</h2>`;
-
-  let html = '<table><thead><tr><th style="width:22%">項目</th><th style="width:22%">推奨</th><th>理由</th></tr></thead><tbody>';
-  (sectionData.fitting_table || []).forEach(r => {
-    html += `<tr><td>${r["項目"]||"—"}</td><td>${r["推奨"]||"—"}</td><td>${r["理由"]||"—"}</td></tr>`;
-  });
-  html += '</tbody></table>';
-
-  sec.innerHTML += html;
-
-  if (sectionData.note) {
-    sec.innerHTML += `<p class="mt-2 text-sm text-gray-700">${sectionData.note}</p>`;
+  function renderTextSection(sec) {
+    const s = el("section");
+    s.innerHTML = `<h2>${sec.title}</h2>`;
+    (sec.text || []).forEach(line => {
+      const p = el("p", "text-gray-700 whitespace-pre-line mt-2");
+      p.textContent = line;
+      s.appendChild(p);
+    });
+    return s;
   }
-  reportContent.appendChild(sec);
-}
 
-function renderSection(key, sectionData) {
-  if (!sectionData) return;
+  function renderEvalSection(sec) {
+    const s = el("section");
+    s.innerHTML = `<h2>${sec.title}</h2>`;
 
-  if (key === "01") return render01(sectionData);
-  if (["02","03","04","05","06"].includes(key)) return renderEval(sectionData);
-  if (key === "07" || key === "10") return renderText(sectionData);
-  if (key === "08") return renderDrills(sectionData);
-  if (key === "09") return renderFitting(sectionData);
-}
+    const valueLine = el("p", "text-sm text-gray-600 mt-2");
+    if (sec.value !== undefined) valueLine.innerHTML = `計測値：<strong>${sec.value}</strong>`;
+    s.appendChild(valueLine);
 
-fetch(`/api/report_data/${reportId}`)
-  .then(r => {
-    if (!r.ok) throw new Error("API通信エラー: " + r.status);
-    return r.json();
-  })
-  .then(data => {
-    loadingElement.classList.add("hidden");
+    const goodTitle = el("p", "mt-3 font-bold");
+    goodTitle.textContent = "良い点";
+    s.appendChild(goodTitle);
+    const goodUl = el("ul", "bullet");
+    (sec.good || []).forEach(x => {
+      const li = el("li", "text-gray-700 mt-1");
+      li.textContent = x;
+      goodUl.appendChild(li);
+    });
+    s.appendChild(goodUl);
 
-    const premium = !!data.is_premium;
-    planBadge.innerText = premium ? "有料（フル）" : "無料";
-    planBadge.style.background = premium ? "#111827" : "#6b7280";
+    const badTitle = el("p", "mt-4 font-bold");
+    badTitle.textContent = "改善が期待できる点";
+    s.appendChild(badTitle);
+    const badUl = el("ul", "bullet");
+    (sec.bad || []).forEach(x => {
+      const li = el("li", "text-gray-700 mt-1");
+      li.textContent = x;
+      badUl.appendChild(li);
+    });
+    s.appendChild(badUl);
 
-    if (data.status === "completed" && data.analysis) {
-      reportContent.classList.remove("hidden");
-      const analysis = data.analysis || {};
-      Object.keys(analysis).sort().forEach(k => renderSection(k, analysis[k]));
-      return;
+    if (sec.pro_comment) {
+      const pro = el("div", "pro");
+      pro.innerHTML = `<div class="font-bold mb-1">プロ視点</div><div class="text-gray-700 whitespace-pre-line">${sec.pro_comment}</div>`;
+      s.appendChild(pro);
     }
+    return s;
+  }
 
-    if (data.status === "processing" || data.status === "in_progress") {
-      loadingText.innerText = "解析処理中です。完了までしばらくお待ちください...";
-      loadingElement.classList.remove("hidden");
-      return;
+  function renderDrills(sec) {
+    const s = el("section");
+    s.innerHTML = `<h2>${sec.title}</h2>`;
+
+    const table = el("table");
+    table.innerHTML = `<thead><tr><th>ドリル名</th><th>目的</th><th>やり方</th></tr></thead>`;
+    const tbody = el("tbody");
+
+    (sec.drills || []).forEach(d => {
+      const tr = el("tr");
+      tr.innerHTML = `<td>${d.name}</td><td>${d.purpose}</td><td class="whitespace-pre-line">${d.how}</td>`;
+      tbody.appendChild(tr);
+    });
+
+    table.appendChild(tbody);
+    s.appendChild(table);
+    return s;
+  }
+
+  function renderFitting(sec) {
+    const s = el("section");
+    s.innerHTML = `<h2>${sec.title}</h2>`;
+
+    const table = el("table");
+    table.innerHTML = `<thead><tr><th>項目</th><th>目安</th><th>理由</th></tr></thead>`;
+    const tbody = el("tbody");
+
+    (sec.table || []).forEach(r => {
+      const tr = el("tr");
+      tr.innerHTML = `<td>${r.item}</td><td>${r.guide}</td><td>${r.reason}</td>`;
+      tbody.appendChild(tr);
+    });
+    table.appendChild(tbody);
+    s.appendChild(table);
+
+    if (sec.note) {
+      const note = el("p", "note whitespace-pre-line");
+      note.textContent = sec.note;
+      s.appendChild(note);
     }
+    return s;
+  }
 
-    loadingElement.innerHTML = '<p class="text-red-600 font-bold">⚠️ レポートデータが見つからないか、解析に失敗しました。</p>';
-    loadingElement.classList.remove("hidden");
-  })
-  .catch(err => {
-    loadingElement.innerHTML = `<p class="text-red-600 font-bold">⚠️ サーバーとの通信エラー: ${err.message}</p>`;
-    loadingElement.classList.remove("hidden");
-    console.error(err);
-  });
+  function renderSection(key, sec) {
+    if (!sec) return null;
+    if (key === "01") return render01(sec);
+    if (["02","03","04","05","06"].includes(key)) return renderEvalSection(sec);
+    if (key === "08") return renderDrills(sec);
+    if (key === "09") return renderFitting(sec);
+    // 07/10 は text
+    if (sec.text) return renderTextSection(sec);
+    return null;
+  }
+
+  fetch(`/api/report_data/${reportId}`)
+    .then(r => {
+      if (!r.ok) throw new Error("API通信エラー: " + r.status);
+      return r.json();
+    })
+    .then(data => {
+      const st = (data.status || "").toUpperCase();
+
+      if (st === "COMPLETED" && data.analysis) {
+        loadingElement.classList.add("hidden");
+        reportContent.classList.remove("hidden");
+
+        const analysis = data.analysis;
+        Object.keys(analysis).sort().forEach(key => {
+          const node = renderSection(key, analysis[key]);
+          if (node) sectionsRoot.appendChild(node);
+        });
+        return;
+      }
+
+      if (st === "PROCESSING" || st === "IN_PROGRESS") {
+        loadingText.textContent = "解析処理中です。完了までしばらくお待ちください...";
+        return;
+      }
+
+      loadingElement.innerHTML = `<p class="text-red-600 font-bold">⚠️ レポートデータが見つからないか、解析に失敗しました。</p>`;
+    })
+    .catch(err => {
+      loadingElement.innerHTML = `<p class="text-red-600 font-bold">⚠️ 通信エラー: ${err.message}</p>`;
+      console.error(err);
+    });
 </script>
 </body>
 </html>
