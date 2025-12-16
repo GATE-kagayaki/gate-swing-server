@@ -2,126 +2,102 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8">
-  <title>GATE AIスイングドクター｜SWING ANALYSIS REPORT</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>GATE AIスイングドクター｜スイング解析レポート</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
   <style>
     body {
-      font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", "Segoe UI", sans-serif;
+      font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, sans-serif;
       background: #f7f7f7;
       color: #222;
+      line-height: 1.7;
       margin: 0;
       padding: 0;
     }
 
     .container {
-      max-width: 900px;
+      max-width: 820px;
       margin: 0 auto;
-      padding: 24px 16px 48px;
-      background: #fff;
+      padding: 24px 16px 60px;
+      background: #ffffff;
     }
 
     h1 {
-      font-size: 22px;
-      margin-bottom: 8px;
       text-align: center;
-    }
-
-    .subtitle {
-      text-align: center;
-      font-size: 13px;
-      color: #666;
       margin-bottom: 32px;
+      font-size: 26px;
+      letter-spacing: 0.04em;
     }
 
-    section {
-      margin-bottom: 40px;
-    }
-
-    section > h2 {
-      font-size: 18px;
-      border-left: 4px solid #111;
-      padding-left: 10px;
-      margin-bottom: 16px;
-    }
-
-    .metric-box {
-      background: #fafafa;
-      border: 1px solid #ddd;
-      padding: 12px 14px;
+    h2 {
+      margin-top: 48px;
       margin-bottom: 12px;
-      border-radius: 4px;
+      font-size: 20px;
+      border-left: 6px solid #111;
+      padding-left: 10px;
     }
 
-    .metric-title {
-      font-weight: bold;
-      margin-bottom: 4px;
-    }
-
-    .metric-value {
-      font-size: 16px;
+    h3 {
+      margin-top: 20px;
       margin-bottom: 6px;
+      font-size: 16px;
     }
 
-    .metric-desc {
-      font-size: 13px;
-      color: #555;
-      line-height: 1.6;
+    .section {
+      margin-bottom: 36px;
+    }
+
+    .value-box {
+      background: #f0f0f0;
+      padding: 10px 14px;
+      border-radius: 6px;
+      margin: 10px 0 14px;
+      font-weight: bold;
+    }
+
+    .desc {
+      font-size: 14px;
+      color: #444;
+      margin-bottom: 10px;
+    }
+
+    .guide {
+      font-size: 14px;
+      color: #666;
+      margin-bottom: 8px;
     }
 
     ul {
-      margin: 8px 0 12px 20px;
-      padding: 0;
+      padding-left: 20px;
+      margin-top: 6px;
+      margin-bottom: 14px;
     }
 
     li {
       margin-bottom: 6px;
-      line-height: 1.6;
     }
 
-    .label-good {
-      font-weight: bold;
-      margin-top: 12px;
-    }
-
-    .label-bad {
-      font-weight: bold;
-      margin-top: 12px;
-    }
-
-    .pro-comment {
-      background: #f0f4ff;
-      border-left: 4px solid #4a6cf7;
-      padding: 10px 12px;
-      margin-top: 12px;
+    .pro {
+      background: #fafafa;
+      border-left: 4px solid #999;
+      padding: 10px 14px;
       font-size: 14px;
+      margin-top: 10px;
     }
 
-    .cta-box {
-      margin-top: 40px;
+    .paid-note {
+      margin-top: 60px;
       padding: 20px;
-      background: #f9f9f9;
-      border: 1px dashed #aaa;
+      background: #f8f8f8;
+      border-radius: 8px;
       text-align: center;
       font-size: 14px;
-      line-height: 1.8;
+      color: #333;
     }
 
-    table {
-      width: 100%;
-      border-collapse: collapse;
-      margin-top: 12px;
-    }
-
-    th, td {
-      border: 1px solid #ccc;
-      padding: 8px 10px;
-      font-size: 14px;
-    }
-
-    th {
-      background: #f0f0f0;
-      text-align: left;
+    .divider {
+      margin: 40px 0;
+      border-top: 1px solid #ddd;
     }
   </style>
 </head>
@@ -129,97 +105,149 @@
 <body>
 <div class="container">
 
-  <h1>GATE AIスイングドクター</h1>
-  <div class="subtitle">SWING ANALYSIS REPORT</div>
+  <h1>GATE AIスイングドクター<br>SWING ANALYSIS REPORT</h1>
 
-  <!-- 01 -->
-  <section>
-    <h2>01. 骨格計測データ（AIが測定）</h2>
+  <!-- ===================== -->
+  <!-- 01 基本データ -->
+  <!-- ===================== -->
+  <div class="section">
+    <h2>01. 骨格計測データ</h2>
 
-    {% for item in analysis.basic_metrics %}
-    <div class="metric-box">
-      <div class="metric-title">{{ item.name }}</div>
-      <div class="metric-value">計測値：{{ item.value }}</div>
-      <div class="metric-desc">
-        {{ item.description }}<br>
-        <strong>目安：</strong>{{ item.guide }}
-      </div>
+    <h3>解析フレーム数</h3>
+    <div class="value-box">{{ analysis.frame_count }}</div>
+    <div class="desc">
+      動画から解析できたフレーム数です。数が多いほど、スイング全体を安定して解析できています。
     </div>
-    {% endfor %}
-  </section>
+    <div class="guide">目安：150～300 フレーム</div>
 
-  <!-- 02〜06（有料のみ） -->
+    <h3>最大肩回転角（°）</h3>
+    <div class="value-box">{{ analysis.max_shoulder_rotation }}</div>
+    <div class="guide">目安：80～110°</div>
+
+    <h3>最小腰回転角（°）</h3>
+    <div class="value-box">{{ analysis.min_hip_rotation }}</div>
+    <div class="guide">目安：35～45°</div>
+
+    <h3>最大手首コック角（°）</h3>
+    <div class="value-box">{{ analysis.max_wrist_cock }}</div>
+    <div class="guide">目安：120～150°</div>
+
+    <h3>最大頭部ブレ</h3>
+    <div class="value-box">{{ analysis.max_head_drift_x }}</div>
+    <div class="guide">目安：0.05～0.15</div>
+
+    <h3>最大膝ブレ</h3>
+    <div class="value-box">{{ analysis.max_knee_sway_x }}</div>
+    <div class="guide">目安：0.05～0.20</div>
+  </div>
+
+  <!-- ===================== -->
+  <!-- 02〜06 有料版評価 -->
+  <!-- ===================== -->
   {% if is_paid %}
-    {% for section in analysis.details %}
-    <section>
-      <h2>{{ section.title }}</h2>
 
-      <div class="metric-value">計測値：{{ section.value }}</div>
+  <div class="divider"></div>
 
-      <div class="label-good">良い点</div>
-      <ul>
-        {% for g in section.good %}
-        <li>{{ g }}</li>
-        {% endfor %}
-      </ul>
+  <div class="section">
+    <h2>02. Shoulder Rotation（肩回転）</h2>
+    <ul>
+      {% for p in evaluation.shoulder.good %}
+      <li>{{ p }}</li>
+      {% endfor %}
+    </ul>
+    <ul>
+      {% for p in evaluation.shoulder.bad %}
+      <li>{{ p }}</li>
+      {% endfor %}
+    </ul>
+    <div class="pro">{{ evaluation.shoulder.pro }}</div>
+  </div>
 
-      <div class="label-bad">改善が期待できる点</div>
-      <ul>
-        {% for b in section.bad %}
-        <li>{{ b }}</li>
-        {% endfor %}
-      </ul>
+  <div class="section">
+    <h2>03. Hip Rotation（腰回転）</h2>
+    <ul>
+      {% for p in evaluation.hip.good %}
+      <li>{{ p }}</li>
+      {% endfor %}
+    </ul>
+    <ul>
+      {% for p in evaluation.hip.bad %}
+      <li>{{ p }}</li>
+      {% endfor %}
+    </ul>
+    <div class="pro">{{ evaluation.hip.pro }}</div>
+  </div>
 
-      <div class="pro-comment">
-        <strong>プロ視点：</strong>{{ section.pro }}
-      </div>
-    </section>
-    {% endfor %}
-  {% endif %}
+  <div class="section">
+    <h2>04. Wrist Cock（コック角）</h2>
+    <ul>
+      {% for p in evaluation.wrist.good %}
+      <li>{{ p }}</li>
+      {% endfor %}
+    </ul>
+    <ul>
+      {% for p in evaluation.wrist.bad %}
+      <li>{{ p }}</li>
+      {% endfor %}
+    </ul>
+    <div class="pro">{{ evaluation.wrist.pro }}</div>
+  </div>
 
-  <!-- 07 -->
-  <section>
+  <div class="section">
+    <h2>05. Head Stability（頭部ブレ）</h2>
+    <ul>
+      {% for p in evaluation.head.good %}
+      <li>{{ p }}</li>
+      {% endfor %}
+    </ul>
+    <ul>
+      {% for p in evaluation.head.bad %}
+      <li>{{ p }}</li>
+      {% endfor %}
+    </ul>
+    <div class="pro">{{ evaluation.head.pro }}</div>
+  </div>
+
+  <div class="section">
+    <h2>06. Knee Stability（膝ブレ）</h2>
+    <ul>
+      {% for p in evaluation.knee.good %}
+      <li>{{ p }}</li>
+      {% endfor %}
+    </ul>
+    <ul>
+      {% for p in evaluation.knee.bad %}
+      <li>{{ p }}</li>
+      {% endfor %}
+    </ul>
+    <div class="pro">{{ evaluation.knee.pro }}</div>
+  </div>
+
+  <div class="divider"></div>
+
+  <div class="section">
     <h2>07. 総合評価</h2>
-    <p style="line-height:1.8;">
-      {{ analysis.summary }}
-    </p>
+    <p>{{ evaluation.summary }}</p>
+  </div>
 
-    {% if is_paid %}
-    <div class="pro-comment">
-      <strong>プロ視点：</strong>{{ analysis.summary_pro }}
-    </div>
-    {% endif %}
-  </section>
+  {% else %}
 
-  <!-- 無料版CTA -->
-  {% if not is_paid %}
-  <div class="cta-box">
-    <strong>より詳しい分析をご希望の方へ</strong><br><br>
+  <!-- ===================== -->
+  <!-- 無料版 総合評価 -->
+  <!-- ===================== -->
+  <div class="section">
+    <h2>07. 総合評価</h2>
+    <p>{{ free_summary }}</p>
+  </div>
+
+  <div class="paid-note">
+    より詳しい分析をご希望の方へ<br><br>
     本レポートでは、スイング全体の傾向を<br>
     骨格データに基づいて評価しています。<br><br>
     ご自身のスイングを深く理解したい方は、<br>
     ぜひフルレポートをご活用ください。
   </div>
-  {% endif %}
 
-  <!-- 08〜10（有料のみ） -->
-  {% if is_paid %}
-  <section>
-    <h2>08. 練習ドリル</h2>
-    {{ analysis.drills | safe }}
-  </section>
-
-  <section>
-    <h2>09. シャフトフィッティング（推奨）</h2>
-    {{ analysis.fitting | safe }}
-  </section>
-
-  <section>
-    <h2>10. まとめ</h2>
-    <p style="line-height:1.8;">
-      {{ analysis.conclusion }}
-    </p>
-  </section>
   {% endif %}
 
 </div>
