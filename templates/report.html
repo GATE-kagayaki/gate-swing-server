@@ -86,6 +86,21 @@ REPORT ID：<span id="reportId"></span>
 
 <div id="summary" class="mt-4 text-gray-700 leading-relaxed space-y-4"></div>
 
+<!-- ===================== -->
+<!-- 有料版誘導（最終確定文） -->
+<!-- ===================== -->
+<div class="mt-12 p-5 border border-gray-300 bg-gray-50 text-sm text-gray-700">
+  <p class="font-bold mb-2">より詳しい分析をご希望の方へ</p>
+  <p class="mb-2">
+    本レポートでは、スイング全体の傾向を
+    骨格データに基づいて評価しています。
+  </p>
+  <p>
+    ご自身のスイングを深く理解したい方は、
+    ぜひフルレポートをご活用ください。
+  </p>
+</div>
+
 </div>
 </div>
 
@@ -179,7 +194,7 @@ fetch(`/api/report_data/${reportId}`)
         html += "<p class='eval-bad'><strong>改善点</strong><br>" + bad.join("<br>") + "</p>";
     }
 
-    html += "<p>全体として、安定性をベースにしたスイングができており、適切な調整を行うことでさらなるレベルアップが期待できます。</p>";
+    html += "<p>全体として、安定性を土台にしたスイングができており、適切な調整を行うことでさらなる向上が期待できます。</p>";
 
     summary.innerHTML = html;
 });
