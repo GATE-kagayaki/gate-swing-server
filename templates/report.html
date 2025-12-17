@@ -2,327 +2,259 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>GATE AIスイングドクター｜SWING ANALYSIS REPORT</title>
 
   <script src="https://cdn.tailwindcss.com"></script>
-  <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+JP:wght@400;700&family=Noto+Sans+JP:wght@400;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+JP:wght@600;700&family=Noto+Sans+JP:wght@400;700&display=swap" rel="stylesheet">
 
   <style>
     body { font-family: 'Noto Sans JP', sans-serif; background:#f3f4f6; }
-    .paper { background:#fff; max-width:960px; margin:18px auto; padding:28px; box-shadow: 0 4px 14px rgba(0,0,0,.08); border-radius: 16px; }
+    .paper { background:#fff; max-width:980px; margin:20px auto; padding:28px; box-shadow: 0 10px 20px rgba(0,0,0,0.06); border-radius: 16px; }
     h2 { border-left:4px solid #111827; padding-left:12px; margin-top:28px; font-weight:700; font-family: 'Noto Serif JP', serif; }
-    table { width:100%; border-collapse:collapse; margin-top:10px; table-layout: fixed; }
+    table { width:100%; border-collapse:collapse; margin-top:12px; }
     th,td { border:1px solid #e5e7eb; padding:10px; font-size: 0.95rem; vertical-align: top; }
-    th { background:#f9fafb; font-weight:700; width: 28%; }
-    .muted { color:#6b7280; font-size:0.85rem; line-height: 1.35; }
-    .card { border:1px solid #e5e7eb; border-radius:14px; padding:14px 14px; background:#fff; }
-    .pill { display:inline-block; padding:4px 10px; border-radius:999px; font-size:12px; font-weight:700; }
-    .pill-ok { background:#ecfdf5; color:#047857; border:1px solid #a7f3d0; }
-    .pill-bad { background:#fef2f2; color:#b91c1c; border:1px solid #fecaca; }
-    .pill-pro { background:#eff6ff; color:#1d4ed8; border:1px solid #bfdbfe; }
-    .loading { text-align:center; padding:80px 0; }
-    .line { margin-top:10px; line-height: 1.8; }
-    .sp { margin-top:12px; }
-    .probox { background:#eff6ff; border:1px solid #bfdbfe; padding:12px; border-radius:12px; margin-top:12px; }
-    .note { background:#f9fafb; border:1px dashed #d1d5db; padding:12px; border-radius:12px; margin-top:12px; color:#374151; }
+    th { background:#f9fafb; font-weight: 700; width: 34%; }
+    .loading { text-align: center; padding: 90px 0; }
+    .card { border: 1px solid #e5e7eb; border-radius: 14px; padding: 14px; background: #fff; }
+    .muted { color:#6b7280; font-size: 0.88rem; line-height: 1.6; }
+    .lead { color:#111827; line-height: 1.8; }
+    .badge { display:inline-block; padding:4px 10px; border-radius: 999px; background:#111827; color:#fff; font-size: 12px; }
+    .sp { margin-top: 10px; }
+    .list li { margin: 6px 0; }
   </style>
 </head>
 
 <body>
-  <div class="paper">
+<div class="paper">
 
-    <div class="flex items-center justify-between gap-3">
-      <div>
-        <h1 class="text-2xl font-bold">GATE AIスイングドクター</h1>
-        <p class="text-sm text-gray-600 mt-1">SWING ANALYSIS REPORT</p>
-      </div>
-      <div id="statusPill" class="pill pill-pro">Loading</div>
+  <div class="text-center">
+    <h1 class="text-2xl font-bold">GATE AIスイングドクター</h1>
+    <p class="text-sm text-gray-500 mt-1">SWING ANALYSIS REPORT</p>
+  </div>
+
+  <div class="mt-6 flex items-center justify-between gap-3">
+    <div class="text-xs text-gray-500">
+      REPORT ID：<span id="reportId" class="font-mono"></span>
     </div>
-
-    <p class="text-xs text-gray-500 mt-4">
-      REPORT ID：<span id="reportId"></span>
-    </p>
-
-    <div id="loading" class="loading">
-      <div class="animate-spin h-8 w-8 border-4 border-gray-500 rounded-full border-t-transparent mx-auto"></div>
-      <p class="mt-4 text-gray-500 text-sm" id="loadingText">レポートデータを読み込み中...</p>
-      <p class="mt-2 text-gray-400 text-xs">※解析完了まで数分かかる場合があります</p>
-    </div>
-
-    <div id="report-content" class="hidden">
-      <!-- 01 -->
-      <section id="section-01">
-        <h2 id="title-01">01</h2>
-        <div class="card mt-3">
-          <table>
-            <tbody id="items-01"></tbody>
-          </table>
-          <p class="muted mt-3">
-            ※「目安」は一般的な参考レンジです。フォームや撮影条件により前後します。
-          </p>
-        </div>
-      </section>
-
-      <!-- 02-06（有料のみ） -->
-      <div id="section-02-06" class="hidden">
-        <section id="section-02"></section>
-        <section id="section-03"></section>
-        <section id="section-04"></section>
-        <section id="section-05"></section>
-        <section id="section-06"></section>
-      </div>
-
-      <!-- 07 -->
-      <section id="section-07" class="hidden">
-        <h2 id="title-07">07</h2>
-        <div class="card mt-3" id="text-07"></div>
-      </section>
-
-      <!-- 08（有料のみ） -->
-      <section id="section-08" class="hidden">
-        <h2 id="title-08">08</h2>
-        <div class="card mt-3">
-          <table>
-            <thead>
-              <tr>
-                <th>ドリル名</th>
-                <th>目的</th>
-                <th>やり方</th>
-              </tr>
-            </thead>
-            <tbody id="drills-08"></tbody>
-          </table>
-        </div>
-      </section>
-
-      <!-- 09（有料のみ） -->
-      <section id="section-09" class="hidden">
-        <h2 id="title-09">09</h2>
-        <div class="card mt-3">
-          <table>
-            <thead>
-              <tr>
-                <th>項目</th>
-                <th>目安</th>
-                <th>理由</th>
-              </tr>
-            </thead>
-            <tbody id="fit-09"></tbody>
-          </table>
-          <div id="note-09" class="note"></div>
-        </div>
-      </section>
-
-      <!-- 10（有料のみ） -->
-      <section id="section-10" class="hidden">
-        <h2 id="title-10">10</h2>
-        <div class="card mt-3" id="text-10"></div>
-      </section>
-
+    <div id="premiumBadge" class="hidden">
+      <span class="badge">PRO REPORT</span>
     </div>
   </div>
+
+  <div id="loading" class="loading">
+    <div class="animate-spin h-8 w-8 border-4 border-gray-500 rounded-full border-t-transparent mx-auto"></div>
+    <p class="mt-4 text-gray-500 text-sm">レポートデータを読み込み中...</p>
+  </div>
+
+  <div id="report-content" class="hidden">
+    <!-- Sections are injected here -->
+  </div>
+
+</div>
 
 <script>
   const reportId = location.pathname.split("/").pop();
   document.getElementById("reportId").innerText = reportId;
 
   const reportContent = document.getElementById("report-content");
-  const loadingElement = document.getElementById("loading");
-  const loadingText = document.getElementById("loadingText");
-  const statusPill = document.getElementById("statusPill");
+  const loadingEl = document.getElementById("loading");
+  const premiumBadge = document.getElementById("premiumBadge");
 
-  const esc = (s) => String(s ?? "").replace(/[&<>"']/g, m => ({
-    "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"
-  }[m]));
+  function sectionWrap(title) {
+    const sec = document.createElement("section");
+    sec.className = "mt-7";
+    const h2 = document.createElement("h2");
+    h2.textContent = title;
+    sec.appendChild(h2);
+    return sec;
+  }
 
-  function setStatusPill(status) {
-    const s = String(status || "").toUpperCase();
-    if (s.includes("COMP")) {
-      statusPill.className = "pill pill-ok";
-      statusPill.innerText = "COMPLETED";
-    } else if (s.includes("PROG") || s.includes("PROCESS")) {
-      statusPill.className = "pill pill-pro";
-      statusPill.innerText = "PROCESSING";
-    } else if (s.includes("FAIL") || s.includes("ERR")) {
-      statusPill.className = "pill pill-bad";
-      statusPill.innerText = "FAILED";
-    } else {
-      statusPill.className = "pill pill-pro";
-      statusPill.innerText = s || "UNKNOWN";
+  function render01(secData) {
+    const sec = sectionWrap(secData.title);
+    const table = document.createElement("table");
+    const tbody = document.createElement("tbody");
+
+    secData.items.forEach(it => {
+      const tr = document.createElement("tr");
+      const th = document.createElement("th");
+      th.textContent = it.name;
+
+      const td = document.createElement("td");
+      td.innerHTML = `
+        <div class="lead font-bold">${it.value}</div>
+        <div class="muted sp">${it.description}</div>
+        <div class="muted sp">目安：<span class="font-semibold text-gray-700">${it.guide}</span></div>
+      `;
+
+      tr.appendChild(th);
+      tr.appendChild(td);
+      tbody.appendChild(tr);
+    });
+
+    table.appendChild(tbody);
+    sec.appendChild(table);
+    reportContent.appendChild(sec);
+  }
+
+  function render02to06(key, secData) {
+    const sec = sectionWrap(secData.title);
+
+    // Value line
+    const v = document.createElement("div");
+    v.className = "muted mt-2";
+    v.innerHTML = `解析結果：<span class="font-semibold text-gray-800">${secData.value}</span>`;
+    sec.appendChild(v);
+
+    // Cards
+    const grid = document.createElement("div");
+    grid.className = "grid grid-cols-1 md:grid-cols-2 gap-3 mt-3";
+
+    const good = document.createElement("div");
+    good.className = "card";
+    good.innerHTML = `<div class="font-bold">良い点</div>
+      <ul class="list list-disc pl-5 mt-2">${(secData.good||[]).map(x=>`<li>${x}</li>`).join("")}</ul>`;
+
+    const bad = document.createElement("div");
+    bad.className = "card";
+    bad.innerHTML = `<div class="font-bold">改善が期待できる点</div>
+      <ul class="list list-disc pl-5 mt-2">${(secData.bad||[]).map(x=>`<li>${x}</li>`).join("")}</ul>`;
+
+    grid.appendChild(good);
+    grid.appendChild(bad);
+    sec.appendChild(grid);
+
+    // Pro comment
+    if (secData.pro_comment) {
+      const pc = document.createElement("div");
+      pc.className = "card mt-3";
+      pc.innerHTML = `<div class="font-bold">プロ目線</div><div class="lead mt-2">${secData.pro_comment}</div>`;
+      sec.appendChild(pc);
     }
+
+    reportContent.appendChild(sec);
   }
 
-  function render01(section) {
-    document.getElementById("title-01").innerText = section.title || "01. 骨格計測データ";
-    const tbody = document.getElementById("items-01");
-    tbody.innerHTML = "";
-
-    (section.items || []).forEach(i => {
-      tbody.innerHTML += `
+  function render08(secData) {
+    const sec = sectionWrap(secData.title);
+    const table = document.createElement("table");
+    table.innerHTML = `
+      <thead>
         <tr>
-          <th>${esc(i.name)}</th>
-          <td>
-            <div class="text-lg font-bold text-gray-900">${esc(i.value)}</div>
-            ${i.description ? `<div class="muted sp">${esc(i.description)}</div>` : ``}
-            ${i.guide ? `<div class="muted sp">目安：<span class="font-bold">${esc(i.guide)}</span></div>` : ``}
-          </td>
+          <th>ドリル名</th>
+          <th>目的</th>
+          <th>やり方</th>
         </tr>
-      `;
-    });
+      </thead>
+      <tbody>
+        ${(secData.drills||[]).map(d=>`
+          <tr>
+            <td class="font-semibold">${d.name}</td>
+            <td>${d.purpose}</td>
+            <td class="whitespace-pre-line">${d.how}</td>
+          </tr>
+        `).join("")}
+      </tbody>`;
+    sec.appendChild(table);
+    reportContent.appendChild(sec);
   }
 
-  function renderScoreSection(key, section) {
-    const el = document.getElementById(`section-${key}`);
-    el.innerHTML = `
-      <h2>${esc(section.title || `${key}.`)}</h2>
-      <div class="card mt-3">
-        <div class="flex flex-wrap gap-2">
-          <span class="pill pill-ok">良い点</span>
-          <span class="pill pill-bad">改善点</span>
-          <span class="pill pill-pro">プロ目線</span>
-        </div>
-
-        <div class="mt-3">
-          <ul class="list-disc pl-6 space-y-2">
-            ${(section.good || []).slice(0,3).map(t => `<li>${esc(t)}</li>`).join("") || `<li class="muted">—</li>`}
-          </ul>
-        </div>
-
-        <div class="mt-4">
-          <ul class="list-disc pl-6 space-y-2">
-            ${(section.bad || []).slice(0,3).map(t => `<li>${esc(t)}</li>`).join("") || `<li class="muted">—</li>`}
-          </ul>
-        </div>
-
-        ${section.pro_comment ? `
-          <div class="probox">
-            <div class="text-sm font-bold text-blue-700">プロ目線（ひと言）</div>
-            <div class="line">${esc(section.pro_comment)}</div>
-          </div>` : ``}
-      </div>
-    `;
-  }
-
-  function renderTextBlock(containerId, titleId, section) {
-    if (titleId) document.getElementById(titleId).innerText = section.title || "";
-    const box = document.getElementById(containerId);
-    box.innerHTML = "";
-    (section.text || []).forEach(line => {
-      if (!line) {
-        box.innerHTML += `<div class="h-3"></div>`;
-      } else {
-        box.innerHTML += `<p class="line text-gray-800">${esc(line)}</p>`;
-      }
-    });
-  }
-
-  function render08(section) {
-    document.getElementById("title-08").innerText = section.title || "08. Training Drills";
-    const tbody = document.getElementById("drills-08");
-    tbody.innerHTML = "";
-
-    (section.drills || []).slice(0,3).forEach(d => {
-      tbody.innerHTML += `
+  function render09(secData) {
+    const sec = sectionWrap(secData.title);
+    const table = document.createElement("table");
+    table.innerHTML = `
+      <thead>
         <tr>
-          <td class="font-bold">${esc(d.name)}</td>
-          <td>${esc(d.purpose)}</td>
-          <td class="whitespace-pre-line">${esc(d.how)}</td>
+          <th>項目</th>
+          <th>推奨</th>
+          <th>理由</th>
         </tr>
-      `;
-    });
+      </thead>
+      <tbody>
+        ${(secData.table||[]).map(r=>`
+          <tr>
+            <td class="font-semibold">${r.item}</td>
+            <td>${r.guide}</td>
+            <td>${r.reason}</td>
+          </tr>
+        `).join("")}
+      </tbody>`;
+    sec.appendChild(table);
+
+    if (secData.note) {
+      const note = document.createElement("div");
+      note.className = "muted mt-2";
+      note.textContent = secData.note;
+      sec.appendChild(note);
+    }
+    reportContent.appendChild(sec);
   }
 
-  function render09(section) {
-    document.getElementById("title-09").innerText = section.title || "09. Shaft Fitting Guide";
-    const tbody = document.getElementById("fit-09");
-    tbody.innerHTML = "";
-
-    (section.table || []).forEach(r => {
-      tbody.innerHTML += `
-        <tr>
-          <td class="font-bold">${esc(r.item)}</td>
-          <td>${esc(r.guide)}</td>
-          <td>${esc(r.reason)}</td>
-        </tr>
-      `;
-    });
-
-    document.getElementById("note-09").innerText = section.note || "";
+  function renderTextSection(secData) {
+    const sec = sectionWrap(secData.title);
+    const box = document.createElement("div");
+    box.className = "card mt-3";
+    box.innerHTML = (secData.text || []).map(t => {
+      if (t === "") return `<div class="h-3"></div>`;
+      return `<p class="lead">${t}</p>`;
+    }).join("");
+    sec.appendChild(box);
+    reportContent.appendChild(sec);
   }
 
-  async function load() {
-    try {
-      const r = await fetch(`/api/report_data/${reportId}`);
-      if (!r.ok) throw new Error(`API通信エラー: ${r.status}`);
-      const data = await r.json();
+  fetch(`/api/report_data/${reportId}`)
+    .then(r => {
+      if (!r.ok) throw new Error("API通信エラー: " + r.status);
+      return r.json();
+    })
+    .then(data => {
+      loadingEl.classList.add("hidden");
 
-      setStatusPill(data.status);
-
-      const analysis = data.analysis || {};
-      const status = String(data.status || "").toUpperCase();
-
-      // 解析中
-      if (status.includes("PROCESS") || status.includes("PROG") || status === "" || status.includes("PEND")) {
-        loadingText.innerText = "解析処理中です。完了までしばらくお待ちください...";
-        loadingElement.classList.remove("hidden");
-        reportContent.classList.add("hidden");
+      if (!data || !data.status) {
+        loadingEl.classList.remove("hidden");
+        loadingEl.innerHTML = '<p class="text-red-600 font-bold">⚠️ レポートデータが見つかりませんでした。</p>';
         return;
       }
 
-      // 完了
-      loadingElement.classList.add("hidden");
-      reportContent.classList.remove("hidden");
+      if (String(data.status).toUpperCase() === "COMPLETED" && data.analysis) {
+        reportContent.classList.remove("hidden");
+        if (data.is_premium) premiumBadge.classList.remove("hidden");
 
-      // 01
-      if (analysis["01"]) render01(analysis["01"]);
+        const analysis = data.analysis;
 
-      // 02-06（あれば表示）
-      const hasPaidCore = ["02","03","04","05","06"].some(k => analysis[k]);
-      if (hasPaidCore) {
-        document.getElementById("section-02-06").classList.remove("hidden");
+        // 01
+        if (analysis["01"]) render01(analysis["01"]);
+
+        // 02-06
         ["02","03","04","05","06"].forEach(k => {
-          if (analysis[k]) renderScoreSection(k, analysis[k]);
-          else document.getElementById(`section-${k}`).innerHTML = "";
+          if (analysis[k]) render02to06(k, analysis[k]);
         });
+
+        // 07
+        if (analysis["07"]) renderTextSection(analysis["07"]);
+
+        // 08
+        if (analysis["08"]) render08(analysis["08"]);
+
+        // 09
+        if (analysis["09"]) render09(analysis["09"]);
+
+        // 10
+        if (analysis["10"]) renderTextSection(analysis["10"]);
+
+      } else if (data.status === "PROCESSING" || data.status === "IN_PROGRESS") {
+        loadingEl.classList.remove("hidden");
+        loadingEl.querySelector('p').innerText = "解析処理中です。完了までしばらくお待ちください...";
+      } else {
+        loadingEl.classList.remove("hidden");
+        loadingEl.innerHTML = '<p class="text-red-600 font-bold">⚠️ 解析に失敗した可能性があります。</p>';
       }
-
-      // 07
-      if (analysis["07"]) {
-        document.getElementById("section-07").classList.remove("hidden");
-        document.getElementById("title-07").innerText = analysis["07"].title || "07. 総合評価";
-        renderTextBlock("text-07", null, analysis["07"]);
-      }
-
-      // 08
-      if (analysis["08"]) {
-        document.getElementById("section-08").classList.remove("hidden");
-        render08(analysis["08"]);
-      }
-
-      // 09
-      if (analysis["09"]) {
-        document.getElementById("section-09").classList.remove("hidden");
-        render09(analysis["09"]);
-      }
-
-      // 10
-      if (analysis["10"]) {
-        document.getElementById("section-10").classList.remove("hidden");
-        document.getElementById("title-10").innerText = analysis["10"].title || "10. Summary";
-        renderTextBlock("text-10", null, analysis["10"]);
-      }
-
-    } catch (e) {
-      setStatusPill("FAILED");
-      loadingElement.classList.remove("hidden");
-      reportContent.classList.add("hidden");
-      loadingElement.innerHTML = `<p class="text-red-600 font-bold">⚠️ サーバーとの通信エラー: ${esc(e.message)}</p>`;
-      console.error(e);
-    }
-  }
-
-  load();
+    })
+    .catch(err => {
+      loadingEl.classList.remove("hidden");
+      loadingEl.innerHTML = `<p class="text-red-600 font-bold">⚠️ 通信エラー: ${err.message}</p>`;
+      console.error(err);
+    });
 </script>
 </body>
 </html>
