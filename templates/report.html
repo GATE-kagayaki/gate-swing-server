@@ -47,9 +47,7 @@
     <p class="mt-4 text-gray-500 text-sm">レポートデータを読み込み中...</p>
   </div>
 
-  <div id="report-content" class="hidden">
-    <!-- Sections are injected here -->
-  </div>
+  <div id="report-content" class="hidden"></div>
 
 </div>
 
@@ -100,13 +98,11 @@
   function render02to06(key, secData) {
     const sec = sectionWrap(secData.title);
 
-    // Value line
     const v = document.createElement("div");
     v.className = "muted mt-2";
     v.innerHTML = `解析結果：<span class="font-semibold text-gray-800">${secData.value}</span>`;
     sec.appendChild(v);
 
-    // Cards
     const grid = document.createElement("div");
     grid.className = "grid grid-cols-1 md:grid-cols-2 gap-3 mt-3";
 
@@ -124,11 +120,18 @@
     grid.appendChild(bad);
     sec.appendChild(grid);
 
-    // Pro comment
     if (secData.pro_comment) {
       const pc = document.createElement("div");
       pc.className = "card mt-3";
-      pc.innerHTML = `<div class="font-bold">プロ目線</div><div class="lead mt-2">${secData.pro_comment}</div>`;
+
+      let proHtml = "";
+      if (Array.isArray(secData.pro_comment)) {
+        proHtml = secData.pro_comment.map(t => `<p class="lead">${t}</p>`).join("");
+      } else {
+        proHtml = `<p class="lead">${secData.pro_comment}</p>`;
+      }
+
+      pc.innerHTML = `<div class="font-bold">プロ目線</div><div class="mt-2">${proHtml}</div>`;
       sec.appendChild(pc);
     }
 
@@ -203,57 +206,20 @@
   }
 
   fetch(`/api/report_data/${reportId}`)
-    .then(r => {
-      if (!r.ok) throw new Error("API通信エラー: " + r.status);
-      return r.json();
-    })
+    .then(r => r.json())
     .then(data => {
       loadingEl.classList.add("hidden");
-
-      if (!data || !data.status) {
-        loadingEl.classList.remove("hidden");
-        loadingEl.innerHTML = '<p class="text-red-600 font-bold">⚠️ レポートデータが見つかりませんでした。</p>';
-        return;
-      }
-
-      if (String(data.status).toUpperCase() === "COMPLETED" && data.analysis) {
+      if (String(data.status).toUpperCase() === "COMPLETED") {
         reportContent.classList.remove("hidden");
         if (data.is_premium) premiumBadge.classList.remove("hidden");
-
-        const analysis = data.analysis;
-
-        // 01
-        if (analysis["01"]) render01(analysis["01"]);
-
-        // 02-06
-        ["02","03","04","05","06"].forEach(k => {
-          if (analysis[k]) render02to06(k, analysis[k]);
-        });
-
-        // 07
-        if (analysis["07"]) renderTextSection(analysis["07"]);
-
-        // 08
-        if (analysis["08"]) render08(analysis["08"]);
-
-        // 09
-        if (analysis["09"]) render09(analysis["09"]);
-
-        // 10
-        if (analysis["10"]) renderTextSection(analysis["10"]);
-
-      } else if (data.status === "PROCESSING" || data.status === "IN_PROGRESS") {
-        loadingEl.classList.remove("hidden");
-        loadingEl.querySelector('p').innerText = "解析処理中です。完了までしばらくお待ちください...";
-      } else {
-        loadingEl.classList.remove("hidden");
-        loadingEl.innerHTML = '<p class="text-red-600 font-bold">⚠️ 解析に失敗した可能性があります。</p>';
+        const a = data.analysis || {};
+        if (a["01"]) render01(a["01"]);
+        ["02","03","04","05","06"].forEach(k => a[k] && render02to06(k, a[k]));
+        if (a["07"]) renderTextSection(a["07"]);
+        if (a["08"]) render08(a["08"]);
+        if (a["09"]) render09(a["09"]);
+        if (a["10"]) renderTextSection(a["10"]);
       }
-    })
-    .catch(err => {
-      loadingEl.classList.remove("hidden");
-      loadingEl.innerHTML = `<p class="text-red-600 font-bold">⚠️ 通信エラー: ${err.message}</p>`;
-      console.error(err);
     });
 </script>
 </body>
