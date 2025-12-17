@@ -22,6 +22,7 @@
     .badge { display:inline-block; padding:4px 10px; border-radius: 999px; background:#111827; color:#fff; font-size: 12px; }
     .sp { margin-top: 10px; }
     .list li { margin: 6px 0; }
+    input, select { outline: none; }
   </style>
 </head>
 
@@ -100,13 +101,11 @@
   function render02to06(key, secData) {
     const sec = sectionWrap(secData.title);
 
-    // Value line
     const v = document.createElement("div");
     v.className = "muted mt-2";
     v.innerHTML = `解析結果：<span class="font-semibold text-gray-800">${secData.value}</span>`;
     sec.appendChild(v);
 
-    // Cards
     const grid = document.createElement("div");
     grid.className = "grid grid-cols-1 md:grid-cols-2 gap-3 mt-3";
 
@@ -124,7 +123,6 @@
     grid.appendChild(bad);
     sec.appendChild(grid);
 
-    // Pro comment
     if (secData.pro_comment) {
       const pc = document.createElement("div");
       pc.className = "card mt-3";
@@ -137,6 +135,14 @@
 
   function render08(secData) {
     const sec = sectionWrap(secData.title);
+
+    if (secData.lead) {
+      const p = document.createElement("p");
+      p.className = "lead mt-2";
+      p.textContent = secData.lead;
+      sec.appendChild(p);
+    }
+
     const table = document.createElement("table");
     table.innerHTML = `
       <thead>
@@ -159,8 +165,49 @@
     reportContent.appendChild(sec);
   }
 
+  function renderFittingInputs() {
+    const sec = sectionWrap("シャフト診断・任意入力");
+    const box = document.createElement("div");
+    box.className = "card mt-3 grid grid-cols-1 md:grid-cols-2 gap-3";
+
+    box.innerHTML = `
+      <div>
+        <label class="text-sm font-bold">ヘッドスピード（m/s）</label>
+        <input id="input-hs" type="number" step="0.1"
+          class="w-full border rounded px-3 py-2 mt-1"
+          placeholder="例：38.5">
+        <div class="muted mt-1">未入力でも一般指針で表示します</div>
+      </div>
+
+      <div>
+        <label class="text-sm font-bold">ミス傾向</label>
+        <select id="input-miss" class="w-full border rounded px-3 py-2 mt-1">
+          <option value="">未入力</option>
+          <option value="slice">スライス</option>
+          <option value="push">プッシュ</option>
+          <option value="hook">フック</option>
+          <option value="pull">引っかけ</option>
+        </select>
+        <div class="muted mt-1">未入力でも一般指針で表示します</div>
+      </div>
+
+      <div class="md:col-span-2">
+        <button id="apply-fitting"
+          class="mt-2 px-4 py-2 bg-black text-white rounded">
+          この条件でシャフト診断を更新
+        </button>
+        <div id="fitting-msg" class="muted mt-2"></div>
+      </div>
+    `;
+
+    sec.appendChild(box);
+    reportContent.appendChild(sec);
+  }
+
   function render09(secData) {
     const sec = sectionWrap(secData.title);
+    sec.setAttribute("data-section", "09");
+
     const table = document.createElement("table");
     table.innerHTML = `
       <thead>
@@ -202,6 +249,52 @@
     reportContent.appendChild(sec);
   }
 
+  function removeSection09() {
+    document.querySelectorAll('section[data-section="09"]').forEach(s => s.remove());
+  }
+
+  function bindFittingButton() {
+    const btn = document.getElementById("apply-fitting");
+    if (!btn) return;
+
+    btn.addEventListener("click", () => {
+      const msg = document.getElementById("fitting-msg");
+      msg.textContent = "更新中…";
+
+      const hsVal = document.getElementById("input-hs").value;
+      const missVal = document.getElementById("input-miss").value;
+
+      const payload = {
+        report_id: reportId,
+        inputs: {
+          head_speed: hsVal ? Number(hsVal) : null,
+          miss: missVal || null
+        }
+      };
+
+      fetch("/api/update_fitting", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      })
+      .then(r => r.json())
+      .then(res => {
+        if (!res.ok) {
+          msg.textContent = res.error || "更新に失敗しました";
+          return;
+        }
+        msg.textContent = "更新しました。";
+        removeSection09();
+        render09(res.analysis_09);
+        window.scrollTo({ top: document.body.scrollHeight, behavior: "smooth" });
+      })
+      .catch(err => {
+        console.error(err);
+        msg.textContent = "通信エラーが発生しました";
+      });
+    });
+  }
+
   fetch(`/api/report_data/${reportId}`)
     .then(r => {
       if (!r.ok) throw new Error("API通信エラー: " + r.status);
@@ -222,25 +315,24 @@
 
         const analysis = data.analysis;
 
-        // 01
         if (analysis["01"]) render01(analysis["01"]);
 
-        // 02-06
         ["02","03","04","05","06"].forEach(k => {
           if (analysis[k]) render02to06(k, analysis[k]);
         });
 
-        // 07
         if (analysis["07"]) renderTextSection(analysis["07"]);
-
-        // 08
         if (analysis["08"]) render08(analysis["08"]);
 
-        // 09
-        if (analysis["09"]) render09(analysis["09"]);
+        // 09 入力UI（プレミアムのみ）
+        if (data.is_premium) {
+          renderFittingInputs();
+        }
 
-        // 10
+        if (analysis["09"]) render09(analysis["09"]);
         if (analysis["10"]) renderTextSection(analysis["10"]);
+
+        bindFittingButton();
 
       } else if (data.status === "PROCESSING" || data.status === "IN_PROGRESS") {
         loadingEl.classList.remove("hidden");
