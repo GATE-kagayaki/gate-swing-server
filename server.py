@@ -5,7 +5,7 @@ import shutil
 import traceback
 import tempfile
 from datetime import datetime, timezone
-from typing import Any, Dict
+from typing import Any, Dict, List, Tuple
 
 from flask import Flask, request, jsonify, abort, render_template
 
@@ -16,6 +16,7 @@ from linebot.models import MessageEvent, VideoMessage, TextSendMessage
 from google.cloud import firestore
 from google.cloud import tasks_v2
 from google.api_core.exceptions import NotFound, PermissionDenied
+
 
 # ==================================================
 # CONFIG
@@ -44,8 +45,10 @@ TASK_HANDLER_PATH = "/task-handler"
 TASK_HANDLER_URL = f"{SERVICE_HOST_URL}{TASK_HANDLER_PATH}"
 
 db = firestore.Client()
+
 line_bot_api = LineBotApi(LINE_CHANNEL_ACCESS_TOKEN)
 handler = WebhookHandler(LINE_CHANNEL_SECRET)
+
 tasks_client = tasks_v2.CloudTasksClient()
 
 
@@ -81,34 +84,39 @@ def safe_line_push(user_id: str, text: str) -> None:
 
 
 def make_initial_reply(report_id: str) -> str:
+    url = f"{SERVICE_HOST_URL}/report/{report_id}"
     return (
-        "動画を受信しました。\n"
+        "✅ 動画を受信しました。\n"
         "AIによるスイング解析を開始します。\n\n"
         "解析完了まで、1〜3分ほどお待ちください。\n"
         "完了次第、結果をお知らせします。\n\n"
         "【進行状況の確認】\n"
         "以下のURLから、解析の進行状況や\n"
         "レポートの準備状況を確認できます。\n"
-        f"{SERVICE_HOST_URL}/report/{report_id}\n\n"
+        f"{url}\n\n"
         "【料金プラン（プロ評価付きフルレポート）】\n"
         "① 都度会員　500円／1回\n"
         "② 回数券　1,980円／5回\n"
         "③ 月額会員　4,980円／月\n\n"
-        "※無料版でも骨格解析と総合評価はご利用いただけます。"
+        "より詳しい分析をご希望の方は、ぜひフルレポートをご活用ください。"
     )
 
 
 def make_done_push(report_id: str) -> str:
+    url = f"{SERVICE_HOST_URL}/report/{report_id}"
     return (
         "🎉 スイング計測が完了しました！\n\n"
         "以下のリンクから診断レポートを確認できます。\n\n"
-        f"{SERVICE_HOST_URL}/report/{report_id}"
+        f"{url}"
     )
 
 
+# ==================================================
+# Premium判定（本番は決済と連携でOK）
+# ==================================================
 def is_premium_user(user_id: str) -> bool:
-    # TODO: 決済連動に差し替え
-    # いまは「有料版を本格実装して先にテストしたい」方針なので True 固定
+    # ここはStripe連携後に置き換え
+    # いまは「有料版テスト」を優先するなら True にしてください
     return True
 
 
@@ -123,7 +131,7 @@ def create_cloud_task(report_id: str, user_id: str, message_id: str) -> str:
     if not TASK_SA_EMAIL:
         raise RuntimeError("TASK_SA_EMAIL is empty.")
 
-    parent = tasks_client.queue_path(PROJECT_ID, QUEUE_LOCATION, QUEUE_NAME)
+    queue_path = tasks_client.queue_path(PROJECT_ID, QUEUE_LOCATION, QUEUE_NAME)
 
     payload = json.dumps(
         {"report_id": report_id, "user_id": user_id, "message_id": message_id},
@@ -143,7 +151,7 @@ def create_cloud_task(report_id: str, user_id: str, message_id: str) -> str:
         }
     }
 
-    resp = tasks_client.create_task(parent=parent, task=task)
+    resp = tasks_client.create_task(parent=queue_path, task=task)
     return resp.name
 
 
@@ -157,7 +165,7 @@ def analyze_swing_with_mediapipe(video_path: str) -> Dict[str, Any]:
     mp_pose = mp.solutions.pose
     cap = cv2.VideoCapture(video_path)
     if not cap.isOpened():
-        raise RuntimeError("OpenCVがビデオを読み込めませんでした。形式をご確認ください。")
+        raise RuntimeError("OpenCVがビデオを読み込めませんでした。")
 
     frame_count = 0
     max_shoulder = 0.0
@@ -189,19 +197,13 @@ def analyze_swing_with_mediapipe(video_path: str) -> Dict[str, Any]:
             if not ok:
                 break
             frame_count += 1
-            try:
-                rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                res = pose.process(rgb)
-            except Exception:
-                continue
-
+            rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            res = pose.process(rgb)
             if not res.pose_landmarks:
                 continue
 
             lm = res.pose_landmarks.landmark
-
-            def xy(i):  # normalized coords
-                return (lm[i].x, lm[i].y)
+            def xy(i): return (lm[i].x, lm[i].y)
 
             LS = mp_pose.PoseLandmark.LEFT_SHOULDER.value
             RS = mp_pose.PoseLandmark.RIGHT_SHOULDER.value
@@ -222,7 +224,7 @@ def analyze_swing_with_mediapipe(video_path: str) -> Dict[str, Any]:
     cap.release()
 
     if frame_count < 10:
-        raise RuntimeError("解析に必要なフレーム数が不足しています。もう少し長めの動画でお試しください。")
+        raise RuntimeError("解析に必要なフレーム数が不足しています。")
 
     return {
         "frame_count": int(frame_count),
@@ -235,9 +237,112 @@ def analyze_swing_with_mediapipe(video_path: str) -> Dict[str, Any]:
 
 
 # ==================================================
-# Report content builders (確定仕様)
+# 3×3×3（27パターン）分類ユーティリティ
 # ==================================================
-def build_01(raw: Dict[str, Any]) -> Dict[str, Any]:
+def cat3_by_range(value: float, lo: float, hi: float) -> str:
+    """low / mid / high"""
+    if value < lo:
+        return "low"
+    if value > hi:
+        return "high"
+    return "mid"
+
+
+def cat3_sway(value: float, lo: float, hi: float) -> str:
+    """swayは小さいほど良いので low=良, mid=普通, high=悪 の扱い"""
+    if value < lo:
+        return "good"
+    if value > hi:
+        return "bad"
+    return "mid"
+
+
+def pick_2to6_bullets(section: str, main: str, head: str, knee: str) -> Tuple[List[str], List[str]]:
+    """
+    02-06 用： (main × head × knee) の 3×3×3=27パターン
+    main: low/mid/high
+    head: good/mid/bad
+    knee: good/mid/bad
+    """
+    good: List[str] = []
+    bad: List[str] = []
+
+    # --- main評価（セクション別） ---
+    if section == "02":  # shoulder
+        if main == "low":
+            bad.append("肩回転量がやや少なく、上半身の捻転によるエネルギーが出にくい可能性があります。")
+        elif main == "mid":
+            good.append("肩回転量は目安レンジ内で、上半身の回旋は安定しています。")
+        else:
+            good.append("肩回転量は大きく、パワーを出せるポテンシャルがあります。")
+            bad.append("回し過ぎになると、軸ブレやタイミングのズレにつながる可能性があります。")
+
+    if section == "03":  # hip
+        if main == "low":
+            bad.append("腰回転が浅くなりやすく、下半身からの推進力が活かし切れない可能性があります。")
+        elif main == "mid":
+            good.append("腰回転は目安レンジ内で、土台の回旋は安定しています。")
+        else:
+            good.append("腰回転が大きく、下半身主導の動きが作れています。")
+            bad.append("回転が強すぎると、上体がつられて開きやすくなる可能性があります。")
+
+    if section == "04":  # wrist
+        if main == "low":
+            bad.append("コック量が少なく、タメが作りにくい可能性があります。")
+        elif main == "mid":
+            good.append("コック量は目安レンジ内で、再現性の高いリリースが期待できます。")
+        else:
+            good.append("コック量が大きく、ヘッドスピードを作りやすい形です。")
+            bad.append("コックが大きすぎると手首主導になり、タイミングがズレやすい可能性があります。")
+
+    if section == "05":  # head sway (main=good/mid/bad を流用)
+        if main == "good":
+            good.append("頭部の左右ブレが小さく、スイング軸の安定性が高い状態です。")
+        elif main == "mid":
+            good.append("頭部ブレは平均的で、大きく崩れる動きは見られません。")
+            bad.append("局所的にブレが増える場面があると、ミート率が落ちやすくなります。")
+        else:
+            bad.append("頭部の左右ブレが大きく、再現性が落ちやすい傾向があります。")
+
+    if section == "06":  # knee sway
+        if main == "good":
+            good.append("膝の左右ブレが小さく、下半身の安定性が高い状態です。")
+        elif main == "mid":
+            good.append("膝ブレは平均的で、土台は大きく崩れていません。")
+            bad.append("踏み替えのタイミングで左右差が出ると、軸がズレやすくなります。")
+        else:
+            bad.append("膝の左右ブレが大きく、体重移動が横流れになりやすい可能性があります。")
+
+    # --- head/knee補正（27パターン化の核） ---
+    # headがbadなら、どのセクションでも「再現性」観点の悪い点を足す
+    if head == "bad":
+        bad.append("頭部の安定性が低い場面があるため、インパクトの再現性が落ちやすくなります。")
+    elif head == "good":
+        good.append("頭部が安定しているため、動作の再現性を作りやすい状態です。")
+
+    # kneeがbadなら、どのセクションでも「土台の安定」観点の悪い点を足す
+    if knee == "bad":
+        bad.append("下半身が流れやすい場面があるため、上体の動きも乱れやすくなります。")
+    elif knee == "good":
+        good.append("下半身が安定しているため、回転動作の土台がしっかりしています。")
+
+    # 箇条書き最大3に丸める
+    good = good[:3]
+    bad = bad[:3]
+
+    # 片側が0のときの保険（読みにくさ回避）
+    if not good:
+        good = ["大きな崩れは見られず、改善を積み上げやすい状態です。"]
+    if not bad:
+        bad = ["現状の動きは安定しており、再現性を維持しやすい状態です。"]
+
+    return good, bad
+
+
+# ==================================================
+# Analysis JSON（最終構造）
+# ==================================================
+def build_section_01(raw: Dict[str, Any]) -> Dict[str, Any]:
     return {
         "title": "01. 骨格計測データ（AIが測定）",
         "items": [
@@ -281,222 +386,204 @@ def build_01(raw: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-def _judge_range(val: float, lo: float, hi: float) -> str:
-    if val < lo:
-        return "low"
-    if val > hi:
-        return "high"
-    return "ok"
-
-
-def build_02_to_06(raw: Dict[str, Any]) -> Dict[str, Any]:
-    # 目安（確定）
-    sh = raw["max_shoulder_rotation"]  # 80-110
-    hip = raw["min_hip_rotation"]      # 35-45
-    cock = raw["max_wrist_cock"]       # 120-150
-    head = raw["max_head_drift"]       # 0.05-0.15
-    knee = raw["max_knee_sway"]        # 0.05-0.20
-
-    sh_j = _judge_range(sh, 80, 110)
-    hip_j = _judge_range(hip, 35, 45)
-    cock_j = _judge_range(cock, 120, 150)
-    head_j = _judge_range(head, 0.05, 0.15)
-    knee_j = _judge_range(knee, 0.05, 0.20)
-
-    # 02 Shoulder
-    good2, bad2 = [], []
-    if sh_j in ("ok", "high"):
-        good2.append("回転量は十分で、パワーを生み出せる動きができています。")
-    if sh_j == "high":
-        bad2.append("回転量がやや多く、回し過ぎによるブレが出やすい可能性があります。")
-    if sh_j == "low":
-        bad2.append("回転量がやや不足し、飛距離効率が落ちる可能性があります。")
-    pro2 = "肩の回転は強みなので、下半身との同調で再現性を引き上げられます。"
-
-    # 03 Hip
-    good3, bad3 = [], []
-    if hip_j == "ok":
-        good3.append("腰の回転量は目安レンジ内で、下半身の土台が作れています。")
-    if hip_j == "high":
-        good3.append("腰の回転量が十分で、体全体で動かせる土台があります。")
-        bad3.append("回転が大きい分、上半身とズレるとタイミングが崩れやすくなります。")
-    if hip_j == "low":
-        bad3.append("腰の回転が浅くなりやすく、上半身先行になりやすい可能性があります。")
-    pro3 = "腰は安定性の核なので、肩との回転差を縮めるとミスが減ります。"
-
-    # 04 Cock
-    good4, bad4 = [], []
-    if cock_j in ("ok", "high"):
-        good4.append("コック量は確保できており、ヘッドスピードを出しやすい形です。")
-    if cock_j == "high":
-        bad4.append("角度が大きすぎるため、手首主導になりやすい傾向があります。")
-    if cock_j == "low":
-        bad4.append("コック量が少なめで、リリースが早くなる可能性があります。")
-    pro4 = "体の回転でコックが作れると、タイミングが安定して方向性が整います。"
-
-    # 05 Head
-    good5, bad5 = [], []
-    if head_j == "ok":
-        good5.append("頭部の左右移動は目安範囲で、軸の意識が保てています。")
-    if head_j == "high":
-        bad5.append("頭部の左右移動がやや大きく、インパクト位置がブレやすい可能性があります。")
-    if head_j == "low":
-        good5.append("頭部の左右移動が小さく、軸が安定しています。")
-    pro5 = "頭の位置が安定すると、フェース向きと打点が揃いやすくなります。"
-
-    # 06 Knee
-    good6, bad6 = [], []
-    if knee_j == "ok":
-        good6.append("膝の左右移動は目安範囲で、下半身は比較的安定しています。")
-    if knee_j == "high":
-        bad6.append("膝の左右移動が大きく、下半身が流れて軸が崩れる可能性があります。")
-    if knee_j == "low":
-        good6.append("膝の左右移動が小さく、踏ん張りが効いています。")
-    pro6 = "膝が安定すると、上半身の回転量を活かしてもブレにくくなります。"
-
-    # 最大3点に丸め
-    def cap3(x): return x[:3]
-
+def build_free_07(raw: Dict[str, Any]) -> Dict[str, Any]:
+    # 無料版：プロ評価なし（導線あり）
     return {
-        "02": {"title": "02. Shoulder Rotation（肩回転）", "value": sh, "good": cap3(good2), "bad": cap3(bad2), "pro_comment": pro2},
-        "03": {"title": "03. Hip Rotation（腰回転）", "value": hip, "good": cap3(good3), "bad": cap3(bad3), "pro_comment": pro3},
-        "04": {"title": "04. Wrist Cock（コック角）", "value": cock, "good": cap3(good4), "bad": cap3(bad4), "pro_comment": pro4},
-        "05": {"title": "05. Head Stability（頭部ブレ）", "value": head, "good": cap3(good5), "bad": cap3(bad5), "pro_comment": pro5},
-        "06": {"title": "06. Knee Stability（膝ブレ）", "value": knee, "good": cap3(good6), "bad": cap3(bad6), "pro_comment": pro6},
+        "title": "07. 総合評価",
+        "text": [
+            "本レポートでは、スイング全体の傾向を骨格データに基づいて評価しています。",
+            "回転量と安定性のバランスを整えることで、再現性の向上が期待できます。",
+            "",
+            "より詳しい分析をご希望の方へ",
+            "ご自身のスイングを深く理解したい方は、ぜひフルレポートをご活用ください。",
+        ],
     }
 
 
-def build_07_paid(raw: Dict[str, Any]) -> Dict[str, Any]:
-    # 02-06を統合したプロ評価寄りの総合
-    sh = raw["max_shoulder_rotation"]
-    hip = raw["min_hip_rotation"]
-    cock = raw["max_wrist_cock"]
-    head = raw["max_head_drift"]
-    knee = raw["max_knee_sway"]
+def build_paid_02_to_06(raw: Dict[str, Any]) -> Dict[str, Any]:
+    # 3×3×3 のためのカテゴリ
+    shoulder_cat = cat3_by_range(raw["max_shoulder_rotation"], 80, 110)
+    hip_cat = cat3_by_range(raw["min_hip_rotation"], 35, 45)
+    wrist_cat = cat3_by_range(raw["max_wrist_cock"], 120, 150)
 
-    # ざっくり因果（合意済みトーン）
-    lines = []
-    lines.append("今回のスイング解析では、体全体の回転量は十分に確保されており、飛距離を伸ばせるポテンシャルが確認できました。")
+    head_cat = cat3_sway(raw["max_head_drift"], 0.05, 0.15)  # good/mid/bad
+    knee_cat = cat3_sway(raw["max_knee_sway"], 0.05, 0.20)  # good/mid/bad
 
-    # 安定性
-    if head > 0.15 or knee > 0.20:
-        lines.append("一方で、頭部または下半身のブレが大きく、インパクト周辺の再現性が落ちやすい傾向が見られます。")
+    # 02
+    g2, b2 = pick_2to6_bullets("02", shoulder_cat, head_cat, knee_cat)
+    # 03
+    g3, b3 = pick_2to6_bullets("03", hip_cat, head_cat, knee_cat)
+    # 04
+    g4, b4 = pick_2to6_bullets("04", wrist_cat, head_cat, knee_cat)
+    # 05（mainを head_cat として使う）
+    g5, b5 = pick_2to6_bullets("05", head_cat, head_cat, knee_cat)
+    # 06（mainを knee_cat として使う）
+    g6, b6 = pick_2to6_bullets("06", knee_cat, head_cat, knee_cat)
+
+    return {
+        "02": {
+            "title": "02. Shoulder Rotation（肩回転）",
+            "value": raw["max_shoulder_rotation"],
+            "good": g2,
+            "bad": b2,
+            "pro_comment": "回転量は“出す”より“揃える”ことで、結果が安定しやすくなります。",
+        },
+        "03": {
+            "title": "03. Hip Rotation（腰回転）",
+            "value": raw["min_hip_rotation"],
+            "good": g3,
+            "bad": b3,
+            "pro_comment": "腰の安定は強みです。上体との同調が取れると一段良くなります。",
+        },
+        "04": {
+            "title": "04. Wrist Cock（コック角）",
+            "value": raw["max_wrist_cock"],
+            "good": g4,
+            "bad": b4,
+            "pro_comment": "コックは“作る”より“自然に入る”形が安定しやすいです。",
+        },
+        "05": {
+            "title": "05. Head Stability（頭部ブレ）",
+            "value": raw["max_head_drift"],
+            "good": g5,
+            "bad": b5,
+            "pro_comment": "頭の位置が整うと、ミート率と方向性は一気に安定します。",
+        },
+        "06": {
+            "title": "06. Knee Stability（膝ブレ）",
+            "value": raw["max_knee_sway"],
+            "good": g6,
+            "bad": b6,
+            "pro_comment": "膝の安定は“軸”そのもの。ここが揃うとブレが減ります。",
+        },
+    }
+
+
+def build_paid_07(raw: Dict[str, Any]) -> Dict[str, Any]:
+    # 02-06の傾向から“個別感”を出す（同じにならないように）
+    issues = []
+    if raw["max_head_drift"] > 0.15:
+        issues.append("頭部ブレ")
+    if raw["max_knee_sway"] > 0.20:
+        issues.append("膝ブレ")
+    if raw["max_wrist_cock"] > 150:
+        issues.append("手首主導（コック過多）")
+    if raw["max_shoulder_rotation"] > 110:
+        issues.append("肩回転の回し過ぎ")
+    if raw["min_hip_rotation"] < 35:
+        issues.append("腰回転の浅さ")
+
+    if not issues:
+        issues_txt = "大きな崩れは見られず、安定した土台が整っています。"
     else:
-        lines.append("頭部・下半身のブレは大きく崩れておらず、安定性の土台は整っています。")
+        issues_txt = "主な改善テーマは「" + "／".join(issues[:3]) + "」です。"
 
-    # 肩と腰
-    if sh > 110 and hip < 35:
-        lines.append("肩の回転が先行しやすく、腰回転が追いつかないことでタイミングがズレやすい可能性があります。")
-    elif sh > 110:
-        lines.append("肩回転量が多めのため、下半身と同調させることでブレを抑えやすくなります。")
-    elif sh < 80:
-        lines.append("肩回転量がやや不足気味のため、上半身の回旋を使えると飛距離効率が上がりやすくなります。")
-
-    # コック
-    if cock > 150:
-        lines.append("コック角が大きめのため、手首主導にならないよう体の回転でクラブを動かす意識が有効です。")
-
-    lines.append("下半身の安定を活かしながら、体の回転とクラブ動作の連動を整えていくことで、方向性と飛距離の両立が期待できます。")
-
-    return {"title": "07. 総合評価（プロ評価）", "text": lines}
+    return {
+        "title": "07. 総合評価（プロ評価）",
+        "text": [
+            "回転量の土台はできており、ポテンシャルは十分にあります。",
+            issues_txt,
+            "今回の結果では「安定性」と「タイミング（手首主導の抑制）」を優先すると、再現性が上がりやすいです。",
+        ],
+    }
 
 
-def build_08_drills(raw: Dict[str, Any]) -> Dict[str, Any]:
-    sh = raw["max_shoulder_rotation"]
-    hip = raw["min_hip_rotation"]
-    cock = raw["max_wrist_cock"]
-    head = raw["max_head_drift"]
-    knee = raw["max_knee_sway"]
-
+def build_paid_08(raw: Dict[str, Any]) -> Dict[str, Any]:
+    # 数値連動：最大3つ
     drills = []
 
-    # 条件1：肩が多め or 肩-腰のギャップ
-    if sh > 110 or (sh - hip) > 70:
+    shoulder_cat = cat3_by_range(raw["max_shoulder_rotation"], 80, 110)
+    head_cat = cat3_sway(raw["max_head_drift"], 0.05, 0.15)
+    knee_cat = cat3_sway(raw["max_knee_sway"], 0.05, 0.20)
+    wrist_cat = cat3_by_range(raw["max_wrist_cock"], 120, 150)
+
+    # 1) 同調（肩がhigh or shoulderと安定性課題）
+    if shoulder_cat == "high" or head_cat == "bad" or knee_cat == "bad":
         drills.append({
             "name": "上半身と下半身の同調ドリル（クロスアームターン）",
-            "purpose": "肩先行を抑え、体全体で回す感覚を作る",
-            "how": "①胸の前で腕を軽くクロス\n②下半身を安定させたまま胸と腰を同時に回す\n③肩だけが先に回らないか確認する"
+            "purpose": "上半身だけが先行する動きを抑え、体全体で回す感覚を作る",
+            "how": "①胸の前で腕を軽く組む\n②下半身を固定して胸と腰を同時に回す\n③左右交互に10回×2セット",
         })
 
-    # 条件2：コック大
-    if cock > 150:
+    # 2) 手首主導抑制（コック high）
+    if wrist_cat == "high":
         drills.append({
             "name": "L to L スイング",
-            "purpose": "手首主導を抑え、体の回転でクラブを動かす",
-            "how": "①腰〜腰の振り幅で構える\n②体の回転でクラブを動かす\n③手先で調整しないリズムで反復する"
+            "purpose": "コック過多を抑え、体の回転でクラブを動かす",
+            "how": "①腰〜腰の小さい振り幅\n②手先で合わせず回転で振る\n③一定リズムで20回",
         })
 
-    # 条件3：ブレが大きい
-    if head > 0.15 or knee > 0.20:
+    # 3) 軸安定（head/knee bad）
+    if head_cat == "bad" or knee_cat == "bad":
         drills.append({
-            "name": "壁チェック（ヘッドステイ＋膝安定）",
-            "purpose": "軸ブレを抑え、インパクトの再現性を上げる",
-            "how": "①壁の近くでアドレスし頭の位置を基準にする\n②ハーフ〜スリークォーターで素振り\n③頭と膝が左右に流れないか確認する"
+            "name": "壁チェック（軸安定）",
+            "purpose": "頭部・下半身の左右ブレを抑える",
+            "how": "①壁の前でアドレス\n②頭と壁の距離を一定に保つ\n③膝の横流れも同時に確認",
         })
 
-    # 最大3つ
     drills = drills[:3]
-
-    # 何も該当しない場合の保険
     if not drills:
-        drills.append({
-            "name": "テンポ一定ドリル（ハーフスイング）",
-            "purpose": "回転量を保ったまま再現性を高める",
-            "how": "①ハーフスイングで一定テンポ\n②同じ打点・同じリズムを優先\n③力感を上げずに反復する"
-        })
+        drills = [{
+            "name": "テンポドリル（メトロノーム）",
+            "purpose": "再現性を上げるためにタイミングを一定にする",
+            "how": "①ゆっくり素振り\n②同じテンポで10回\n③その後ボールを10球",
+        }]
 
     return {"title": "08. Training Drills（練習ドリル）", "drills": drills}
 
 
-def build_09_fitting(raw: Dict[str, Any]) -> Dict[str, Any]:
-    sh = raw["max_shoulder_rotation"]
-    cock = raw["max_wrist_cock"]
-    head = raw["max_head_drift"]
-    knee = raw["max_knee_sway"]
+def build_paid_09(raw: Dict[str, Any]) -> Dict[str, Any]:
+    # 入力（HS/ミス傾向）がない前提 → 断定しないがレンジを削って“答え”にする
+    head_bad = raw["max_head_drift"] > 0.15
+    knee_bad = raw["max_knee_sway"] > 0.20
+    wrist_high = raw["max_wrist_cock"] > 150
 
-    stability_risk = (head > 0.15) or (knee > 0.20)
-    wrist_risk = (cock > 150)
-    rotate_risk = (sh > 110)
+    rows = []
 
-    # 方針：レンジを削って答えにする
-    weight_guide = "50g台後半〜60g台前半"
-    weight_reason = "軽すぎると再現性が落ちやすいため"
-    if not stability_risk and not wrist_risk:
-        weight_guide = "50g台前半〜60g台前半"
-        weight_reason = "振り切りやすさと安定性のバランスを取りやすいため"
+    # 重量
+    if head_bad or knee_bad or wrist_high:
+        weight = "50g台後半〜60g台前半"
+        reason = "軽すぎるとタイミングが合いにくく、再現性が落ちやすいため"
+    else:
+        weight = "50g台前半〜60g台前半"
+        reason = "振り切りやすさと安定性のバランスが取りやすいため"
+    rows.append({"item": "重量", "guide": weight, "reason": reason})
 
-    kick_guide = "中調子〜中元調子"
-    kick_reason = "タイミングと安定性を取りやすいため"
-    if rotate_risk or wrist_risk:
-        kick_guide = "中調子〜元調子寄り"
-        kick_reason = "挙動を安定させ、回し過ぎ・手首主導の影響を抑えやすいため"
+    # キックポイント
+    if wrist_high:
+        kp = "中調子〜中元調子"
+        reason = "先調子寄りだと挙動が大きくなりやすいため"
+    else:
+        kp = "中調子"
+        reason = "タイミングと再現性を取りやすいため"
+    rows.append({"item": "キックポイント", "guide": kp, "reason": reason})
 
-    flex_guide = "R〜SR〜S"
-    flex_reason = "柔らかすぎるとタイミングが合いにくいため"
+    # フレックス（HS未入力なので幅を残す）
+    flex = "R〜SR〜S"
+    rows.append({"item": "フレックス", "guide": flex, "reason": "柔らかすぎるとタイミングが合いにくくなるため"})
 
-    torque_guide = "3.5〜4.5"
-    torque_reason = "フェース挙動を安定させやすいため"
-    if stability_risk or wrist_risk:
-        torque_guide = "3.0〜4.0"
-        torque_reason = "ブレを抑えて方向性を安定させやすいため"
+    # トルク
+    if wrist_high or head_bad:
+        tq = "3.5〜4.5"
+        reason = "手元の暴れを抑えて方向性を安定させやすいため"
+    else:
+        tq = "4.0〜5.0"
+        reason = "適度なしなり感で振りやすさを確保しやすいため"
+    rows.append({"item": "トルク", "guide": tq, "reason": reason})
 
-    table = [
-        {"item": "①重量（40g台〜70g台）", "guide": weight_guide, "reason": weight_reason},
-        {"item": "②キックポイント（先・中・元）", "guide": kick_guide, "reason": kick_reason},
-        {"item": "③フレックス（L/A/R/SR/S/X）", "guide": flex_guide, "reason": flex_reason},
-        {"item": "④トルク（3.0〜6.0）", "guide": torque_guide, "reason": torque_reason},
-    ]
-
-    note = "本結果はあくまでも指標です。ご購入の際は試打を行った上でご検討ください。"
-    return {"title": "09. Shaft Fitting Guide（推奨）", "table": table, "note": note}
+    return {
+        "title": "09. Shaft Fitting Guide（推奨）",
+        "table": rows,
+        "note": "本結果はあくまでも指標です。ご購入の際は試打を行った上でご検討ください。",
+    }
 
 
-def build_10_summary() -> Dict[str, Any]:
+def build_paid_10(raw: Dict[str, Any]) -> Dict[str, Any]:
     return {
         "title": "10. Summary（まとめ）",
         "text": [
-            "今回のスイング解析では、回転量を活かせるポテンシャルが確認できました。",
-            "体の同調と安定性を高めることで、さらなるレベルアップが期待できます。",
+            "今回の解析では、回転量を活かせるポテンシャルが確認できました。",
+            "次のステップは「安定性」と「タイミング」を揃えることです。",
             "練習ドリルとフィッティング指針を参考に、段階的に改善を進めていきましょう。",
             "",
             "あなたのゴルフライフが、より充実したものになることを切に願っています。",
@@ -504,31 +591,18 @@ def build_10_summary() -> Dict[str, Any]:
     }
 
 
-def build_analysis(raw: Dict[str, Any], is_premium: bool) -> Dict[str, Any]:
-    analysis: Dict[str, Any] = {"01": build_01(raw)}
+def build_analysis(raw: Dict[str, Any], premium: bool) -> Dict[str, Any]:
+    analysis: Dict[str, Any] = {"01": build_section_01(raw)}
 
-    if not is_premium:
-        # 無料版は 01 と 07（無料用）だけ運用するなら、ここに無料07を入れる
-        analysis["07"] = {
-            "title": "07. 総合評価",
-            "text": [
-                "骨格データからスイング全体の傾向を評価しました。",
-                "安定性と回転量のバランスを整えることで、再現性の向上が期待できます。",
-                "",
-                "より詳しい分析をご希望の方へ",
-                "本レポートでは、スイング全体の傾向を骨格データに基づいて評価しています。",
-                "ご自身のスイングを深く理解したい方は、ぜひフルレポートをご活用ください。",
-            ],
-        }
+    if not premium:
+        analysis["07"] = build_free_07(raw)
         return analysis
 
-    # 有料版
-    analysis.update(build_02_to_06(raw))
-    analysis["07"] = build_07_paid(raw)
-    analysis["08"] = build_08_drills(raw)
-    analysis["09"] = build_09_fitting(raw)
-    analysis["10"] = build_10_summary()
-
+    analysis.update(build_paid_02_to_06(raw))
+    analysis["07"] = build_paid_07(raw)
+    analysis["08"] = build_paid_08(raw)
+    analysis["09"] = build_paid_09(raw)
+    analysis["10"] = build_paid_10(raw)
     return analysis
 
 
@@ -537,17 +611,15 @@ def build_analysis(raw: Dict[str, Any], is_premium: bool) -> Dict[str, Any]:
 # ==================================================
 @app.route("/health", methods=["GET"])
 def health():
-    return jsonify(
-        {
-            "ok": True,
-            "project_id": PROJECT_ID,
-            "queue_location": QUEUE_LOCATION,
-            "queue_name": QUEUE_NAME,
-            "service_host_url": SERVICE_HOST_URL,
-            "task_handler_url": TASK_HANDLER_URL,
-            "task_sa_email_set": bool(TASK_SA_EMAIL),
-        }
-    )
+    return jsonify({
+        "ok": True,
+        "project_id": PROJECT_ID,
+        "queue_location": QUEUE_LOCATION,
+        "queue_name": QUEUE_NAME,
+        "service_host_url": SERVICE_HOST_URL,
+        "task_handler_url": TASK_HANDLER_URL,
+        "task_sa_email_set": bool(TASK_SA_EMAIL),
+    })
 
 
 @app.route("/webhook", methods=["POST"])
@@ -604,12 +676,13 @@ def task_handler():
 
     tmpdir = tempfile.mkdtemp()
     video_path = os.path.join(tmpdir, f"{message_id}.mp4")
+
     doc_ref = db.collection("reports").document(report_id)
 
     try:
-        doc_ref.set({"status": "IN_PROGRESS"}, merge=True)
+        doc_ref.update({"status": "IN_PROGRESS"})
 
-        # download from LINE
+        # download
         content = line_bot_api.get_message_content(message_id)
         with open(video_path, "wb") as f:
             for chunk in content.iter_content():
@@ -619,25 +692,23 @@ def task_handler():
         raw_data = analyze_swing_with_mediapipe(video_path)
 
         # build report
-        premium = bool(doc_ref.get().to_dict().get("is_premium", False))
+        doc = doc_ref.get()
+        premium = bool((doc.to_dict() or {}).get("is_premium", False))
         analysis = build_analysis(raw_data, premium)
 
-        doc_ref.set(
-            {
-                "status": "COMPLETED",
-                "raw_data": raw_data,
-                "analysis": analysis,
-                "updated_at": firestore.SERVER_TIMESTAMP,
-            },
-            merge=True,
-        )
+        doc_ref.update({
+            "status": "COMPLETED",
+            "raw_data": raw_data,
+            "analysis": analysis,
+            "updated_at": firestore.SERVER_TIMESTAMP,
+        })
 
         safe_line_push(user_id, make_done_push(report_id))
         return jsonify({"ok": True}), 200
 
     except Exception as e:
         print(traceback.format_exc())
-        doc_ref.set({"status": "FAILED", "error": str(e)}, merge=True)
+        doc_ref.update({"status": "FAILED", "error": str(e)})
         safe_line_push(user_id, "システムエラーが発生し、解析を完了できませんでした。")
         return "Internal Error", 500
 
@@ -646,29 +717,28 @@ def task_handler():
 
 
 @app.route("/report/<report_id>")
-def report_page(report_id: str):
+def report_page(report_id):
+    # ★Jinjaでanalysisを参照しない（UndefinedError対策）
     return render_template("report.html", report_id=report_id)
 
 
 @app.route("/api/report_data/<report_id>")
-def api_report_data(report_id: str):
+def api_report_data(report_id):
     doc = db.collection("reports").document(report_id).get()
     if not doc.exists:
         return jsonify({"error": "not found"}), 404
     d = doc.to_dict() or {}
-    return jsonify(
-        {
-            "status": d.get("status"),
-            "analysis": d.get("analysis", {}),
-            "raw_data": d.get("raw_data", {}),
-            "error": d.get("error"),
-            "created_at": d.get("created_at"),
-            "is_premium": d.get("is_premium", False),
-        }
-    )
+    return jsonify({
+        "status": d.get("status"),
+        "analysis": d.get("analysis", {}),
+        "raw_data": d.get("raw_data", {}),
+        "is_premium": d.get("is_premium", False),
+        "error": d.get("error"),
+        "created_at": d.get("created_at"),
+    })
 
 
 if __name__ == "__main__":
-    # Cloud Run では gunicorn 起動が基本。ローカル用。
     port = int(os.environ.get("PORT", "8080"))
     app.run(host="0.0.0.0", port=port)
+
