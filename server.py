@@ -125,8 +125,39 @@ def _safe_std(xs: List[float]) -> float:
 # Premium判定（本番は決済と連携）
 # ==================================================
 def is_premium_user(user_id: str) -> bool:
-    # Stripe連携後に置き換え
-    return True
+    """
+    Firestore の users/{user_id} を参照して premium 判定を行う
+    """
+    doc_ref = users_ref.document(user_id)
+    doc = doc_ref.get()
+
+    # 初回ユーザー → free で作成
+    if not doc.exists:
+        doc_ref.set({
+            "plan": "free",
+            "ticket_remaining": 0,
+            "plan_expire_at": None,
+            "created_at": firestore.SERVER_TIMESTAMP,
+            "updated_at": firestore.SERVER_TIMESTAMP,
+        })
+        return False
+
+    data = doc.to_dict() or {}
+    plan = data.get("plan", "free")
+
+    # 1回課金 or 回数券
+    if plan in ("single", "ticket"):
+        return data.get("ticket_remaining", 0) > 0
+
+    # 月額
+    if plan == "monthly":
+        expire = data.get("plan_expire_at")
+        if expire and expire.replace(tzinfo=timezone.utc) > datetime.now(timezone.utc):
+            return True
+        return False
+
+    return False
+
 
 
 # ==================================================
