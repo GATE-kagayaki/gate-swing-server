@@ -1393,7 +1393,18 @@ def webhook():
 
 @handler.add(MessageEvent, message=VideoMessage)
 def handle_video(event: MessageEvent):
-    user_id = event.source.user_id
+       user_id = event.source.user_id
+
+    # 無料ユーザー 月3回制限
+    if not is_premium_user(user_id):
+        if not can_use_free_plan(user_id):
+            safe_line_reply(
+                event.reply_token,
+                "⚠️ 無料プランは月3回までです。\n有料プランをご検討ください。"
+            )
+            return
+        increment_free_usage(user_id)
+
     msg = event.message
     report_id = f"{user_id}_{msg.id}"
 
