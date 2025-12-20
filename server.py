@@ -1,3 +1,4 @@
+# server.py（完成版・全文）
 import os
 import json
 import math
@@ -160,7 +161,7 @@ def create_cloud_task(report_id: str, user_id: str, message_id: str) -> str:
 
 
 # ==================================================
-# MediaPipe analysis（max/mean/std/conf + 順序判定用 series）
+# MediaPipe analysis（max/mean/std/conf）
 # ==================================================
 def analyze_swing_with_mediapipe(video_path: str) -> Dict[str, Any]:
     import cv2
@@ -180,10 +181,6 @@ def analyze_swing_with_mediapipe(video_path: str) -> Dict[str, Any]:
     heads: List[float] = []
     knees: List[float] = []
     x_factors: List[float] = []
-
-    # 順序判定用（フレーム系列）
-    sh_series: List[float] = []
-    hip_series: List[float] = []
 
     def angle(p1, p2, p3):
         ax, ay = p1[0] - p2[0], p1[1] - p2[1]
@@ -229,21 +226,18 @@ def analyze_swing_with_mediapipe(video_path: str) -> Dict[str, Any]:
             NO = mp_pose.PoseLandmark.NOSE.value
             LK = mp_pose.PoseLandmark.LEFT_KNEE.value
 
-            sh = float(angle(xy(LS), xy(RS), xy(RH)))
-            hip = float(angle(xy(LH), xy(RH), xy(LK)))
-            wr = float(angle(xy(LE), xy(LW), xy(LI)))
-            hd = float(abs(xy(NO)[0] - 0.5))
-            kn = float(abs(xy(LK)[0] - 0.5))
+            sh = angle(xy(LS), xy(RS), xy(RH))
+            hip = angle(xy(LH), xy(RH), xy(LK))
+            wr = angle(xy(LE), xy(LW), xy(LI))
+            hd = abs(xy(NO)[0] - 0.5)
+            kn = abs(xy(LK)[0] - 0.5)
 
-            shoulders.append(sh)
-            hips.append(hip)
-            wrists.append(wr)
-            heads.append(hd)
-            knees.append(kn)
+            shoulders.append(float(sh))
+            hips.append(float(hip))
+            wrists.append(float(wr))
+            heads.append(float(hd))
+            knees.append(float(kn))
             x_factors.append(float(sh - abs(hip)))
-
-            sh_series.append(sh)
-            hip_series.append(abs(hip))
 
     cap.release()
 
@@ -261,56 +255,16 @@ def analyze_swing_with_mediapipe(video_path: str) -> Dict[str, Any]:
             "std": round(float(_safe_std(xs)), nd),
         }
 
-    def _peak_velocity_index(series: List[float]) -> int:
-        # 速度 = 隣接差分。最大の変化点（絶対値）を「動き出しが強い箇所」として扱う
-        if len(series) < 3:
-            return 0
-        v = [abs(series[i] - series[i - 1]) for i in range(1, len(series))]
-        # ごく端のノイズ回避：最初と最後の1/10を除外して探索（最低限のガード）
-        n = len(v)
-        lo = max(0, int(n * 0.1))
-        hi = min(n, int(n * 0.9))
-        if hi - lo < 5:
-            lo, hi = 0, n
-        best_i = lo
-        best_val = -1.0
-        for i in range(lo, hi):
-            if v[i] > best_val:
-                best_val = v[i]
-                best_i = i
-        return best_i  # vのindex（= series側では best_i+1）
-
-    sh_i = _peak_velocity_index(sh_series)
-    hip_i = _peak_velocity_index(hip_series)
-    # 何フレーム差で「先行」とみなすか（短い動画でも破綻しにくい閾値）
-    lead_thr = 3
-
-    if hip_i + lead_thr < sh_i:
-        sequence = "hip_first"
-    elif sh_i + lead_thr < hip_i:
-        sequence = "shoulder_first"
-    else:
-        sequence = "sync"
-
     return {
         "frame_count": int(total_frames),
         "valid_frames": int(valid_frames),
         "confidence": round(conf, 3),
-
         "shoulder": pack(shoulders, 2),
         "hip": pack(hips, 2),
         "wrist": pack(wrists, 2),
         "head": pack(heads, 4),
         "knee": pack(knees, 4),
         "x_factor": pack(x_factors, 2),
-
-        # 07用メタ
-        "sequence": {
-            "type": sequence,          # hip_first / shoulder_first / sync
-            "shoulder_peak_i": int(sh_i),
-            "hip_peak_i": int(hip_i),
-            "threshold_frames": int(lead_thr),
-        },
     }
 
 
@@ -368,8 +322,10 @@ def build_section_01(raw: Dict[str, Any]) -> Dict[str, Any]:
 
 
 # ==================================================
-# 02〜06：良い点／改善点（無ければ「特にありません」）
-# ＋プロ目線（矛盾なし／数値の繰り返しは最小限／言語化を厚く）
+# 02〜06：良い点／改善点
+#  - 良い点は最低1行（無い場合は「良い点は特にありません。」）
+#  - 改善点は無ければ「改善点は特にありません。」
+#  - プロ目線：数値の言い換え中心（過度に数値列挙しない／矛盾しない／「毎回」禁止）
 # ==================================================
 def _conf(raw: Dict[str, Any]) -> float:
     return float(raw.get("confidence", 0.0))
@@ -387,21 +343,28 @@ def judge_shoulder(raw: Dict[str, Any]) -> Dict[str, Any]:
     sh = raw["shoulder"]
     xf = raw["x_factor"]
 
-    tags: List[str] = []
+    main = "mid"
     if sh["mean"] < 85:
-        tags.append("肩回転不足")
+        main = "low"
     elif sh["mean"] > 105:
-        tags.append("肩回転過多")
+        main = "high"
 
+    rel = "mid"
     if xf["mean"] < 35:
-        tags.append("捻転差不足")
+        rel = "low"
     elif xf["mean"] > 55:
+        rel = "high"
+
+    tags: List[str] = []
+    if main == "low":
+        tags.append("肩回転不足")
+    if main == "high":
+        tags.append("肩回転過多")
+    if rel == "low":
+        tags.append("捻転差不足")
+    if rel == "high":
         tags.append("捻転差過多")
-
-    if sh["std"] > 15:
-        tags.append("肩回転バラつき大")
-
-    return {"tags": tags}
+    return {"main": main, "related": rel, "tags": tags}
 
 
 def build_paid_02_shoulder(raw: Dict[str, Any], seed: str) -> Dict[str, Any]:
@@ -413,13 +376,17 @@ def build_paid_02_shoulder(raw: Dict[str, Any], seed: str) -> Dict[str, Any]:
     good: List[str] = []
     bad: List[str] = []
 
+    # 良い点（最低1行）
+    if sh["std"] <= 10:
+        good.append("肩の回し幅は揃っており、上半身の再現性は確保されています。")
     if 85 <= sh["mean"] <= 105:
-        good.append(f"肩回転は mean {sh['mean']}°で、量は基準レンジです。")
-    if sh["std"] <= 12:
-        good.append(f"肩回転のばらつき（σ {sh['std']}°）は抑えられており、上半身の回旋は揃っています。")
+        good.append("肩の回旋量は基準レンジに収まっています。")
     if xf["mean"] >= 35:
-        good.append(f"捻転差は mean {xf['mean']}°で、肩と腰の差は確保されています。")
+        good.append("肩と腰の差（捻転差）は確保できています。")
+    if not good:
+        good = ["良い点は特にありません。"]
 
+    # 改善点
     if sh["mean"] < 85:
         bad.append(f"肩回転は mean {sh['mean']}°で不足です。")
     if sh["mean"] > 105:
@@ -428,22 +395,21 @@ def build_paid_02_shoulder(raw: Dict[str, Any], seed: str) -> Dict[str, Any]:
         bad.append(f"捻転差は mean {xf['mean']}°で不足です。")
     if sh["std"] > 15:
         bad.append(f"肩回転のばらつき（σ {sh['std']}°）が大きく、回旋量が揃っていません。")
-
-    if not good:
-        good = ["良い点は特にありません。"]
     if not bad:
         bad = ["改善点は特にありません。"]
 
-    pro_comment = (
-        "上半身は回り幅そのものより、回した量を同じ幅で再現できているかが評価軸です。 "
-        "捻転差が不足している場合は、肩が回っているのに“溜め”が残らず、切り返しで加速の材料が作れません。 "
-        "ばらつきが大きい場合は、同じトップを作れていないため、インパクトの再現性が落ちます。"
-        if xf["mean"] < 35 or sh["std"] > 15
-        else
-        "上半身は基準レンジで、回し過ぎ・不足のどちらにも寄っていません。 "
-        "捻転差が確保できているため、切り返しで“溜め”を作る土台があります。 "
-        "この区間では、上半身が主因でスイングが崩れる状態ではありません。"
-    )
+    # プロ目線（言語化）
+    pro_lines: List[str] = []
+    pro_lines.append("上半身は回り幅そのものより、回した量を同じ幅で再現できているかが評価軸です。")
+    if xf["mean"] < 35:
+        pro_lines.append("捻転差が不足している場合は、肩が回っても“溜め”が残らず、切り返しの加速材料が作れません。")
+    else:
+        pro_lines.append("捻転差が確保できている場合は、切り返しで“溜め”が残り、加速の材料を作れます。")
+    if sh["std"] > 15:
+        pro_lines.append("ばらつきが大きい状態は、トップの形が揃わず、インパクトの再現性が落ちます。")
+    else:
+        pro_lines.append("ばらつきが抑えられている状態は、同じトップを作れており、再現性の土台があります。")
+    pro_comment = " ".join(pro_lines[:3])
 
     return {
         "title": "02. Shoulder Rotation（肩回転）",
@@ -459,21 +425,28 @@ def judge_hip(raw: Dict[str, Any]) -> Dict[str, Any]:
     hip = raw["hip"]
     xf = raw["x_factor"]
 
-    tags: List[str] = []
+    main = "mid"
     if hip["mean"] < 36:
-        tags.append("腰回転不足")
+        main = "low"
     elif hip["mean"] > 50:
-        tags.append("腰回転過多")
+        main = "high"
 
+    rel = "mid"
     if xf["mean"] < 35:
-        tags.append("捻転差不足")
+        rel = "low"
     elif xf["mean"] > 55:
+        rel = "high"
+
+    tags: List[str] = []
+    if main == "low":
+        tags.append("腰回転不足")
+    if main == "high":
+        tags.append("腰回転過多")
+    if rel == "low":
+        tags.append("捻転差不足")
+    if rel == "high":
         tags.append("捻転差過多")
-
-    if hip["std"] > 15:
-        tags.append("腰回転バラつき大")
-
-    return {"tags": tags}
+    return {"main": main, "related": rel, "tags": tags}
 
 
 def build_paid_03_hip(raw: Dict[str, Any], seed: str) -> Dict[str, Any]:
@@ -485,11 +458,15 @@ def build_paid_03_hip(raw: Dict[str, Any], seed: str) -> Dict[str, Any]:
     good: List[str] = []
     bad: List[str] = []
 
+    # 良い点（最低1行）
+    if hip["std"] <= 10:
+        good.append("腰の回し幅は揃っており、下半身の再現性は確保されています。")
     if 36 <= hip["mean"] <= 50:
-        good.append(f"腰回転は mean {hip['mean']}°で、量は基準レンジです。")
-    if hip["std"] <= 12:
-        good.append(f"腰回転のばらつき（σ {hip['std']}°）は抑えられており、下半身の回旋は揃っています。")
+        good.append("腰の回旋量は基準レンジに収まっています。")
+    if not good:
+        good = ["良い点は特にありません。"]
 
+    # 改善点
     if hip["mean"] > 50:
         bad.append(f"腰回転は mean {hip['mean']}°で過多です。")
     if hip["mean"] < 36:
@@ -498,25 +475,23 @@ def build_paid_03_hip(raw: Dict[str, Any], seed: str) -> Dict[str, Any]:
         bad.append(f"捻転差は mean {xf['mean']}°で不足です。")
     if hip["std"] > 15:
         bad.append(f"腰回転のばらつき（σ {hip['std']}°）が大きく、回旋量が揃っていません。")
-
-    if not good:
-        good = ["良い点は特にありません。"]
     if not bad:
         bad = ["改善点は特にありません。"]
 
-    # 「毎回」禁止 → 「本動画内」表現に統一
-    if hip["mean"] > 50 or hip["std"] > 15:
-        pro_comment = (
-            "腰は回転量そのものより、切り返し前後で“同じ回し幅”を保てているかが質の評価になります。 "
-            "ばらつきが大きい場合は、本動画内で腰の回し始め・回し幅が一定になっておらず、上体が先にほどける原因になります。 "
-            "捻転差が不足している場合は、腰と肩が同じタイミングで動いてしまい、下半身主導の形が作れません。"
-        )
+    # プロ目線（言語化）
+    pro_lines: List[str] = []
+    pro_lines.append("腰は「回す量」ではなく、「肩との順序」と「回し幅の揃い方」で質が決まります。")
+    if hip["mean"] > 50:
+        pro_lines.append("腰の回旋量が大きい状態は、腰が先に回って上体が開きやすく、当たり所が散ります。")
+    elif hip["mean"] < 36:
+        pro_lines.append("腰の回旋量が不足している状態は、下半身主導が作れず、上体の力みで操作が増えます。")
     else:
-        pro_comment = (
-            "腰回転は基準レンジで、下半身主導の土台があります。 "
-            "ばらつきが抑えられているため、本動画内で回し幅の再現性も確保できています。 "
-            "この区間では、腰の動きが原因で大きく崩れる状態ではありません。"
-        )
+        pro_lines.append("腰の回旋量が基準帯にある状態は、下半身主導を作れる土台があります。")
+    if hip["std"] > 15:
+        pro_lines.append("ばらつきが大きい状態は、切り返し付近の下半身の形が揃わず、タイミングが安定しません。")
+    else:
+        pro_lines.append("ばらつきが抑えられている状態は、切り返し付近の形が揃っており、安定の土台があります。")
+    pro_comment = " ".join(pro_lines[:3])
 
     return {
         "title": "03. Hip Rotation（腰回転）",
@@ -530,53 +505,73 @@ def build_paid_03_hip(raw: Dict[str, Any], seed: str) -> Dict[str, Any]:
 
 def judge_wrist(raw: Dict[str, Any]) -> Dict[str, Any]:
     w = raw["wrist"]
-    tags: List[str] = []
+    xf = raw["x_factor"]
+
+    main = "mid"
     if w["mean"] < 70:
-        tags.append("コック不足")
+        main = "low"
     elif w["mean"] > 90:
+        main = "high"
+
+    rel = "mid"
+    if xf["mean"] < 35:
+        rel = "low"
+    elif xf["mean"] > 55:
+        rel = "high"
+
+    tags: List[str] = []
+    if main == "low":
+        tags.append("コック不足")
+    if main == "high":
         tags.append("コック過多")
-    if w["std"] > 15:
-        tags.append("手首バラつき大")
-    return {"tags": tags}
+    if rel == "low":
+        tags.append("捻転差不足")
+    return {"main": main, "related": rel, "tags": tags}
 
 
 def build_paid_04_wrist(raw: Dict[str, Any], seed: str) -> Dict[str, Any]:
     j = judge_wrist(raw)
     w = raw["wrist"]
+    xf = raw["x_factor"]
     conf = _conf(raw)
 
     good: List[str] = []
     bad: List[str] = []
 
+    # 良い点（最低1行）
+    if w["std"] <= 10:
+        good.append("手元の角度変化は揃っており、インパクト条件の再現性は確保されています。")
     if 70 <= w["mean"] <= 90:
-        good.append(f"手首コックは mean {w['mean']}°で、量は基準レンジです。")
-    if w["std"] <= 12:
-        good.append(f"手首コックのばらつき（σ {w['std']}°）は抑えられており、形は揃っています。")
+        good.append("手首コック量は基準レンジに収まっています。")
+    if not good:
+        good = ["良い点は特にありません。"]
 
+    # 改善点
     if w["mean"] < 70:
         bad.append(f"手首コックは mean {w['mean']}°で不足です。")
     if w["mean"] > 90:
         bad.append(f"手首コックは mean {w['mean']}°で過多です。")
     if w["std"] > 15:
-        bad.append(f"手首コックのばらつき（σ {w['std']}°）が大きく、形が揃っていません。")
-
-    if not good:
-        good = ["良い点は特にありません。"]
+        bad.append(f"手首コックのばらつき（σ {w['std']}°）が大きく、動きが揃っていません。")
+    if xf["mean"] < 35:
+        bad.append(f"捻転差は mean {xf['mean']}°で不足です。")
     if not bad:
         bad = ["改善点は特にありません。"]
 
-    if w["mean"] > 90 or w["std"] > 15:
-        pro_comment = (
-            "手首が主役になると、体の回転よりもフェース操作で当てにいく割合が増えます。 "
-            "ばらつきが大きい場合は、本動画内で“同じ手首の形”を作れていないため、インパクトの再現性が落ちます。 "
-            "手首は量を増やすより、トップで作った角度を崩さずに体の回転で運べているかが評価ポイントです。"
-        )
+    # プロ目線（言語化）
+    pro_lines: List[str] = []
+    pro_lines.append("手元は「コック量の大小」より、体の回転に対して手元が介入し過ぎていないかが評価軸です。")
+    if w["mean"] > 90:
+        pro_lines.append("コックが過多の状態は、体幹より手元が主役になりやすく、方向と打点が散りやすくなります。")
+    elif w["mean"] < 70:
+        pro_lines.append("コックが不足の状態は、溜めが作りにくく、打ち出しと飛距離の伸びしろを潰します。")
     else:
-        pro_comment = (
-            "手首の量は基準レンジで、形も揃っています。 "
-            "この区間では、手首操作が原因でミスを増やす状態ではありません。 "
-            "手首は現状のまま、体幹と下半身の動きに優先度を置けます。"
-        )
+        pro_lines.append("コック量が基準帯にある状態は、体幹主導に寄せやすい土台があります。")
+    if w["std"] > 15:
+        pro_lines.append("ばらつきが大きい状態は、フェース管理が安定せず、ミスの幅が広がります。")
+    else:
+        pro_lines.append("ばらつきが抑えられている状態は、フェース管理が安定しやすい土台があります。")
+    pro_comment = " ".join(pro_lines[:3])
 
     return {
         "title": "04. Wrist Cock（手首コック）",
@@ -590,47 +585,57 @@ def build_paid_04_wrist(raw: Dict[str, Any], seed: str) -> Dict[str, Any]:
 
 def judge_head(raw: Dict[str, Any]) -> Dict[str, Any]:
     h = raw["head"]
+    k = raw["knee"]
+
     tags: List[str] = []
     if h["mean"] > 0.15:
         tags.append("頭部ブレ大")
-    if h["std"] > 0.05:
-        tags.append("頭位置バラつき大")
+    if k["mean"] > 0.20:
+        tags.append("膝ブレ大")  # 07判定の整合のため head側にも付与してよい
+    if k["mean"] > 0.20:
+        tags.append("下半身不安定")
     return {"tags": tags}
 
 
 def build_paid_05_head(raw: Dict[str, Any], seed: str) -> Dict[str, Any]:
     j = judge_head(raw)
     h = raw["head"]
+    k = raw["knee"]
     conf = _conf(raw)
 
     good: List[str] = []
     bad: List[str] = []
 
-    if h["mean"] <= 0.10 and h["std"] <= 0.03:
-        good.append(f"頭部ブレは mean {h['mean']}で小さく、軸は安定しています。")
+    # 良い点（最低1行）：「軸が揃っている」＝stdで拾う
+    if h["std"] <= 0.03:
+        good.append("頭の位置は揃っており、再現性の土台はあります。")
+    if h["mean"] <= 0.10:
+        good.append("頭の左右ブレは抑えられており、軸は安定しています。")
+    if not good:
+        good = ["良い点は特にありません。"]
 
+    # 改善点
     if h["mean"] > 0.15:
         bad.append(f"頭部ブレは mean {h['mean']}で大きく、軸が崩れています。")
     if h["std"] > 0.05:
         bad.append(f"頭部ブレのばらつき（σ {h['std']}）が大きく、位置が揃っていません。")
-
-    if not good:
-        good = ["良い点は特にありません。"]
+    if k["mean"] > 0.20:
+        bad.append(f"膝ブレは mean {k['mean']}で大きく、頭部ブレを増幅させています。")
     if not bad:
         bad = ["改善点は特にありません。"]
 
-    if h["mean"] > 0.15 or h["std"] > 0.05:
-        pro_comment = (
-            "頭は“動かないこと”が正解ではなく、動いたとしても同じ量・同じ方向に収まることが安定の条件です。 "
-            "本動画内でブレ量が大きい場合は、回転や体重移動の中で軸が逃げており、打点・入射角が一定になりません。 "
-            "頭部は結果の指標で、原因は膝や骨盤の横流れにあることが多いため、同時に下半身の安定も確認します。"
-        )
+    # プロ目線（言語化）
+    pro_lines: List[str] = []
+    pro_lines.append("頭部は「動いたかどうか」より、動いても同じ場所に戻れるか（軸の再現性）が評価軸です。")
+    if h["mean"] > 0.15:
+        pro_lines.append("頭が大きく動く状態は、軸が傾いて当たり所がズレやすく、打ち出しと曲がりが不安定になります。")
     else:
-        pro_comment = (
-            "頭部は安定しており、軸がスイング中に大きく逃げていません。 "
-            "この区間では、頭の動きが直接ミスを増やす状態ではありません。 "
-            "安定している指標なので、他の優先テーマに集中できます。"
-        )
+        pro_lines.append("頭の動きが抑えられている状態は、軸が保たれ、打点が安定しやすくなります。")
+    if h["std"] <= 0.03 and h["mean"] > 0.15:
+        pro_lines.append("動きは大きい一方で揃いはあるため、原因が固定されており修正の方向性は絞れます。")
+    else:
+        pro_lines.append("揃いが取れていない場合は、軸の作り方が一定でなく、ミスの出方が散ります。")
+    pro_comment = " ".join(pro_lines[:3])
 
     return {
         "title": "05. Head Stability（頭部）",
@@ -644,47 +649,55 @@ def build_paid_05_head(raw: Dict[str, Any], seed: str) -> Dict[str, Any]:
 
 def judge_knee(raw: Dict[str, Any]) -> Dict[str, Any]:
     k = raw["knee"]
+    h = raw["head"]
+
     tags: List[str] = []
     if k["mean"] > 0.20:
         tags.append("膝ブレ大")
-    if k["std"] > 0.06:
-        tags.append("膝位置バラつき大")
+    if h["mean"] > 0.15:
+        tags.append("上半身不安定")
     return {"tags": tags}
 
 
 def build_paid_06_knee(raw: Dict[str, Any], seed: str) -> Dict[str, Any]:
     j = judge_knee(raw)
     k = raw["knee"]
+    h = raw["head"]
     conf = _conf(raw)
 
     good: List[str] = []
     bad: List[str] = []
 
-    if k["mean"] <= 0.12 and k["std"] <= 0.04:
-        good.append(f"膝ブレは mean {k['mean']}で小さく、下半身は安定しています。")
+    # 良い点（最低1行）：「揃い」をstdで拾う
+    if k["std"] <= 0.04:
+        good.append("膝の位置は揃っており、下半身の再現性の土台はあります。")
+    if k["mean"] <= 0.12:
+        good.append("膝の左右ブレは抑えられており、土台は安定しています。")
+    if not good:
+        good = ["良い点は特にありません。"]
 
+    # 改善点
     if k["mean"] > 0.20:
         bad.append(f"膝ブレは mean {k['mean']}で大きく、土台が崩れています。")
     if k["std"] > 0.06:
         bad.append(f"膝ブレのばらつき（σ {k['std']}）が大きく、位置が揃っていません。")
-
-    if not good:
-        good = ["良い点は特にありません。"]
+    if h["mean"] > 0.15:
+        bad.append(f"頭部ブレは mean {h['mean']}で大きく、膝ブレと同時に軸が崩れています。")
     if not bad:
         bad = ["改善点は特にありません。"]
 
-    if k["mean"] > 0.20 or k["std"] > 0.06:
-        pro_comment = (
-            "膝は“回すための支点”で、ここが横に流れると腰の回転が回転ではなくスライドになります。 "
-            "本動画内でブレが大きい場合は、回転の順序以前に土台が崩れており、再現性が落ちる原因になります。 "
-            "膝の安定が出るだけで、腰→肩の順序も作りやすくなります。"
-        )
+    # プロ目線（言語化）
+    pro_lines: List[str] = []
+    pro_lines.append("下半身は「踏めているか」より、回転中も土台が横に流れないかが評価軸です。")
+    if k["mean"] > 0.20:
+        pro_lines.append("膝が流れる状態は、回転の支点がズレて軸が倒れやすく、当たり負けと曲がりが増えます。")
     else:
-        pro_comment = (
-            "膝の安定が確保できており、土台が崩れてスイングが破綻する状態ではありません。 "
-            "下半身が安定しているため、回転の順序と捻転差を作る作業に移れます。 "
-            "この区間では、膝は強みとして扱えます。"
-        )
+        pro_lines.append("膝が安定している状態は、回転の支点が保たれ、上半身に余計な操作が入りにくくなります。")
+    if k["std"] <= 0.04 and k["mean"] > 0.20:
+        pro_lines.append("流れはある一方で揃いはあるため、原因が固定されており修正の方向性は絞れます。")
+    else:
+        pro_lines.append("揃いが取れていない場合は、土台の作り方が一定でなく、ミスの出方が散ります。")
+    pro_comment = " ".join(pro_lines[:3])
 
     return {
         "title": "06. Knee Stability（膝）",
@@ -697,7 +710,7 @@ def build_paid_06_knee(raw: Dict[str, Any], seed: str) -> Dict[str, Any]:
 
 
 # ==================================================
-# 07：総合評価（5パターン以上 + 順序（sequence）反映 + 具体性）
+# 07：プロ要約（パターンを1〜2増やす／初回ユーザー向けの一文を入れる）
 # ==================================================
 def collect_tag_counter(analysis: Dict[str, Any]) -> Counter:
     tags: List[str] = []
@@ -707,51 +720,25 @@ def collect_tag_counter(analysis: Dict[str, Any]) -> Counter:
     return Counter(tags)
 
 
-def _sequence_label(raw: Dict[str, Any]) -> str:
-    seq = (raw.get("sequence") or {}).get("type")
-    if seq == "hip_first":
-        return "順序：腰→肩（下半身先行）"
-    if seq == "shoulder_first":
-        return "順序：肩→腰（上半身先行）"
-    return "順序：同調（同時に動く傾向）"
+def judge_swing_type(tag_counter: Counter) -> str:
+    # 追加パターン（おすすめの2つ）
+    hand = tag_counter["コック過多"] + tag_counter["コック不足"]
+    lower = tag_counter["腰回転過多"] + tag_counter["腰回転不足"] + tag_counter["膝ブレ大"] + tag_counter["下半身不安定"]
 
+    # 既存の主要パターン
+    if tag_counter["捻転差不足"] >= 2:
+        return "体幹パワー不足型"
+    if tag_counter["膝ブレ大"] + tag_counter["頭部ブレ大"] >= 2:
+        return "安定性不足型"
+    if tag_counter["肩回転過多"] + tag_counter["コック過多"] >= 2:
+        return "操作過多型"
 
-def judge_swing_type_v2(tag_counter: Counter, raw: Dict[str, Any]) -> str:
-    """
-    5パターン以上に拡張。
-    ※タグ（結果）と sequence（順序）を両方使って分類する。
-    """
-    seq = (raw.get("sequence") or {}).get("type")
+    # 新規（条件は控えめに）
+    if hand >= 1 and (tag_counter["捻転差不足"] == 0) and (lower == 0):
+        return "手元主因型"
+    if lower >= 2 and (tag_counter["捻転差不足"] == 0):
+        return "下半身主因型"
 
-    # 安定性
-    if tag_counter["膝ブレ大"] + tag_counter["頭部ブレ大"] >= 1:
-        if tag_counter["膝ブレ大"] + tag_counter["頭部ブレ大"] >= 2:
-            return "安定性不足型"
-        return "安定性注意型"
-
-    # 操作系（手首/肩の過多とバラつき）
-    if tag_counter["コック過多"] + tag_counter["手首バラつき大"] >= 2:
-        return "手首主導（操作過多）型"
-    if tag_counter["肩回転過多"] + tag_counter["肩回転バラつき大"] >= 2:
-        return "上半身先行（開き）型"
-
-    # 体幹パワー（捻転差）
-    if tag_counter["捻転差不足"] >= 1:
-        # 順序が同調/肩先行なら「溜め不足」に寄せる
-        if seq in ["sync", "shoulder_first"]:
-            return "体幹パワー不足型"
-        # 腰先行でも捻転差不足なら「下半身が回るが溜めが残らない」
-        return "下半身先行だが溜め不足型"
-
-    # 下半身不足
-    if tag_counter["腰回転不足"] >= 1:
-        return "下半身主導不足型"
-
-    # デフォルト
-    if seq == "shoulder_first":
-        return "上半身先行（開き）型"
-    if seq == "sync":
-        return "同調回転型"
     return "バランス型"
 
 
@@ -761,67 +748,83 @@ def extract_priorities(tag_counter: Counter, max_items: int = 2) -> List[str]:
         "膝ブレ大",
         "頭部ブレ大",
         "コック過多",
-        "手首バラつき大",
-        "腰回転不足",
+        "コック不足",
         "腰回転過多",
+        "腰回転不足",
         "肩回転過多",
         "肩回転不足",
-        "肩回転バラつき大",
         "捻転差過多",
-        "膝位置バラつき大",
-        "頭位置バラつき大",
     ]
     result: List[str] = []
     for t in order:
         if tag_counter.get(t, 0) > 0:
-            result.append(t)
+            if t not in result:
+                result.append(t)
         if len(result) >= max_items:
             break
     return result
 
 
+def _summary_template(swing_type: str) -> List[str]:
+    # 07の「型」別テンプレ（短め・具体・余計な主張はしない）
+    if swing_type == "体幹パワー不足型":
+        return [
+            "回転量を増やすことではなく、肩と腰の動き出しの順序が結果を左右しています。",
+            "捻転差が小さい状態は、切り返しで“溜め”が残らず、加速が手元に寄りやすくなります。",
+        ]
+    if swing_type == "安定性不足型":
+        return [
+            "最大の課題は回転量ではなく、土台と軸が保てているかです。",
+            "軸が揺れる状態は、打点とフェース向きの再現性を同時に落とします。",
+        ]
+    if swing_type == "操作過多型":
+        return [
+            "スイングの主役が体幹よりも手元側に寄りやすい状態です。",
+            "操作が増えると、方向と打点のズレが連動して大きくなります。",
+        ]
+    if swing_type == "手元主因型":
+        return [
+            "体の回転よりも、手元の角度変化が結果に強く影響しています。",
+            "手元の介入度が高いほど、フェース管理が難しくなりミス幅が広がります。",
+        ]
+    if swing_type == "下半身主因型":
+        return [
+            "回転量そのものより、下半身がどの順序で動いているかが質を分けます。",
+            "下半身の土台が崩れると、上半身が補正に回り、操作が増えやすくなります。",
+        ]
+    # バランス型
+    return [
+        "大きな破綻が少なく、テーマを絞って改善を積み上げやすい状態です。",
+        "「最優先テーマ」だけに集中すると、変化が最も出やすくなります。",
+    ]
+
+
 def build_paid_07_from_analysis(analysis: Dict[str, Any], raw: Dict[str, Any]) -> Dict[str, Any]:
     c = collect_tag_counter(analysis)
-    swing_type = judge_swing_type_v2(c, raw)
+    swing_type = judge_swing_type(c)
     priorities = extract_priorities(c, 2)
 
     conf = _conf(raw)
     frames = _frames(raw)
-    seq_text = _sequence_label(raw)
-
-    # 具体性：タイプ別に「何が起きているか」を1〜2行で言語化（毎回NG → 本動画内）
-    type_detail = ""
-    if swing_type == "安定性不足型":
-        type_detail = "本動画内では土台（膝・軸）のブレが大きく、回転の良し悪し以前に再現性が落ちています。"
-    elif swing_type == "安定性注意型":
-        type_detail = "本動画内では安定性指標に弱点があり、回転の順序を作っても結果が揺れやすい状態です。"
-    elif swing_type == "手首主導（操作過多）型":
-        type_detail = "本動画内では体の回転より手首の形で当てにいく割合が高く、フェース挙動が結果を左右します。"
-    elif swing_type == "上半身先行（開き）型":
-        type_detail = "本動画内では肩が先に動きやすく、切り返しで上体がほどけて球が散る方向に寄ります。"
-    elif swing_type == "体幹パワー不足型":
-        type_detail = "本動画内では捻転差が残らず、切り返しで加速の材料（溜め）を作れていません。"
-    elif swing_type == "下半身先行だが溜め不足型":
-        type_detail = "腰が先に動けても、肩との差が残らないため“下半身主導の質”が完成していません。"
-    elif swing_type == "下半身主導不足型":
-        type_detail = "下半身の回転量が不足し、上半身と手元でスイングを成立させる比率が高い状態です。"
-    elif swing_type == "同調回転型":
-        type_detail = "肩と腰が同時に動きやすく、溜めを作るよりも一体で回って当てるタイプです。"
-    else:
-        type_detail = "大きな破綻は少なく、優先テーマを絞ると伸びやすい状態です。"
 
     lines: List[str] = []
     lines.append(f"今回のスイングは「{swing_type}」です（confidence {conf:.3f} / 区間 {frames} frames）。")
-    lines.append(seq_text)
-    lines.append(type_detail)
+    lines.append("※ 初回の方は、今回は「最優先テーマ」だけを確認してください。")
     lines.append("")
+
+    # 型の説明（2文）
+    lines.extend(_summary_template(swing_type))
+    lines.append("")
+
+    # 優先テーマ（最大2つ）
     if priorities:
         if len(priorities) == 1:
-            lines.append(f"優先テーマは「{priorities[0]}」です。")
+            lines.append(f"数値上の最優先テーマは「{priorities[0]}」です。")
         else:
-            lines.append("優先テーマは「" + "／".join(priorities) + "」の2点です。")
+            lines.append("数値上の優先テーマは「" + "／".join(priorities) + "」の2点です。")
     else:
-        lines.append("優先テーマはありません。")
+        lines.append("数値上の優先テーマはありません。")
+
     lines.append("")
     lines.append("08では優先テーマに直結するドリルを選択し、09では動きを安定させやすいシャフト特性を提示します。")
 
@@ -834,8 +837,17 @@ def build_paid_07_from_analysis(analysis: Dict[str, Any], raw: Dict[str, Any]) -
             "tag_summary": dict(c),
             "confidence": conf,
             "frames": frames,
-            "sequence": raw.get("sequence", {}),
         },
+    }
+
+
+def build_free_07(raw: Dict[str, Any]) -> Dict[str, Any]:
+    return {
+        "title": "07. 総合評価",
+        "text": [
+            "本レポートでは、スイング全体の傾向を骨格データに基づいて評価しています。",
+            "有料版では、部位別評価・練習ドリル・フィッティング指針まで含めて提示します。",
+        ],
     }
 
 
@@ -1173,16 +1185,6 @@ def build_paid_10(raw: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-def build_free_07(raw: Dict[str, Any]) -> Dict[str, Any]:
-    return {
-        "title": "07. 総合評価",
-        "text": [
-            "本レポートでは、スイング全体の傾向を骨格データに基づいて評価しています。",
-            "有料版では、部位別評価・練習ドリル・フィッティング指針まで含めて提示します。",
-        ],
-    }
-
-
 # ==================================================
 # Analysis builder
 # ==================================================
@@ -1211,17 +1213,20 @@ def build_analysis(raw: Dict[str, Any], premium: bool, report_id: str, user_inpu
 # ==================================================
 @app.route("/health", methods=["GET"])
 def health():
-    return jsonify({
-        "ok": True,
-        "project_id": PROJECT_ID,
-        "queue_location": QUEUE_LOCATION,
-        "queue_name": QUEUE_NAME,
-        "service_host_url": SERVICE_HOST_URL,
-        "task_handler_url": TASK_HANDLER_URL,
-        "task_sa_email_set": bool(TASK_SA_EMAIL),
-    })
+    return jsonify(
+        {
+            "ok": True,
+            "project_id": PROJECT_ID,
+            "queue_location": QUEUE_LOCATION,
+            "queue_name": QUEUE_NAME,
+            "service_host_url": SERVICE_HOST_URL,
+            "task_handler_url": TASK_HANDLER_URL,
+            "task_sa_email_set": bool(TASK_SA_EMAIL),
+        }
+    )
 
 
+# LINEのWebhook URLが /webhook 以外でも落ちないように受け口を複数用意
 @app.route("/", methods=["POST"])
 def webhook_root_alias():
     return webhook()
@@ -1258,7 +1263,7 @@ def handle_video(event: MessageEvent):
             "status": "PROCESSING",
             "is_premium": premium,
             "created_at": datetime.now(timezone.utc).isoformat(),
-            "user_inputs": {},
+            "user_inputs": {},  # 任意入力（無ければ空）
         },
     )
 
@@ -1307,19 +1312,24 @@ def task_handler():
 
         analysis = build_analysis(raw_data, premium, report_id, user_inputs)
 
-        doc_ref.update({
-            "status": "COMPLETED",
-            "raw_data": raw_data,
-            "analysis": analysis,
-            "updated_at": firestore.SERVER_TIMESTAMP,
-        })
+        doc_ref.update(
+            {
+                "status": "COMPLETED",
+                "raw_data": raw_data,
+                "analysis": analysis,
+                "updated_at": firestore.SERVER_TIMESTAMP,
+            }
+        )
 
         safe_line_push(user_id, make_done_push(report_id))
         return jsonify({"ok": True}), 200
 
     except Exception as e:
         print(traceback.format_exc())
-        doc_ref.update({"status": "FAILED", "error": str(e)})
+        try:
+            doc_ref.update({"status": "FAILED", "error": str(e)})
+        except Exception:
+            print(traceback.format_exc())
         safe_line_push(user_id, "システムエラーが発生し、解析を完了できませんでした。")
         return "Internal Error", 500
 
@@ -1338,14 +1348,16 @@ def api_report_data(report_id):
     if not doc.exists:
         return jsonify({"error": "not found"}), 404
     d = doc.to_dict() or {}
-    return jsonify({
-        "status": d.get("status"),
-        "analysis": d.get("analysis", {}),
-        "raw_data": d.get("raw_data", {}),
-        "is_premium": d.get("is_premium", False),
-        "error": d.get("error"),
-        "created_at": d.get("created_at"),
-    })
+    return jsonify(
+        {
+            "status": d.get("status"),
+            "analysis": d.get("analysis", {}),
+            "raw_data": d.get("raw_data", {}),
+            "is_premium": d.get("is_premium", False),
+            "error": d.get("error"),
+            "created_at": d.get("created_at"),
+        }
+    )
 
 
 if __name__ == "__main__":
