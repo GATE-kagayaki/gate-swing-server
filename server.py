@@ -46,7 +46,11 @@ TASK_SA_EMAIL = os.environ.get("TASK_SA_EMAIL", "")
 TASK_HANDLER_PATH = "/task-handler"
 TASK_HANDLER_URL = f"{SERVICE_HOST_URL}{TASK_HANDLER_PATH}"
 
+# Firestore
 db = firestore.Client()
+users_ref = db.collection("users")
+
+
 
 line_bot_api = LineBotApi(LINE_CHANNEL_ACCESS_TOKEN)
 handler = WebhookHandler(LINE_CHANNEL_SECRET)
