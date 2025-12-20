@@ -127,7 +127,10 @@ def _safe_std(xs: List[float]) -> float:
 def is_premium_user(user_id: str) -> bool:
     """
     Firestore の users/{user_id} を参照して premium 判定を行う
+    free は月3回まで
     """
+    now = datetime.now(timezone.utc)
+
     doc_ref = users_ref.document(user_id)
     doc = doc_ref.get()
 
@@ -137,26 +140,66 @@ def is_premium_user(user_id: str) -> bool:
             "plan": "free",
             "ticket_remaining": 0,
             "plan_expire_at": None,
+            "monthly_count": 1,
+            "monthly_reset": now.replace(day=1, hour=0, minute=0, second=0, microsecond=0),
             "created_at": firestore.SERVER_TIMESTAMP,
             "updated_at": firestore.SERVER_TIMESTAMP,
         })
-        return False
+        return True  # 初回は使わせる
 
     data = doc.to_dict() or {}
     plan = data.get("plan", "free")
 
-    # 1回課金 or 回数券
+    # ------------------------
+    # 1回課金 / 回数券
+    # ------------------------
     if plan in ("single", "ticket"):
-        return data.get("ticket_remaining", 0) > 0
-
-    # 月額
-    if plan == "monthly":
-        expire = data.get("plan_expire_at")
-        if expire and expire.replace(tzinfo=timezone.utc) > datetime.now(timezone.utc):
+        remaining = data.get("ticket_remaining", 0)
+        if remaining > 0:
+            # 使用回数を減らす
+            doc_ref.update({
+                "ticket_remaining": remaining - 1,
+                "updated_at": firestore.SERVER_TIMESTAMP,
+            })
             return True
         return False
 
-    return False
+    # ------------------------
+    # 月額
+    # ------------------------
+    if plan == "monthly":
+        expire = data.get("plan_expire_at")
+        if expire and expire.replace(tzinfo=timezone.utc) > now:
+            return True
+        return False
+
+    # ------------------------
+    # free（月3回制限）
+    # ------------------------
+    monthly_count = data.get("monthly_count", 0)
+    monthly_reset = data.get("monthly_reset")
+
+    if not isinstance(monthly_reset, datetime):
+        monthly_reset = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        monthly_count = 0
+
+    # 月が変わっていたらリセット
+    if monthly_reset.year != now.year or monthly_reset.month != now.month:
+        monthly_count = 0
+        monthly_reset = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+
+    # 上限チェック
+    if monthly_count >= 3:
+        return False
+
+    # 使用回数を加算
+    doc_ref.update({
+        "monthly_count": monthly_count + 1,
+        "monthly_reset": monthly_reset,
+        "updated_at": firestore.SERVER_TIMESTAMP,
+    })
+
+    return True
 
 
 
