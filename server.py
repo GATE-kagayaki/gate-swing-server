@@ -403,14 +403,18 @@ def build_paid_02_shoulder(raw: Dict[str, Any], seed: str) -> Dict[str, Any]:
     # プロ目線（言語化）
     pro_lines: List[str] = []
     pro_lines.append("上半身は回り幅そのものより、回した量を同じ幅で再現できているかが評価軸です。")
+    if sh["std"] <= 10:
+        pro_lines.append("本動画では肩の回旋は同じ幅で安定して再現できています。")
+    else:
+        pro_lines.append("本動画では肩の回旋幅が一定せず、トップの再現性が取れていません。")
+
     if xf["mean"] < 35:
-        pro_lines.append("捻転差が不足している場合は、肩が回っても“溜め”が残らず、切り返しの加速材料が作れません。")
+        pro_lines.append("捻転差が不足しているため、切り返しでエネルギーが溜まらない状態です。")
     else:
-        pro_lines.append("捻転差が確保できている場合は、切り返しで“溜め”が残り、加速の材料を作れます。")
-    if sh["std"] > 15:
-        pro_lines.append("ばらつきが大きい状態は、トップの形が揃わず、インパクトの再現性が落ちます。")
-    else:
-        pro_lines.append("ばらつきが抑えられている状態は、同じトップを作れており、再現性の土台があります。")
+        pro_lines.append("捻転差は確保されており、切り返しに必要な準備はできています。")
+
+    pro_lines.append("このスイングでは、主因は肩と腰の役割分担です。")
+
     pro_comment = " ".join(pro_lines[:3])
 
     return {
@@ -484,15 +488,19 @@ def build_paid_03_hip(raw: Dict[str, Any], seed: str) -> Dict[str, Any]:
     pro_lines: List[str] = []
     pro_lines.append("腰は「回す量」ではなく、「肩との順序」と「回し幅の揃い方」で質が決まります。")
     if hip["mean"] > 50:
-        pro_lines.append("腰の回旋量が大きい状態は、腰が先に回って上体が開きやすく、当たり所が散ります。")
+        pro_lines.append("本動画では腰が先に回る動きが強く出ています。")
     elif hip["mean"] < 36:
-        pro_lines.append("腰の回旋量が不足している状態は、下半身主導が作れず、上体の力みで操作が増えます。")
+        pro_lines.append("本動画では下半身の回旋量が不足しています。")
     else:
-        pro_lines.append("腰の回旋量が基準帯にある状態は、下半身主導を作れる土台があります。")
+        pro_lines.append("本動画では腰の回旋量は適正範囲に収まっています。")
+
     if hip["std"] > 15:
-        pro_lines.append("ばらつきが大きい状態は、切り返し付近の下半身の形が揃わず、タイミングが安定しません。")
+        pro_lines.append("腰の回転が一定せず、下半身主導の再現性が取れていません。")
     else:
-        pro_lines.append("ばらつきが抑えられている状態は、切り返し付近の形が揃っており、安定の土台があります。")
+        pro_lines.append("下半身の回転は安定しており、土台として機能しています。")
+
+    pro_lines.append("このスイングでは、主因は下半身主導のタイミングです。")
+
     pro_comment = " ".join(pro_lines[:3])
 
     return {
@@ -564,15 +572,19 @@ def build_paid_04_wrist(raw: Dict[str, Any], seed: str) -> Dict[str, Any]:
     pro_lines: List[str] = []
     pro_lines.append("手元は「コック量の大小」より、体の回転に対して手元が介入し過ぎていないかが評価軸です。")
     if w["mean"] > 90:
-        pro_lines.append("コックが過多の状態は、体幹より手元が主役になりやすく、方向と打点が散りやすくなります。")
+        pro_lines.append("本動画では手首の動きが主導になっています。")
     elif w["mean"] < 70:
-        pro_lines.append("コックが不足の状態は、溜めが作りにくく、打ち出しと飛距離の伸びしろを潰します。")
+        pro_lines.append("本動画では手首のコック量が不足しています。")
     else:
-        pro_lines.append("コック量が基準帯にある状態は、体幹主導に寄せやすい土台があります。")
+        pro_lines.append("本動画では手首のコック量は適正です。")
+
     if w["std"] > 15:
-        pro_lines.append("ばらつきが大きい状態は、フェース管理が安定せず、ミスの幅が広がります。")
+        pro_lines.append("リリースのタイミングが一定せず、インパクト効率が安定していません。")
     else:
-        pro_lines.append("ばらつきが抑えられている状態は、フェース管理が安定しやすい土台があります。")
+        pro_lines.append("手首の使い方は安定しており、動きは揃っています。")
+
+    pro_lines.append("このスイングでは、主因はリリースのタイミングです。")
+
     pro_comment = " ".join(pro_lines[:3])
 
     return {
@@ -630,13 +642,17 @@ def build_paid_05_head(raw: Dict[str, Any], seed: str) -> Dict[str, Any]:
     pro_lines: List[str] = []
     pro_lines.append("頭部は「動いたかどうか」より、動いても同じ場所に戻れるか（軸の再現性）が評価軸です。")
     if h["mean"] > 0.15:
-        pro_lines.append("頭が大きく動く状態は、軸が傾いて当たり所がズレやすく、打ち出しと曲がりが不安定になります。")
+        pro_lines.append("本動画では頭部の左右移動が大きく出ています。")
     else:
-        pro_lines.append("頭の動きが抑えられている状態は、軸が保たれ、打点が安定しやすくなります。")
-    if h["std"] <= 0.03 and h["mean"] > 0.15:
-        pro_lines.append("動きは大きい一方で揃いはあるため、原因が固定されており修正の方向性は絞れます。")
+        pro_lines.append("本動画では頭部の位置は比較的安定しています。")
+
+    if h["std"] > 0.05:
+        pro_lines.append("頭の位置が一定せず、スイング軸が安定していません。")
     else:
-        pro_lines.append("揃いが取れていない場合は、軸の作り方が一定でなく、ミスの出方が散ります。")
+        pro_lines.append("頭の位置は揃っており、軸は一定です。")
+
+    pro_lines.append("このスイングでは、主因は上半身の軸管理です。")
+
     pro_comment = " ".join(pro_lines[:3])
 
     return {
@@ -692,13 +708,17 @@ def build_paid_06_knee(raw: Dict[str, Any], seed: str) -> Dict[str, Any]:
     pro_lines: List[str] = []
     pro_lines.append("下半身は「踏めているか」より、回転中も土台が横に流れないかが評価軸です。")
     if k["mean"] > 0.20:
-        pro_lines.append("膝が流れる状態は、回転の支点がズレて軸が倒れやすく、当たり負けと曲がりが増えます。")
+        pro_lines.append("本動画では下半身の横方向の動きが大きく出ています。")
     else:
-        pro_lines.append("膝が安定している状態は、回転の支点が保たれ、上半身に余計な操作が入りにくくなります。")
-    if k["std"] <= 0.04 and k["mean"] > 0.20:
-        pro_lines.append("流れはある一方で揃いはあるため、原因が固定されており修正の方向性は絞れます。")
+        pro_lines.append("本動画では下半身の動きは抑えられています。")
+
+    if k["std"] > 0.06:
+        pro_lines.append("膝の位置が一定せず、インパクト時の土台が不安定です。")
     else:
-        pro_lines.append("揃いが取れていない場合は、土台の作り方が一定でなく、ミスの出方が散ります。")
+        pro_lines.append("膝の位置は安定しており、下半身は土台として機能しています。")
+
+    pro_lines.append("このスイングでは、主因は下半身の安定性です。")
+
     pro_comment = " ".join(pro_lines[:3])
 
     return {
