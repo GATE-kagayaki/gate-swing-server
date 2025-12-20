@@ -1393,23 +1393,23 @@ def webhook():
 
 @handler.add(MessageEvent, message=VideoMessage)
 def handle_video(event: MessageEvent):
-       user_id = event.source.user_id
+    user_id = event.source.user_id
+    msg = event.message
+    report_id = f"{user_id}_{msg.id}"
 
-    # 無料ユーザー 月3回制限
-    if not is_premium_user(user_id):
+    # ① 先にプラン判定（1回だけ）
+    premium = is_premium_user(user_id)
+
+    # ② 無料ユーザーの月3回制限チェック
+    if not premium:
         if not can_use_free_plan(user_id):
             safe_line_reply(
                 event.reply_token,
                 "⚠️ 無料プランは月3回までです。\n有料プランをご検討ください。"
             )
             return
-        increment_free_usage(user_id)
 
-    msg = event.message
-    report_id = f"{user_id}_{msg.id}"
-
-    premium = is_premium_user(user_id)
-
+    # ③ Firestore にレポート作成
     firestore_safe_set(
         report_id,
         {
@@ -1417,21 +1417,25 @@ def handle_video(event: MessageEvent):
             "status": "PROCESSING",
             "is_premium": premium,
             "created_at": datetime.now(timezone.utc).isoformat(),
-            "user_inputs": {},  # 任意入力（無ければ空）
+            "user_inputs": {},
         },
     )
 
+    # ④ 無料ユーザーのみ、ここで使用回数を消費
+    if not premium:
+        increment_free_usage(user_id)
+
+    # ⑤ Cloud Tasks 投げる（既存処理）
     try:
         task_name = create_cloud_task(report_id, user_id, msg.id)
         firestore_safe_update(report_id, {"task_name": task_name})
         safe_line_reply(event.reply_token, make_initial_reply(report_id))
-    except (NotFound, PermissionDenied) as e:
-        firestore_safe_update(report_id, {"status": "TASK_FAILED", "error": str(e)})
-        safe_line_reply(event.reply_token, "システムエラーが発生しました。時間を置いて再度お試しください。")
     except Exception:
-        firestore_safe_update(report_id, {"status": "TASK_FAILED", "error": "create_task_failed"})
-        print("Failed to create task:", traceback.format_exc())
-        safe_line_reply(event.reply_token, "システムエラーが発生しました。時間を置いて再度お試しください。")
+        firestore_safe_update(report_id, {"status": "TASK_FAILED"})
+        safe_line_reply(
+            event.reply_token,
+            "システムエラーが発生しました。時間を置いて再度お試しください。"
+        )
 
 
 @app.route("/task-handler", methods=["POST"])
