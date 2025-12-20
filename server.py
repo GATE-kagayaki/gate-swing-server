@@ -90,10 +90,12 @@ def make_initial_reply(report_id: str) -> str:
     return (
         "✅ 動画を受信しました。\n"
         "AIによるスイング解析を開始します。\n\n"
-        "完了次第、結果をお知らせします。\n\n"
+        "⏱ 解析には【1〜3分程度】かかります。\n"
+        "完了までしばらくお待ちください。\n\n"
         "【進行状況の確認】\n"
         f"{url}"
     )
+
 
 
 def make_done_push(report_id: str) -> str:
