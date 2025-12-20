@@ -79,10 +79,10 @@ def safe_line_reply(reply_token: str, text: str) -> None:
 
 
 def safe_line_push(user_id: str, text: str) -> None:
-    try:
-        line_bot_api.push_message(user_id, TextSendMessage(text=text))
-    except LineBotApiError:
-        print(traceback.format_exc())
+    # LINE Pushは月間上限対策のため一時停止
+    print("[INFO] LINE push skipped:", user_id, text[:50])
+    return
+
 
 
 def make_initial_reply(report_id: str) -> str:
