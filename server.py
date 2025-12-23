@@ -43,6 +43,14 @@ QUEUE_LOCATION = os.environ.get("TASK_QUEUE_LOCATION", "asia-northeast2")
 SERVICE_HOST_URL = os.environ.get("SERVICE_HOST_URL", "").rstrip("/")
 TASK_SA_EMAIL = os.environ.get("TASK_SA_EMAIL", "")
 
+# ==================================================
+# 開発者用：常にプレミアム扱いするLINEユーザー
+# ==================================================
+FORCE_PREMIUM_USER_IDS = {
+    "U9b5fd7cc3faa61b33f8705d4265b0dfc",
+}
+
+
 TASK_HANDLER_PATH = "/task-handler"
 TASK_HANDLER_URL = f"{SERVICE_HOST_URL}{TASK_HANDLER_PATH}"
 
@@ -170,6 +178,8 @@ def increment_free_usage(user_id: str):
     })
 
 def is_premium_user(user_id: str) -> bool:
+    if user_id in FORCE_PREMIUM_USER_IDS:
+        return True
     """
     Firestore の users/{user_id} を参照して premium 判定を行う
     free は月3回まで
