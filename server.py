@@ -1456,15 +1456,15 @@ def webhook():
 @handler.add(MessageEvent, message=VideoMessage)
 def handle_video(event: MessageEvent):
     user_id = event.source.user_id
+    msg = event.message
+    report_id = f"{user_id}_{msg.id}"
+
     print(f"[LOG] 動画受信: {user_id}")
 
-    # プレミアム判定（ここで判定を行い、結果を premium 変数に入れます）
     premium = is_premium_user(user_id)
     print(f"[LOG] プレミアム判定結果: {premium}")
 
-    # -------------------------
-    # 無料プラン（月1回）制限
-    # -------------------------
+    # 無料（月1回）チェック
     if not premium:
         if not can_use_free_plan(user_id):
             safe_line_reply(
@@ -1474,26 +1474,28 @@ def handle_video(event: MessageEvent):
                 "（500円/1回、1,980円/5回、4,980円/月・すべて税込）"
             )
             return
-        # 使える場合のみカウントを+1
-        increment_free_usage(user_id)
 
-    msg = event.message
-    report_id = f"{user_id}_{msg.id}"
-
+    # レポート枠作成
     firestore_safe_set(
         report_id,
         {
             "user_id": user_id,
             "status": "PROCESSING",
-            "is_premium": premium,  # ←無料は False のままなので free レポートになります
+            "is_premium": premium,
             "created_at": datetime.now(timezone.utc).isoformat(),
             "user_inputs": {},
         },
     )
 
+    # タスク作成
     try:
         task_name = create_cloud_task(report_id, user_id, msg.id)
         firestore_safe_update(report_id, {"task_name": task_name})
+
+        # タスク作成成功後に無料回数を消費（失敗時に減らない）
+        if not premium:
+            increment_free_usage(user_id)
+
         safe_line_reply(event.reply_token, make_initial_reply(report_id))
     except (NotFound, PermissionDenied) as e:
         firestore_safe_update(report_id, {"status": "TASK_FAILED", "error": str(e)})
@@ -1502,6 +1504,7 @@ def handle_video(event: MessageEvent):
         firestore_safe_update(report_id, {"status": "TASK_FAILED", "error": str(e)})
         print("Failed to create task:", traceback.format_exc())
         safe_line_reply(event.reply_token, "システムエラーが発生しました。時間を置いて再度お試しください。")
+
 
     user_id = event.source.user_id
     msg = event.message
