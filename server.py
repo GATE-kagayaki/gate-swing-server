@@ -303,6 +303,90 @@ def is_premium_user(user_id: str) -> bool:
 
     # free
     return False
+def consume_ticket_if_needed(user_id: str, report_id: str) -> None:
+    """
+    解析完了時に、ticket/single の残数を 1 消費する（冪等）
+    - Cloud Tasks の再実行があっても二重消費しない
+    - 強制プレミアムは消費しない
+    """
+    if user_id in FORCE_PREMIUM_USER_IDS:
+        # 開発者IDは常にプレミアム扱い。消費しない。
+        return
+
+    report_ref = db.collection("reports").document(report_id)
+    user_ref = users_ref.document(user_id)
+
+    @firestore.transactional
+    def _txn(txn: firestore.Transaction):
+        report_snap = report_ref.get(transaction=txn)
+        if not report_snap.exists:
+            # レポートが無いのは想定外だが、消費はしない
+            return
+
+        report = report_snap.to_dict() or {}
+
+        # すでに消費済みなら何もしない（冪等）
+        if report.get("entitlement_consumed") is True:
+            return
+
+        # このレポートはプレミアムとして処理したか？
+        # ※ report.html を触らない前提なので、レポート側の is_premium を正とする
+        if not bool(report.get("is_premium", False)):
+            # 無料レポートなら消費しない
+            txn.set(report_ref, {"entitlement_consumed": True, "entitlement_type": "free"}, merge=True)
+            return
+
+        user_snap = user_ref.get(transaction=txn)
+        if not user_snap.exists:
+            # ユーザー未登録なら消費しない（プレミアム判定の整合は別途）
+            txn.set(report_ref, {"entitlement_consumed": True, "entitlement_type": "unknown_user"}, merge=True)
+            return
+
+        u = user_snap.to_dict() or {}
+        plan = u.get("plan", "free")
+
+        # 月額は消費なし
+        if plan == "monthly":
+            txn.set(report_ref, {"entitlement_consumed": True, "entitlement_type": "monthly"}, merge=True)
+            return
+
+        # 単発/回数券は残数を1消費
+        if plan in ("single", "ticket"):
+            remaining = int(u.get("ticket_remaining", 0))
+            if remaining <= 0:
+                # 本来ここに来ない想定だが、二重送信等で起き得る
+                # ここでは減らさず、レポート側に記録して冪等化だけは完了させる
+                txn.set(
+                    report_ref,
+                    {
+                        "entitlement_consumed": True,
+                        "entitlement_type": plan,
+                        "entitlement_error": "no_ticket_remaining",
+                    },
+                    merge=True,
+                )
+                return
+
+            # 減算（トランザクション内で安全）
+            txn.update(user_ref, {
+                "ticket_remaining": remaining - 1,
+                "updated_at": firestore.SERVER_TIMESTAMP,
+            })
+            txn.set(
+                report_ref,
+                {
+                    "entitlement_consumed": True,
+                    "entitlement_type": plan,
+                },
+                merge=True,
+            )
+            return
+
+        # free 等は消費なし
+        txn.set(report_ref, {"entitlement_consumed": True, "entitlement_type": plan}, merge=True)
+
+    txn = db.transaction()
+    _txn(txn)
 
     # ------------------------
     # free（月3回制限）
