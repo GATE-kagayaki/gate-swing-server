@@ -1452,7 +1452,54 @@ def webhook():
 
 
 @handler.add(MessageEvent, message=VideoMessage)
+def handle_video(event: MessageEvent):@handler.add(MessageEvent, message=VideoMessage)
 def handle_video(event: MessageEvent):
+    user_id = event.source.user_id
+
+    # 先にプレミアム判定（※ここでは回数カウントしない）
+    premium = is_premium_user(user_id)
+
+    # -------------------------
+    # 無料プラン（月1回）制限
+    # -------------------------
+    if not premium:
+        if not can_use_free_plan(user_id):
+            safe_line_reply(
+                event.reply_token,
+                "⚠️ 無料プランは【月1回まで】です。\n"
+                "有料プランをご検討ください。\n\n"
+                "（500円/1回、1,980円/5回、4,980円/月・すべて税込）"
+            )
+            return
+        # 使える場合のみカウントを+1
+        increment_free_usage(user_id)
+
+    msg = event.message
+    report_id = f"{user_id}_{msg.id}"
+
+    firestore_safe_set(
+        report_id,
+        {
+            "user_id": user_id,
+            "status": "PROCESSING",
+            "is_premium": premium,  # ←無料は False のままなので free レポートになります
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "user_inputs": {},
+        },
+    )
+
+    try:
+        task_name = create_cloud_task(report_id, user_id, msg.id)
+        firestore_safe_update(report_id, {"task_name": task_name})
+        safe_line_reply(event.reply_token, make_initial_reply(report_id))
+    except (NotFound, PermissionDenied) as e:
+        firestore_safe_update(report_id, {"status": "TASK_FAILED", "error": str(e)})
+        safe_line_reply(event.reply_token, "システムエラーが発生しました。時間を置いて再度お試しください。")
+    except Exception as e:
+        firestore_safe_update(report_id, {"status": "TASK_FAILED", "error": str(e)})
+        print("Failed to create task:", traceback.format_exc())
+        safe_line_reply(event.reply_token, "システムエラーが発生しました。時間を置いて再度お試しください。")
+
     user_id = event.source.user_id
     msg = event.message
     report_id = f"{user_id}_{msg.id}"
