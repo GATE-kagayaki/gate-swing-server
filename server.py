@@ -349,8 +349,11 @@ def consume_ticket_if_needed(user_id: str, report_id: str) -> None:
         # free 等は消費なし
         txn.set(report_ref, {"entitlement_consumed": True, "entitlement_type": plan}, merge=True)
 
-    txn = db.transaction()
-    _txn(txn)
+    @firestore.transactional
+    def _txn(txn: firestore.Transaction):
+        print("[DEBUG] entitlement txn start", user_id, report_id)
+        ...
+
 
     
 # ==================================================
