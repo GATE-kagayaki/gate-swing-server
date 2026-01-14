@@ -1456,9 +1456,11 @@ def webhook():
 @handler.add(MessageEvent, message=VideoMessage)
 def handle_video(event: MessageEvent):
     user_id = event.source.user_id
+    print(f"[LOG] 動画受信: {user_id}")
 
-    # 先にプレミアム判定（※ここでは回数カウントしない）
+    # プレミアム判定（ここで判定を行い、結果を premium 変数に入れます）
     premium = is_premium_user(user_id)
+    print(f"[LOG] プレミアム判定結果: {premium}")
 
     # -------------------------
     # 無料プラン（月1回）制限
