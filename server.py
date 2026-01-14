@@ -85,35 +85,59 @@ def can_use_free_plan(user_id: str) -> bool:
 def increment_free_usage(user_id: str) -> None:
     """
     free ユーザーの今月利用回数を +1 する（副作用あり）
+    ※ transactionで競合に強くする
     """
     now = datetime.now(timezone.utc)
+    month = _month_key(now)
     doc_ref = users_ref.document(user_id)
 
-    # ドキュメントが無くても動くように merge=True で初期化
-    doc_ref.set({
-        "plan": "free",
-        "free_used_month": _month_key(now),
-        "free_used_count": 0,
-        "updated_at": firestore.SERVER_TIMESTAMP,
-        "created_at": firestore.SERVER_TIMESTAMP,
-    }, merge=True)
+    @firestore.transactional
+    def _txn(txn: firestore.Transaction):
+        snap = doc_ref.get(transaction=txn)
 
-    doc = doc_ref.get()
-    data = doc.to_dict() or {}
+        # 未登録なら作って1回消費
+        if not snap.exists:
+            txn.set(
+                doc_ref,
+                {
+                    "plan": "free",
+                    "free_used_month": month,
+                    "free_used_count": 1,
+                    "created_at": firestore.SERVER_TIMESTAMP,
+                    "updated_at": firestore.SERVER_TIMESTAMP,
+                },
+                merge=True,
+            )
+            return
 
-    used_month = data.get("free_used_month")
-    used_count = int(data.get("free_used_count", 0))
+        data = snap.to_dict() or {}
 
-    # 月が変わっていたらリセット
-    if used_month != _month_key(now):
-        used_month = _month_key(now)
-        used_count = 0
+        # free以外は触らない
+        if data.get("plan", "free") != "free":
+            return
 
-    doc_ref.update({
-        "free_used_month": used_month,
-        "free_used_count": used_count + 1,
-        "updated_at": firestore.SERVER_TIMESTAMP,
-    })
+        used_month = data.get("free_used_month")
+        used_count = int(data.get("free_used_count", 0))
+
+        # 月が変わっていたらリセット
+        if used_month != month:
+            used_month = month
+            used_count = 0
+
+        txn.set(
+            doc_ref,
+            {
+                "plan": "free",
+                "free_used_month": used_month,
+                "free_used_count": used_count + 1,
+                "updated_at": firestore.SERVER_TIMESTAMP,
+            },
+            merge=True,
+        )
+
+    txn = db.transaction()
+    _txn(txn)
+
 
 
 # ==================================================
