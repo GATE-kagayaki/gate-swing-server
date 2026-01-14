@@ -43,14 +43,6 @@ QUEUE_LOCATION = os.environ.get("TASK_QUEUE_LOCATION", "asia-northeast2")
 SERVICE_HOST_URL = os.environ.get("SERVICE_HOST_URL", "").rstrip("/")
 TASK_SA_EMAIL = os.environ.get("TASK_SA_EMAIL", "")
 
-# ==================================================
-# 開発者用：常にプレミアム扱いするLINEユーザー
-# ==================================================
-FORCE_PREMIUM_USER_IDS = {
-    "U9b5fd7cc3faa61b33f8705d4265b0dfc",
-}
-
-
 TASK_HANDLER_PATH = "/task-handler"
 TASK_HANDLER_URL = f"{SERVICE_HOST_URL}{TASK_HANDLER_PATH}"
 
@@ -58,12 +50,18 @@ TASK_HANDLER_URL = f"{SERVICE_HOST_URL}{TASK_HANDLER_PATH}"
 db = firestore.Client()
 users_ref = db.collection("users")
 
-
+# ==================================================
+# 開発者用：常にプレミアム扱いするLINEユーザー
+# ==================================================
+FORCE_PREMIUM_USER_IDS = {
+    "U9b5fd7cc3faa61b33f8705d4265b0dfc",
+}
 
 line_bot_api = LineBotApi(LINE_CHANNEL_ACCESS_TOKEN)
 handler = WebhookHandler(LINE_CHANNEL_SECRET)
 
 tasks_client = tasks_v2.CloudTasksClient()
+
 
 
 # ==================================================
