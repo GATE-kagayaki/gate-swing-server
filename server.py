@@ -1626,6 +1626,8 @@ def task_handler():
 
         analysis = build_analysis(raw_data, premium, report_id, user_inputs)
 
+        consume_ticket_if_needed(user_id, report_id)
+
         doc_ref.update(
             {
                 "status": "COMPLETED",
