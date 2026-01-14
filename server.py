@@ -228,43 +228,6 @@ def _safe_std(xs: List[float]) -> float:
 # ==================================================
 # Premium判定（本番は決済と連携）
 # ==================================================
-def can_use_free_plan(user_id: str) -> bool:
-    doc_ref = users_ref.document(user_id)
-    doc = doc_ref.get()
-    month_key = current_month_key()
-
-    if not doc.exists:
-        doc_ref.set({
-            "plan": "free",
-            "free_used_count": 0,
-            "free_month": month_key,
-            "created_at": firestore.SERVER_TIMESTAMP,
-            "updated_at": firestore.SERVER_TIMESTAMP,
-        })
-        return True
-
-    data = doc.to_dict() or {}
-
-    if data.get("plan") != "free":
-        return True
-
-    if data.get("free_month") != month_key:
-        doc_ref.update({
-            "free_used_count": 0,
-            "free_month": month_key,
-            "updated_at": firestore.SERVER_TIMESTAMP,
-        })
-        return True
-
-    return data.get("free_used_count", 0) < 3
-
-
-def increment_free_usage(user_id: str):
-    users_ref.document(user_id).update({
-        "free_used_count": firestore.Increment(1),
-        "updated_at": firestore.SERVER_TIMESTAMP,
-    })
-
 def is_premium_user(user_id: str) -> bool:
     """
     Firestore の users/{user_id} を参照して premium 判定を行う
@@ -303,6 +266,7 @@ def is_premium_user(user_id: str) -> bool:
 
     # free
     return False
+    
 def consume_ticket_if_needed(user_id: str, report_id: str) -> None:
     """
     解析完了時に、ticket/single の残数を 1 消費する（冪等）
@@ -389,9 +353,6 @@ def consume_ticket_if_needed(user_id: str, report_id: str) -> None:
     _txn(txn)
 
     
-
-
-
 # ==================================================
 # Cloud Tasks
 # ==================================================
