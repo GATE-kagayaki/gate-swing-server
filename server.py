@@ -49,6 +49,70 @@ TASK_HANDLER_URL = f"{SERVICE_HOST_URL}{TASK_HANDLER_PATH}"
 # Firestore
 db = firestore.Client()
 users_ref = db.collection("users")
+# ==================================================
+# Free plan limit（月1回）
+# ==================================================
+FREE_LIMIT_PER_MONTH = 1  # ←月1回
+
+def _month_key(dt: datetime) -> str:
+    return dt.strftime("%Y-%m")  # 例: "2026-01"
+
+def can_use_free_plan(user_id: str) -> bool:
+    """
+    free ユーザーが今月あと何回使えるか判定する（副作用なし）
+    """
+    now = datetime.now(timezone.utc)
+    doc_ref = users_ref.document(user_id)
+    doc = doc_ref.get()
+    data = doc.to_dict() or {}
+
+    # plan が free 以外は対象外（=制限しない）
+    plan = data.get("plan", "free")
+    if plan != "free":
+        return True
+
+    used_month = data.get("free_used_month")
+    used_count = int(data.get("free_used_count", 0))
+
+    # 初回 or 月が変わっていたら未使用扱い
+    if used_month != _month_key(now):
+        used_count = 0
+
+    return used_count < FREE_LIMIT_PER_MONTH
+
+def increment_free_usage(user_id: str) -> None:
+    """
+    free ユーザーの今月利用回数を +1 する（副作用あり）
+    """
+    now = datetime.now(timezone.utc)
+    doc_ref = users_ref.document(user_id)
+
+    # ドキュメントが無くても動くように merge=True で初期化
+    doc_ref.set({
+        "plan": "free",
+        "free_used_month": _month_key(now),
+        "free_used_count": 0,
+        "updated_at": firestore.SERVER_TIMESTAMP,
+        "created_at": firestore.SERVER_TIMESTAMP,
+    }, merge=True)
+
+    doc = doc_ref.get()
+    data = doc.to_dict() or {}
+
+    used_month = data.get("free_used_month")
+    used_count = int(data.get("free_used_count", 0))
+
+    # 月が変わっていたらリセット
+    if used_month != _month_key(now):
+        used_month = _month_key(now)
+        used_count = 0
+
+    doc_ref.update({
+        "free_used_month": used_month,
+        "free_used_count": used_count + 1,
+        "updated_at": firestore.SERVER_TIMESTAMP,
+    })
+
 
 # ==================================================
 # 開発者用：常にプレミアム扱いするLINEユーザー
@@ -180,19 +244,16 @@ def is_premium_user(user_id: str) -> bool:
     Firestore の users/{user_id} を参照して premium 判定を行う
     ※ 強制プレミアムIDは常に True
     """
-    # 開発者・テスト用：常にプレミアム
     if user_id in FORCE_PREMIUM_USER_IDS:
         return True
 
     doc_ref = users_ref.document(user_id)
     doc = doc_ref.get()
 
-    # 未登録ユーザーは free
+    # 未登録ユーザーは free として作成
     if not doc.exists:
         doc_ref.set({
             "plan": "free",
-            "free_used_count": 0,
-            "free_used_month": datetime.now(timezone.utc).strftime("%Y-%m"),
             "ticket_remaining": 0,
             "plan_expire_at": None,
             "created_at": firestore.SERVER_TIMESTAMP,
@@ -203,9 +264,9 @@ def is_premium_user(user_id: str) -> bool:
     data = doc.to_dict() or {}
     plan = data.get("plan", "free")
 
-    # 単発・回数券
+    # 単発/回数券
     if plan in ("single", "ticket"):
-        return data.get("ticket_remaining", 0) > 0
+        return int(data.get("ticket_remaining", 0)) > 0
 
     # 月額
     if plan == "monthly":
@@ -213,6 +274,10 @@ def is_premium_user(user_id: str) -> bool:
         if expire and expire.replace(tzinfo=timezone.utc) > datetime.now(timezone.utc):
             return True
         return False
+
+    # free
+    return False
+
     # ------------------------
     # free（月3回制限）
     # ------------------------
