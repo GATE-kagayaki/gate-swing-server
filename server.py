@@ -1455,8 +1455,6 @@ def webhook():
 
 @handler.add(MessageEvent, message=VideoMessage)
 def handle_video(event: MessageEvent):
-    @handler.add(MessageEvent, message=VideoMessage)
-def handle_video(event: MessageEvent):
     user_id = event.source.user_id
 
     # 先にプレミアム判定（※ここでは回数カウントしない）
