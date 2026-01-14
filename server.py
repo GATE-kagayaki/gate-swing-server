@@ -176,56 +176,43 @@ def increment_free_usage(user_id: str):
     })
 
 def is_premium_user(user_id: str) -> bool:
-    if user_id in FORCE_PREMIUM_USER_IDS:
-        return True
     """
     Firestore の users/{user_id} を参照して premium 判定を行う
-    free は月3回まで
+    ※ 強制プレミアムIDは常に True
     """
-    now = datetime.now(timezone.utc)
+    # 開発者・テスト用：常にプレミアム
+    if user_id in FORCE_PREMIUM_USER_IDS:
+        return True
 
     doc_ref = users_ref.document(user_id)
     doc = doc_ref.get()
 
-    # 初回ユーザー → free で作成
+    # 未登録ユーザーは free
     if not doc.exists:
         doc_ref.set({
             "plan": "free",
+            "free_used_count": 0,
+            "free_used_month": datetime.now(timezone.utc).strftime("%Y-%m"),
             "ticket_remaining": 0,
             "plan_expire_at": None,
-            "monthly_count": 1,
-            "monthly_reset": now.replace(day=1, hour=0, minute=0, second=0, microsecond=0),
             "created_at": firestore.SERVER_TIMESTAMP,
             "updated_at": firestore.SERVER_TIMESTAMP,
         })
-        return True  # 初回は使わせる
+        return False
 
     data = doc.to_dict() or {}
     plan = data.get("plan", "free")
 
-    # ------------------------
-    # 1回課金 / 回数券
-    # ------------------------
+    # 単発・回数券
     if plan in ("single", "ticket"):
-        remaining = data.get("ticket_remaining", 0)
-        if remaining > 0:
-            # 使用回数を減らす
-            doc_ref.update({
-                "ticket_remaining": remaining - 1,
-                "updated_at": firestore.SERVER_TIMESTAMP,
-            })
-            return True
-        return False
+        return data.get("ticket_remaining", 0) > 0
 
-    # ------------------------
     # 月額
-    # ------------------------
     if plan == "monthly":
         expire = data.get("plan_expire_at")
-        if expire and expire.replace(tzinfo=timezone.utc) > now:
+        if expire and expire.replace(tzinfo=timezone.utc) > datetime.now(timezone.utc):
             return True
         return False
-
     # ------------------------
     # free（月3回制限）
     # ------------------------
