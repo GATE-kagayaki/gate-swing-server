@@ -1,4 +1,3 @@
-# server.py（完成版・全文）
 import os
 import json
 import math
@@ -9,8 +8,9 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List, Tuple, Optional
 from collections import Counter
 
-from flask import Flask, request, jsonify, abort, render_template
 import stripe
+from flask import Flask, request, jsonify, abort, render_template
+
 
 from linebot import LineBotApi, WebhookHandler
 from linebot.exceptions import InvalidSignatureError, LineBotApiError
