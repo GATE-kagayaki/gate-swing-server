@@ -1909,6 +1909,30 @@ def api_report_data(report_id):
         }
     )
 
+@app.route("/success")
+def payment_success():
+    return render_template_string("""
+        <html><head><title>決済完了</title><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+        <body style="text-align:center; padding-top:50px; font-family:sans-serif;">
+            <h1 style="color:#28a745;">決済が完了しました！</h1>
+            <p>LINEに戻ってスイング解析を開始してください。</p>
+            <button onclick="window.close();" style="padding:10px 20px;">閉じる</button>
+        </body></html>
+    """)
+
+@app.route("/cancel")
+def payment_cancel():
+    return render_template_string("""
+        <html><head><title>キャンセル</title><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+        <body style="text-align:center; padding-top:50px; font-family:sans-serif;">
+            <h1>決済をキャンセルしました</h1>
+            <p>メニューからもう一度やり直してください。</p>
+            <button onclick="window.close();" style="padding:10px 20px;">閉じる</button>
+        </body></html>
+    """)
+
+# ※ render_template_string を使う場合は、ファイル上部で 
+# from flask import render_template_string を追加してください。
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", "8080"))
