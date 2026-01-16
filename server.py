@@ -1093,12 +1093,133 @@ def build_paid_07_from_analysis(analysis: Dict[str, Any], raw: Dict[str, Any]) -
 
 
 def build_free_07(raw: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    無料版の07は「数値に基づく総合評価（プロ目線）」までは出す。
+    ただし、02〜06の部位別の深掘り・改善手順・ドリル選定は有料に残す。
+    """
+
+    # --- 数値取得 ---
+    sh = raw.get("shoulder", {})  # degrees
+    hip = raw.get("hip", {})      # degrees
+    w = raw.get("wrist", {})      # degrees
+    head = raw.get("head", {})    # sway
+    knee = raw.get("knee", {})    # sway
+    xf = raw.get("x_factor", {})  # degrees
+    conf = float(raw.get("confidence", 0.0))
+    frames = int(raw.get("valid_frames", 0))
+
+    # --- 無料版用に「タグ」をrawから推定（既存judge_*の閾値と整合） ---
+    tags: List[str] = []
+
+    # 肩回転
+    sh_mean = float(sh.get("mean", 0.0))
+    sh_std = float(sh.get("std", 0.0))
+    if sh_mean < 85:
+        tags.append("肩回転不足")
+    elif sh_mean > 105:
+        tags.append("肩回転過多")
+
+    # 腰回転
+    hip_mean = float(hip.get("mean", 0.0))
+    hip_std = float(hip.get("std", 0.0))
+    if hip_mean < 36:
+        tags.append("腰回転不足")
+    elif hip_mean > 50:
+        tags.append("腰回転過多")
+
+    # 手首コック
+    w_mean = float(w.get("mean", 0.0))
+    w_std = float(w.get("std", 0.0))
+    if w_mean < 70:
+        tags.append("コック不足")
+    elif w_mean > 90:
+        tags.append("コック過多")
+
+    # 捻転差
+    xf_mean = float(xf.get("mean", 0.0))
+    if xf_mean < 35:
+        tags.append("捻転差不足")
+    elif xf_mean > 55:
+        tags.append("捻転差過多")
+
+    # 安定性
+    head_mean = float(head.get("mean", 0.0))
+    knee_mean = float(knee.get("mean", 0.0))
+    if head_mean > 0.15:
+        tags.append("頭部ブレ大")
+    if knee_mean > 0.20:
+        tags.append("膝ブレ大")
+        tags.append("下半身不安定")
+
+    # --- 既存の総合ロジックを流用（型分類・優先順位） ---
+    c = Counter(tags)
+    swing_type = judge_swing_type(c)
+    priorities = extract_priorities(c, 2)
+
+    # --- プロ目線文章（無料版の完成形） ---
+    lines: List[str] = []
+    lines.append(f"今回のスイングは「{swing_type}」です（confidence {conf:.3f} / 区間 {frames} frames）。")
+
+    # 優先テーマ（最大2つ）
+    if priorities:
+        if len(priorities) == 1:
+            lines.append(f"数値上の最優先テーマは「{priorities[0]}」です。")
+        else:
+            lines.append("数値上の優先テーマは「" + "／".join(priorities) + "」の2点です。")
+    else:
+        lines.append("数値上の優先テーマはありません。")
+
+    lines.append("")
+
+    # 優先テーマの根拠（数値で断定）
+    # ※無料は「原因分解」や「手順」まで言わない。現象と影響だけ言い切る。
+    if "頭部ブレ大" in priorities or ("頭部ブレ大" in c and len(priorities) == 0):
+        lines.append(f"本動画では頭部ブレが mean {head_mean:.4f} で大きく、軸が安定しにくい状態です。")
+    if "膝ブレ大" in priorities or ("膝ブレ大" in c and len(priorities) == 0):
+        lines.append(f"本動画では膝ブレが mean {knee_mean:.4f} で大きく、下半身の土台が崩れています。")
+
+    if "捻転差不足" in priorities:
+        lines.append(f"本動画では捻転差が mean {xf_mean:.2f}°で小さく、切り返しの準備が不足しています。")
+    if "腰回転過多" in priorities:
+        lines.append(f"本動画では腰回転が mean {hip_mean:.2f}°で大きく、下半身の主張が強い状態です。")
+    if "肩回転過多" in priorities:
+        lines.append(f"本動画では肩回転が mean {sh_mean:.2f}°で大きく、上半身が回り過ぎています。")
+    if "コック過多" in priorities:
+        lines.append(f"本動画では手首コックが mean {w_mean:.2f}°で大きく、手元の介入が強い状態です。")
+
+    lines.append("")
+
+    # できている点（必ず入れる）
+    good_points: List[str] = []
+    if 85 <= sh_mean <= 105:
+        good_points.append("肩の回旋量は基準レンジに収まっています。")
+    if sh_std <= 15:
+        good_points.append("肩の回し幅は大きく崩れておらず、上半身の再現性の土台はあります。")
+    if head_mean <= 0.15:
+        good_points.append("頭部ブレは大きくはなく、軸は破綻していません。")
+    if knee_mean <= 0.20:
+        good_points.append("膝ブレは上限を超えておらず、下半身は大きく流れていません。")
+    if xf_mean >= 35:
+        good_points.append("捻転差は確保できており、切り返しの準備はできています。")
+
+    if good_points:
+        lines.append("良い点： " + " ".join(good_points[:2]))
+    else:
+        lines.append("良い点： 大きな破綻は見られません。")
+
+    lines.append("")
+    lines.append("有料版では、部位別評価（02〜06）で主因を特定し、総合評価の精度を上げた上で、練習ドリルとフィッティング指針まで提示します。")
+
     return {
-        "title": "07. 総合評価",
-        "text": [
-            "本レポートでは、スイング全体の傾向を骨格データに基づいて評価しています。",
-            "有料版では、部位別評価・練習ドリル・フィッティング指針まで含めて提示します。",
-        ],
+        "title": "07. 総合評価（無料版：プロ目線）",
+        "text": lines,
+        "meta": {
+            "swing_type": swing_type,
+            "priorities": priorities,
+            "tag_summary": dict(c),
+            "confidence": conf,
+            "frames": frames,
+        },
     }
 
 
