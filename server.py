@@ -1724,14 +1724,7 @@ def handle_video(event: MessageEvent):
     # ① 先にプラン判定（1回だけ）
     premium = is_premium_user(user_id)
 
-    # ② 無料ユーザーの月3回制限チェック
-    if not premium:
-        if not can_use_free_plan(user_id):
-            safe_line_reply(
-                event.reply_token,
-                "⚠️ 無料プランは月3回までです。\n有料プランをご検討ください。"
-            )
-            return
+ 
 
     # ③ Firestore にレポート作成
     firestore_safe_set(
