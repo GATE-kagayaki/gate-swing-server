@@ -6,3 +6,5 @@ mediapipe==0.10.9
 opencv-python-headless==4.8.1.78
 numpy==1.26.0
 gunicorn==21.2.0
+stripe
+
