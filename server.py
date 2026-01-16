@@ -1936,6 +1936,20 @@ def payment_cancel():
 # ※ render_template_string を使う場合は、ファイル上部で 
 # from flask import render_template_string を追加してください。
 
+@handler.add(MessageEvent, message=TextMessage)
+def handle_text_message(event):
+    text = event.message.text
+
+    if text == "料金プラン":
+        user_id = event.source.user_id
+        # HP側で ID を受け取れるように、?luid= を付けたURLを作成
+        checkout_url = f"https://gate-golf.com/?luid={user_id}#pricing"
+        
+        line_bot_api.reply_message(
+            event.reply_token,
+            TextSendMessage(text=f"以下のリンクからプランを選択してください。\n{checkout_url}")
+        )
+
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", "8080"))
     app.run(host="0.0.0.0", port=port)
