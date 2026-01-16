@@ -1934,8 +1934,8 @@ def payment_cancel():
         </body></html>
     """)
 
-# ※ render_template_string を使う場合は、ファイル上部で 
-# from flask import render_template_string を追加してください。
+# ここで必要な定義を読み込むことで、エラーを防ぎます
+from linebot.models import MessageEvent, TextMessage, TextSendMessage
 
 @handler.add(MessageEvent, message=TextMessage)
 def handle_text_message(event):
@@ -1950,7 +1950,7 @@ def handle_text_message(event):
             event.reply_token,
             TextSendMessage(text=f"以下のリンクからプランを選択してください。\n{checkout_url}")
         )
-
+        
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", "8080"))
     app.run(host="0.0.0.0", port=port)
