@@ -1638,13 +1638,19 @@ def stripe_checkout():
     # 4. Stripe セッション作成
     try:
         session = stripe.checkout.Session.create(
-            mode=checkout_mode,  # ← 固定値から変数に変更
-            payment_method_types=["card"],
-            line_items=[{"price": price_id, "quantity": 1}],
-            client_reference_id=line_user_id,
-            success_url=success_url,
-            cancel_url=cancel_url,
-        )
+        mode=checkout_mode,
+        payment_method_types=["card"],
+        line_items=[{"price": price_id, "quantity": 1}],
+        client_reference_id=line_user_id, # LINE ID
+        # --- ここを追加：Webhookでプランを判別するために必須 ---
+        metadata={
+            "plan": plan,             # "single", "ticket", "monthly"
+            "line_user_id": line_user_id
+        },
+        # --------------------------------------------------
+        success_url=success_url,
+        cancel_url=cancel_url,
+    )
         return jsonify({"checkout_url": session.url}), 200
 
     except Exception as e:
