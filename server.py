@@ -1604,6 +1604,63 @@ def health():
 import stripe
 stripe.api_key = os.environ.get("STRIPE_SECRET_KEY", "")
 
+@app.route("/stripe/webhook", methods=["POST"])
+def stripe_webhook():
+    payload = request.get_data()
+    sig_header = request.headers.get("Stripe-Signature")
+    endpoint_secret = os.environ.get("STRIPE_WEBHOOK_SECRET", "").strip()
+
+    try:
+        event = stripe.Webhook.construct_event(payload, sig_header, endpoint_secret)
+    except Exception as e:
+        print(f"[WEBHOOK ERROR] 検証失敗: {e}")
+        return jsonify({"error": str(e)}), 400
+
+    # 決済成功イベントの処理
+    if event["type"] == "checkout.session.completed":
+        session = event["data"]["object"]
+        # ステップ1で仕込んだ metadata を取り出す
+        user_id = session.get("client_reference_id")
+        plan = session.get("metadata", {}).get("plan")
+        
+        if user_id and plan:
+            print(f"[SUCCESS] 決済確認: User={user_id}, Plan={plan}")
+            handle_successful_payment(user_id, plan)
+
+    return jsonify({"status": "success"}), 200
+
+def handle_successful_payment(user_id: str, plan: str):
+    """
+    Firestoreのユーザー権限をプランに応じて更新する
+    """
+    doc_ref = db.collection("users").document(user_id)
+    now = datetime.now(timezone.utc)
+
+    if plan == "single":
+        # 1回券：残り回数を +1
+        doc_ref.update({
+            "plan": "single",
+            "ticket_remaining": firestore.Increment(1),
+            "updated_at": firestore.SERVER_TIMESTAMP
+        })
+    elif plan == "ticket":
+        # 5回券：残り回数を +5
+        doc_ref.update({
+            "plan": "ticket",
+            "ticket_remaining": firestore.Increment(5),
+            "updated_at": firestore.SERVER_TIMESTAMP
+        })
+    elif plan == "monthly":
+        # 月額プラン：期限を30日後に設定
+        from datetime import timedelta
+        expire_at = now + timedelta(days=30)
+        doc_ref.update({
+            "plan": "monthly",
+            "plan_expire_at": expire_at,
+            "updated_at": firestore.SERVER_TIMESTAMP
+        })
+    print(f"[DB_UPDATE] User {user_id} の権限を {plan} に更新しました。")
+
 @app.route("/stripe/checkout", methods=["POST"])
 def stripe_checkout():
     data = request.get_json(silent=True) or {}
