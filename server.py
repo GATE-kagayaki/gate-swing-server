@@ -1606,40 +1606,50 @@ stripe.api_key = os.environ.get("STRIPE_SECRET_KEY", "")
 
 @app.route("/stripe/checkout", methods=["POST"])
 def stripe_checkout():
-    ...
-
     data = request.get_json(silent=True) or {}
 
     line_user_id = data.get("line_user_id")
     plan = data.get("plan")  # "single" / "ticket" / "monthly"
 
+    # 1. バリデーション
     if not stripe.api_key:
         return jsonify({"error": "STRIPE_SECRET_KEY is not set"}), 500
     if not line_user_id or plan not in ("single", "ticket", "monthly"):
         return jsonify({"error": "invalid request"}), 400
 
+    # 2. 価格IDの取得（前後スペースを除去する .strip() を追加して安全性を向上）
     price_map = {
-        "single": os.environ.get("STRIPE_PRICE_SINGLE", ""),
-        "ticket": os.environ.get("STRIPE_PRICE_TICKET", ""),
-        "monthly": os.environ.get("STRIPE_PRICE_MONTHLY", ""),
+        "single": os.environ.get("STRIPE_PRICE_SINGLE", "").strip(),
+        "ticket": os.environ.get("STRIPE_PRICE_TICKET", "").strip(),
+        "monthly": os.environ.get("STRIPE_PRICE_MONTHLY", "").strip(),
     }
     price_id = price_map.get(plan, "")
+    
     if not price_id:
         return jsonify({"error": f"price_id not set for plan={plan}"}), 500
+
+    # 3. 支払いモードの判定（重要！）
+    # 月額プランなら 'subscription'、それ以外（単発・回数券）なら 'payment'
+    checkout_mode = "subscription" if plan == "monthly" else "payment"
 
     success_url = os.environ.get("STRIPE_SUCCESS_URL", SERVICE_HOST_URL)
     cancel_url = os.environ.get("STRIPE_CANCEL_URL", SERVICE_HOST_URL)
 
-    session = stripe.checkout.Session.create(
-        mode="payment",
-        payment_method_types=["card"],
-        line_items=[{"price": price_id, "quantity": 1}],
-        client_reference_id=line_user_id,
-        success_url=success_url,
-        cancel_url=cancel_url,
-    )
+    # 4. Stripe セッション作成
+    try:
+        session = stripe.checkout.Session.create(
+            mode=checkout_mode,  # ← 固定値から変数に変更
+            payment_method_types=["card"],
+            line_items=[{"price": price_id, "quantity": 1}],
+            client_reference_id=line_user_id,
+            success_url=success_url,
+            cancel_url=cancel_url,
+        )
+        return jsonify({"checkout_url": session.url}), 200
 
-    return jsonify({"checkout_url": session.url}), 200
+    except Exception as e:
+        print(f"[ERROR] Stripe Session Create Failed: {traceback.format_exc()}")
+        return jsonify({"error": str(e)}), 500
 
 
 # LINEのWebhook URLが /webhook 以外でも落ちないように受け口を複数用意
