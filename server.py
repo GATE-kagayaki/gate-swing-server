@@ -1601,10 +1601,13 @@ def health():
 # ==================================================
 # Stripe Checkout 作成
 # ==================================================
+import stripe
 stripe.api_key = os.environ.get("STRIPE_SECRET_KEY", "")
 
 @app.route("/stripe/checkout", methods=["POST"])
 def stripe_checkout():
+    ...
+
     data = request.get_json(silent=True) or {}
 
     line_user_id = data.get("line_user_id")
