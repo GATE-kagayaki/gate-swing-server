@@ -1604,31 +1604,33 @@ def health():
 import stripe
 stripe.api_key = os.environ.get("STRIPE_SECRET_KEY", "")
 
-@app.route("/stripe/webhook", methods=["POST"])
+@app.route('/stripe/webhook', methods=['POST'])
 def stripe_webhook():
-    payload = request.get_data()
-    sig_header = request.headers.get("Stripe-Signature")
-    endpoint_secret = os.environ.get("STRIPE_WEBHOOK_SECRET", "").strip()
-
+    payload = request.data
+    sig_header = request.headers.get('Stripe-Signature')
     try:
         event = stripe.Webhook.construct_event(payload, sig_header, endpoint_secret)
-    except Exception as e:
-        print(f"[WEBHOOK ERROR] 検証失敗: {e}")
-        return jsonify({"error": str(e)}), 400
+    except:
+        return 'Invalid payload', 400
 
-    # 決済成功イベントの処理
-    if event["type"] == "checkout.session.completed":
-        session = event["data"]["object"]
-        # ステップ1で仕込んだ metadata を取り出す
-        user_id = session.get("client_reference_id")
-        plan = session.get("metadata", {}).get("plan")
+    if event['type'] == 'checkout.session.completed':
+        session = event['data']['object']
         
-        if user_id and plan:
-            print(f"[SUCCESS] 決済確認: User={user_id}, Plan={plan}")
-            handle_successful_payment(user_id, plan)
+        # ホームページから引き継がれる ID を取得
+        line_user_id = session.get('client_reference_id')
 
-    return jsonify({"status": "success"}), 200
+        if line_user_id:
+            user_ref = db.collection('users').document(line_user_id)
+            user_ref.set({
+                'ticket_remaining': firestore.Increment(1),
+                'last_payment_date': firestore.SERVER_TIMESTAMP
+            }, merge=True)
+            print(f"Success: Updated {line_user_id}")
+        else:
+            print("Warning: client_reference_id is empty")
 
+    return jsonify(success=True)
+    
 def handle_successful_payment(user_id: str, plan: str):
     """
     Firestoreのユーザー権限をプランに応じて更新する
