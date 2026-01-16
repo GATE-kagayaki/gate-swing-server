@@ -1597,6 +1597,46 @@ def health():
         }
     )
 
+# ==================================================
+# Stripe Checkout 作成
+# ==================================================
+stripe.api_key = os.environ.get("STRIPE_SECRET_KEY", "")
+
+@app.route("/stripe/checkout", methods=["POST"])
+def stripe_checkout():
+    data = request.get_json(silent=True) or {}
+
+    line_user_id = data.get("line_user_id")
+    plan = data.get("plan")  # "single" / "ticket" / "monthly"
+
+    if not stripe.api_key:
+        return jsonify({"error": "STRIPE_SECRET_KEY is not set"}), 500
+    if not line_user_id or plan not in ("single", "ticket", "monthly"):
+        return jsonify({"error": "invalid request"}), 400
+
+    price_map = {
+        "single": os.environ.get("STRIPE_PRICE_SINGLE", ""),
+        "ticket": os.environ.get("STRIPE_PRICE_TICKET", ""),
+        "monthly": os.environ.get("STRIPE_PRICE_MONTHLY", ""),
+    }
+    price_id = price_map.get(plan, "")
+    if not price_id:
+        return jsonify({"error": f"price_id not set for plan={plan}"}), 500
+
+    success_url = os.environ.get("STRIPE_SUCCESS_URL", SERVICE_HOST_URL)
+    cancel_url = os.environ.get("STRIPE_CANCEL_URL", SERVICE_HOST_URL)
+
+    session = stripe.checkout.Session.create(
+        mode="payment",
+        payment_method_types=["card"],
+        line_items=[{"price": price_id, "quantity": 1}],
+        client_reference_id=line_user_id,
+        success_url=success_url,
+        cancel_url=cancel_url,
+    )
+
+    return jsonify({"checkout_url": session.url}), 200
+
 
 # LINEのWebhook URLが /webhook 以外でも落ちないように受け口を複数用意
 @app.route("/", methods=["POST"])
