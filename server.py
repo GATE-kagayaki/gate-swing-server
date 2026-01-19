@@ -1921,12 +1921,13 @@ def handle_text_message(event):
     user_id = event.source.user_id
 
     if text == "料金プラン":
-        # Stripeリンク（ID付き）の構築
+        # 各プランのStripeリンク（新しい回数券リンクを反映）
         u1 = f"https://buy.stripe.com/00w28sdezc5A8lR2ej18c00?client_reference_id={user_id}"
-        u5 = f"https://buy.stripe.com/fZucN66QbfhM6dJ7yD18c03?client_reference_id={user_id}"
+        # 新しいURLに差し替え
+        u5 = f"https://buy.stripe.com/eVq3cw6Qb3z4atZdX118c06?client_reference_id={user_id}"
         um = f"https://buy.stripe.com/3cIfZi2zVd9E1XtdX118c05?client_reference_id={user_id}"
 
-        # 確定した案内メッセージ（動画を送るだけ、の案内）
+        # 案内メッセージの内容
         message_content = (
             "GATE公式LINEへようこそ！⛳️\n\n"
             "正確なAI解析結果をお届けするため、画面上部に「追加」ボタンが表示されている方は、まず登録をお願いいたします。\n"
