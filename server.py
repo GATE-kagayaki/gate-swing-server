@@ -1760,22 +1760,21 @@ def handle_video(event: MessageEvent):
 
     print(f"[LOG] 動画受信: {user_id}")
 
+    # ① プレミアム判定
     premium = is_premium_user(user_id)
-    print(f"[LOG] プレミアム判定結果: {premium}")
 
-   # 無料（月1回）チェック
+    # ② 無料プランの回数チェック
     if not premium:
         if not can_use_free_plan(user_id):
             safe_line_reply(
                 event.reply_token,
-                "⚠️ 無料プランは【月1回まで】です。\n"
-                "有料プランをご検討ください。\n\n"
+                "⚠️ 無料プランは【月1回まで】です。\n有料プランをご検討ください。\n\n"
                 "（500円/1回、1,980円/5回、4,980円/月・すべて税込）",
-                user_id=user_id  # ← ここに書き足します
+                user_id=user_id  # チケット切れ救済用
             )
             return
 
-    # レポート枠作成
+    # ③ Firestore にレポート作成（1年間の保存期限 expire_at を追加）
     firestore_safe_set(
         report_id,
         {
@@ -1783,67 +1782,32 @@ def handle_video(event: MessageEvent):
             "status": "PROCESSING",
             "is_premium": premium,
             "created_at": datetime.now(timezone.utc).isoformat(),
-            "expire_at": (datetime.now(timezone.utc) + timedelta(days=365)).isoformat(), # ← この行を追加
+            "expire_at": (datetime.now(timezone.utc) + timedelta(days=365)).isoformat(),
             "user_inputs": {},
         },
     )
 
-    # タスク作成
+    # ④ AI解析タスクの作成
     try:
         task_name = create_cloud_task(report_id, user_id, msg.id)
         firestore_safe_update(report_id, {"task_name": task_name})
 
-        # タスク作成成功後に無料回数を消費（失敗時に減らない）
+        # 無料ユーザーのみ回数を消費
         if not premium:
             increment_free_usage(user_id)
 
-        safe_line_reply(event.reply_token, make_initial_reply(report_id))
-    except (NotFound, PermissionDenied) as e:
-        firestore_safe_update(report_id, {"status": "TASK_FAILED", "error": str(e)})
-        safe_line_reply(event.reply_token, "システムエラーが発生しました。時間を置いて再度お試しください。")
+        # 受付完了の返信（user_idを渡してチケット切れを救済）
+        safe_line_reply(event.reply_token, make_initial_reply(report_id), user_id=user_id)
+
     except Exception as e:
+        print(f"[ERROR] タスク作成失敗: {traceback.format_exc()}")
         firestore_safe_update(report_id, {"status": "TASK_FAILED", "error": str(e)})
-        print("Failed to create task:", traceback.format_exc())
-        safe_line_reply(event.reply_token, "システムエラーが発生しました。時間を置いて再度お試しください。")
-
-
-    user_id = event.source.user_id
-    msg = event.message
-    report_id = f"{user_id}_{msg.id}"
-
-    # ① 先にプラン判定（1回だけ）
-    premium = is_premium_user(user_id)
-
- 
-
-    # ③ Firestore にレポート作成
-    firestore_safe_set(
-        report_id,
-        {
-            "user_id": user_id,
-            "status": "PROCESSING",
-            "is_premium": premium,
-            "created_at": datetime.now(timezone.utc).isoformat(),
-            "user_inputs": {},
-        },
-    )
-
-    # ④ 無料ユーザーのみ、ここで使用回数を消費
-    if not premium:
-        increment_free_usage(user_id)
-
-    # ⑤ Cloud Tasks 投げる（既存処理）
-    try:
-        task_name = create_cloud_task(report_id, user_id, msg.id)
-        firestore_safe_update(report_id, {"task_name": task_name})
-        safe_line_reply(event.reply_token, make_initial_reply(report_id))
-    except Exception:
-        firestore_safe_update(report_id, {"status": "TASK_FAILED"})
+        # エラー時の返信
         safe_line_reply(
-            event.reply_token,
-            "システムエラーが発生しました。時間を置いて再度お試しください。"
+            event.reply_token, 
+            "システムエラーが発生しました。時間を置いて再度お試しください。", 
+            user_id=user_id
         )
-
 
 @app.route("/task-handler", methods=["POST"])
 def task_handler():
