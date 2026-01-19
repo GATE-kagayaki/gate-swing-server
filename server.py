@@ -1921,27 +1921,25 @@ def handle_text_message(event):
     user_id = event.source.user_id
 
     if text == "料金プラン":
-        # ID付きのStripe決済リンク
+        # Stripeの決済リンク（ID付き）
         url_1time = f"https://buy.stripe.com/00w28sdezc5A8lR2ej18c00?client_reference_id={user_id}"
         url_5times = f"https://buy.stripe.com/fZucN66QbfhM6dJ7yD18c03?client_reference_id={user_id}"
         url_monthly = f"https://buy.stripe.com/3cIfZi2zVd9E1XtdX118c05?client_reference_id={user_id}"
-        
-        # 各URLの前に空行を追加して、より見やすく整えました
-        message = (
-            "ご希望のプランを選択して決済してください。\n"
-            "決済完了後、すぐに解析が利用可能になります。\n\n"
-            f"【単発プラン】500円/1回\n"
-            f"単発プランで試す → \n\n{url_1time}\n\n"  # ← \n\n で1行空けました
-            f"【回数券プラン】1,980円/5回\n"
-            f"回数券を購入する → \n\n{url_5times}\n\n"
-            f"【月額プラン】4,980円/月\n"
-            f"月額プランを申し込む → \n\n{url_monthly}"
+
+        # ボタン付きのカード形式で返信
+        buttons_template = TemplateSendMessage(
+            alt_text="料金プランを選択してください",
+            template=ButtonsTemplate(
+                title="料金プランのご案内",
+                text="プランを選択してください。決済完了後、すぐに分析が可能です。",
+                actions=[
+                    URITemplateAction(label="1回券 (500円)", uri=url_1time),
+                    URITemplateAction(label="5回券 (1,980円)", uri=url_5times),
+                    URITemplateAction(label="月額プラン (4,980円)", uri=url_monthly),
+                ]
+            )
         )
-        
-        line_bot_api.reply_message(
-            event.reply_token,
-            TextSendMessage(text=message)
-        )
+        line_bot_api.reply_message(event.reply_token, buttons_template)
         
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", "8080"))
