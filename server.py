@@ -1920,16 +1920,19 @@ def handle_text_message(event):
     text = event.message.text
     user_id = event.source.user_id
 
-    # 既存のキーワード（料金プラン）への反応を「安全な形」で修正
     if text == "料金プラン":
+        # 決済URLの作成
         u1 = f"https://buy.stripe.com/00w28sdezc5A8lR2ej18c00?client_reference_id={user_id}"
         u5 = f"https://buy.stripe.com/fZucN66QbfhM6dJ7yD18c03?client_reference_id={user_id}"
         um = f"https://buy.stripe.com/3cIfZi2zVd9E1XtdX118c05?client_reference_id={user_id}"
 
-        # 矢印＋スペース＋URLの上の空行を完全に再現
-        message_body = (
-            "ご希望のプランを選択して決済してください。\n"
-            "決済完了後、すぐに分析が可能です。\n\n"
+        # 冒頭に案内文を追加したメッセージ構成
+        message_content = (
+            "GATE公式LINEへようこそ！⛳️\n\n"
+            "正確なAI解析結果をお届けするため、まずは上の「追加」ボタンから友だち登録をお願いいたします。\n"
+            "（すでに登録済みの方は、そのまま下記よりプランをお選びください）\n\n"
+            "決済完了後は、リッチメニューの「解析スタート」や「マイページ」からいつでもサービスをご利用いただけます。\n"
+            "--------------------\n\n"
             "【単発プラン】500円/1回\n"
             "単発プランで試す → \n\n"
             f"{u1}\n\n"
@@ -1938,13 +1941,14 @@ def handle_text_message(event):
             f"{u5}\n\n"
             "【月額プラン】4,980円/月\n"
             "月額プランを申し込む → \n\n"
-            f"{um}"
+            f"{um}\n\n"
+            "--------------------\n"
+            "※お困りの際は、このままトークでお気軽にご質問ください。"
         )
 
-        # 確実に返信（これでシステムは復活します）
         line_bot_api.reply_message(
             event.reply_token,
-            TextSendMessage(text=message_body)
+            TextSendMessage(text=message_content)
         )
         
 if __name__ == "__main__":
