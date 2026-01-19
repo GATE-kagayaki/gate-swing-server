@@ -1922,9 +1922,10 @@ def handle_text_message(event):
 
     if text == "料金プラン":
         # ここだけを正確に書き換えてください（先頭の 'f' が最重要です）
-　　　　u1 = f"https://buy.stripe.com/00w28sdezc5A8lR2ej18c00?client_reference_id={user_id}"
-　　　　u5 = f"https://buy.stripe.com/eVq3cw6Qb3z4atZdX118c06?client_reference_id={user_id}"
-　　　　um = f"https://buy.stripe.com/3cIfZi2zVd9E1XtdX118c05?client_reference_id={user_id}"
+　　　   if text == "料金プラン":
+        u1 = f"https://buy.stripe.com/00w28sdezc5A8lR2ej18c00?client_reference_id={user_id}"
+        u5 = f"https://buy.stripe.com/eVq3cw6Qb3z4atZdX118c06?client_reference_id={user_id}"
+        um = f"https://buy.stripe.com/3cIfZi2zVd9E1XtdX118c05?client_reference_id={user_id}"
 
         # 案内メッセージの内容
         message_content = (
