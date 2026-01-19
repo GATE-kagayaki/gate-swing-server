@@ -1780,23 +1780,38 @@ def handle_video(event: MessageEvent):
     msg = event.message
     report_id = f"{user_id}_{msg.id}"
 
+    # --- チケット残高の確認（追加） ---
+    user_ref = db.collection('users').document(user_id)
+    user_doc = user_ref.get()
+    user_data = user_doc.to_dict() if user_doc.exists else {}
+    tickets = user_data.get('ticket_remaining', 0)  # 購入済みチケット残数
+
     print(f"[LOG] 動画受信: {user_id}")
 
     # ① プレミアム判定
     premium = is_premium_user(user_id)
 
-    # ② 無料プランの回数チェック
+    # ② 権限チェックとチケット消費（修正）
     if not premium:
-        if not can_use_free_plan(user_id):
+        # Stripeで購入したチケット（1回券・回数券）があるか確認
+        if tickets > 0:
+            # チケットを1枚消費
+            user_ref.update({
+                'ticket_remaining': firestore.Increment(-1)
+            })
+            print(f"[LOG] チケット消費: {user_id} (残り {tickets - 1} 枚)")
+        
+        # チケットがない場合のみ、月1回の無料枠をチェック
+        elif not can_use_free_plan(user_id):
             safe_line_reply(
                 event.reply_token,
-                "⚠️ 無料プランは【月1回まで】です。\n有料プランをご検討ください。\n\n"
+                "⚠️ チケットの残数がありません。🎫\n無料プランは【月1回まで】です。\n有料プランをご検討ください。\n\n"
                 "（500円/1回、1,980円/5回、4,980円/月・すべて税込）",
-                user_id=user_id  # チケット切れ救済用
+                user_id=user_id 
             )
             return
 
-    # ③ Firestore にレポート作成（1年間の保存期限 expire_at を追加）
+    # ③ Firestore にレポート作成（あなたの既存のコードをそのまま維持）
     firestore_safe_set(
         report_id,
         {
@@ -1804,11 +1819,12 @@ def handle_video(event: MessageEvent):
             "status": "PROCESSING",
             "is_premium": premium,
             "created_at": datetime.now(timezone.utc).isoformat(),
+            # 1年間の保存期限を維持
             "expire_at": (datetime.now(timezone.utc) + timedelta(days=365)).isoformat(),
             "user_inputs": {},
         },
     )
-
+   
     # ④ AI解析タスクの作成
     try:
         task_name = create_cloud_task(report_id, user_id, msg.id)
