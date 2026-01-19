@@ -1926,20 +1926,27 @@ def handle_text_message(event):
         url_5times = f"https://buy.stripe.com/fZucN66QbfhM6dJ7yD18c03?client_reference_id={user_id}"
         url_monthly = f"https://buy.stripe.com/3cIfZi2zVd9E1XtdX118c05?client_reference_id={user_id}"
 
-        # ボタン付きのカード形式で返信
-        buttons_template = TemplateSendMessage(
-            alt_text="料金プランを選択してください",
-            template=ButtonsTemplate(
-                title="料金プランのご案内",
-                text="プランを選択してください。決済完了後、すぐに分析が可能です。",
-                actions=[
-                    URITemplateAction(label="1回券 (500円)", uri=url_1time),
-                    URITemplateAction(label="5回券 (1,980円)", uri=url_5times),
-                    URITemplateAction(label="月額プラン (4,980円)", uri=url_monthly),
-                ]
-            )
+        # ご要望通りの「矢印＋スペース」と「その下の空行」を完全に再現したテキスト
+        # \n が改行を表します。\n\n と重ねることで1行空きを作っています。
+        message_content = (
+            "ご希望のプランを選択して決済してください。\n"
+            "決済完了後、すぐに分析が可能です。\n\n"
+            "【単発プラン】500円/1回\n"
+            "単発プランで試す → \n\n"
+            f"{url_1time}\n\n"
+            "【回数券プラン】1,980円/5回\n"
+            "回数券を購入する → \n\n"
+            f"{url_5times}\n\n"
+            "【月額プラン】4,980円/月\n"
+            "月額プランを申し込む → \n\n"
+            f"{url_monthly}"
         )
-        line_bot_api.reply_message(event.reply_token, buttons_template)
+
+        # 確実に返信を実行する部分
+        line_bot_api.reply_message(
+            event.reply_token,
+            TextSendMessage(text=message_content)
+        )
         
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", "8080"))
