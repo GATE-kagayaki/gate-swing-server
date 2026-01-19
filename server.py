@@ -1920,32 +1920,31 @@ def handle_text_message(event):
     text = event.message.text
     user_id = event.source.user_id
 
+    # 既存のキーワード（料金プラン）への反応を「安全な形」で修正
     if text == "料金プラン":
-        # Stripeの決済リンク（ID付き）
-        url_1time = f"https://buy.stripe.com/00w28sdezc5A8lR2ej18c00?client_reference_id={user_id}"
-        url_5times = f"https://buy.stripe.com/fZucN66QbfhM6dJ7yD18c03?client_reference_id={user_id}"
-        url_monthly = f"https://buy.stripe.com/3cIfZi2zVd9E1XtdX118c05?client_reference_id={user_id}"
+        u1 = f"https://buy.stripe.com/00w28sdezc5A8lR2ej18c00?client_reference_id={user_id}"
+        u5 = f"https://buy.stripe.com/fZucN66QbfhM6dJ7yD18c03?client_reference_id={user_id}"
+        um = f"https://buy.stripe.com/3cIfZi2zVd9E1XtdX118c05?client_reference_id={user_id}"
 
-        # ご要望通りの「矢印＋スペース」と「その下の空行」を完全に再現したテキスト
-        # \n が改行を表します。\n\n と重ねることで1行空きを作っています。
-        message_content = (
+        # 矢印＋スペース＋URLの上の空行を完全に再現
+        message_body = (
             "ご希望のプランを選択して決済してください。\n"
             "決済完了後、すぐに分析が可能です。\n\n"
             "【単発プラン】500円/1回\n"
             "単発プランで試す → \n\n"
-            f"{url_1time}\n\n"
+            f"{u1}\n\n"
             "【回数券プラン】1,980円/5回\n"
             "回数券を購入する → \n\n"
-            f"{url_5times}\n\n"
+            f"{u5}\n\n"
             "【月額プラン】4,980円/月\n"
             "月額プランを申し込む → \n\n"
-            f"{url_monthly}"
+            f"{um}"
         )
 
-        # 確実に返信を実行する部分
+        # 確実に返信（これでシステムは復活します）
         line_bot_api.reply_message(
             event.reply_token,
-            TextSendMessage(text=message_content)
+            TextSendMessage(text=message_body)
         )
         
 if __name__ == "__main__":
