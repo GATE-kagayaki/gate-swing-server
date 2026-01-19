@@ -1770,6 +1770,7 @@ def handle_video(event: MessageEvent):
             "status": "PROCESSING",
             "is_premium": premium,
             "created_at": datetime.now(timezone.utc).isoformat(),
+            "expire_at": (datetime.now(timezone.utc) + timedelta(days=365)).isoformat(), # ← この行を追加
             "user_inputs": {},
         },
     )
