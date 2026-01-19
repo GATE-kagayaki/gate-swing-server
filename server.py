@@ -1618,7 +1618,7 @@ import stripe
 stripe.api_key = os.environ.get("STRIPE_SECRET_KEY", "")
 
 # Stripeからコピーした署名シークレット
-endpoint_secret = "whsec_yVMyiVhbFhrU0NeqkxwCam4ea9vkz6fo"
+endpoint_secret = "whsec_9TihaOMmmVwBQFuFg88EZyAA6ajGQsdQ"
 
 @app.route('/stripe/webhook', methods=['POST'])
 def stripe_webhook():
