@@ -1780,13 +1780,13 @@ def handle_video(event: MessageEvent):
     msg = event.message
     report_id = f"{user_id}_{msg.id}"
 
-    # 1. ユーザーデータの取得（(default) データベースを参照）
+    # 1. ユーザーデータの取得（チケット残数の確認）
     user_ref = db.collection('users').document(user_id)
     user_doc = user_ref.get()
     user_data = user_doc.to_dict() if user_doc.exists else {}
-    tickets = user_data.get('ticket_remaining', 0)  # チケット残数
+    tickets = user_data.get('ticket_remaining', 0)
 
-    # ★今回の解析を有料版にするか決める「合図（フラグ）」
+    # ★今回の解析を有料版にするか決めるフラグ（最初はFalse）
     force_paid_report = False
 
     print(f"[LOG] 動画受信: {user_id}")
@@ -1801,7 +1801,7 @@ def handle_video(event: MessageEvent):
         print(f"[LOG] 月額会員のため有料版で処理: {user_id}")
 
     elif tickets > 0:
-        # チケット保有者は、無料枠が残っていてもチケットを消費して有料版
+        # 【重要】チケット保有者は、無料枠があってもチケットを消費して有料版にする
         user_ref.update({
             'ticket_remaining': firestore.Increment(-1)
         })
@@ -1823,23 +1823,14 @@ def handle_video(event: MessageEvent):
         )
         return
 
-    # -----------------------------------------------------------
-    # ③ 解析プログラムの呼び出し
-    # -----------------------------------------------------------
-    # ※重要：お使いの解析関数の引数に force_paid_report を渡してください
-    # 例：run_analysis(user_id, report_id, is_premium=force_paid_report)
-    
-    # ここに現在お使いの「解析開始」のコードを記述してください。
-
-    # ③ Firestore にレポート作成（あなたの既存のコードをそのまま維持）
+    # ③ Firestore にレポート作成（ここを force_paid_report に書き換えます）
     firestore_safe_set(
         report_id,
         {
             "user_id": user_id,
             "status": "PROCESSING",
-            "is_premium": premium,
+            "is_premium": force_paid_report,  # ★修正点：単なる会員判定ではなく、チケット使用状況を反映
             "created_at": datetime.now(timezone.utc).isoformat(),
-            # 1年間の保存期限を維持
             "expire_at": (datetime.now(timezone.utc) + timedelta(days=365)).isoformat(),
             "user_inputs": {},
         },
@@ -1847,14 +1838,15 @@ def handle_video(event: MessageEvent):
    
     # ④ AI解析タスクの作成
     try:
+        # タスクを作成してAI（Worker）に処理を依頼
         task_name = create_cloud_task(report_id, user_id, msg.id)
         firestore_safe_update(report_id, {"task_name": task_name})
 
-        # 無料ユーザーのみ回数を消費
-        if not premium:
+        # チケット消費もサブスク利用もしなかった（＝純粋な無料枠利用）場合のみ、無料利用回数をカウント
+        if not force_paid_report:
             increment_free_usage(user_id)
 
-        # 受付完了の返信（user_idを渡してチケット切れを救済）
+        # 受付完了の返信
         safe_line_reply(event.reply_token, make_initial_reply(report_id), user_id=user_id)
 
     except Exception as e:
