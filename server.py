@@ -1918,20 +1918,24 @@ from linebot.models import MessageEvent, TextMessage, TextSendMessage
 @handler.add(MessageEvent, message=TextMessage)
 def handle_text_message(event):
     text = event.message.text
-    user_id = event.source.user_id  # LINEのユーザーIDを取得
+    user_id = event.source.user_id
 
     if text == "料金プラン":
-        # 各Stripe URLの末尾に client_reference_id として user_id を追加します
+        # ID付きのStripe決済リンク
         url_1time = f"https://buy.stripe.com/00w28sdezc5A8lR2ej18c00?client_reference_id={user_id}"
         url_5times = f"https://buy.stripe.com/fZucN66QbfhM6dJ7yD18c03?client_reference_id={user_id}"
         url_monthly = f"https://buy.stripe.com/3cIfZi2zVd9E1XtdX118c05?client_reference_id={user_id}"
         
+        # 各URLの前に空行を追加して、より見やすく整えました
         message = (
             "ご希望のプランを選択して決済してください。\n"
             "決済完了後、すぐに解析が利用可能になります。\n\n"
-            f"●1回券 (500円)\n{url_1time}\n\n"
-            f"●回数券 5回分 (1,980円)\n{url_5times}\n\n"
-            f"●月額会員 (4,980円)\n{url_monthly}"
+            f"【単発プラン】500円/1回\n"
+            f"単発プランで試す → \n\n{url_1time}\n\n"  # ← \n\n で1行空けました
+            f"【回数券プラン】1,980円/5回\n"
+            f"回数券を購入する → \n\n{url_5times}\n\n"
+            f"【月額プラン】4,980円/月\n"
+            f"月額プランを申し込む → \n\n{url_monthly}"
         )
         
         line_bot_api.reply_message(
