@@ -1763,14 +1763,15 @@ def handle_video(event: MessageEvent):
     premium = is_premium_user(user_id)
     print(f"[LOG] プレミアム判定結果: {premium}")
 
-    # 無料（月1回）チェック
+   # 無料（月1回）チェック
     if not premium:
         if not can_use_free_plan(user_id):
             safe_line_reply(
                 event.reply_token,
                 "⚠️ 無料プランは【月1回まで】です。\n"
                 "有料プランをご検討ください。\n\n"
-                "（500円/1回、1,980円/5回、4,980円/月・すべて税込）"
+                "（500円/1回、1,980円/5回、4,980円/月・すべて税込）",
+                user_id=user_id  # ← ここに書き足します
             )
             return
 
