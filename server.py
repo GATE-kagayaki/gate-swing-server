@@ -1921,18 +1921,16 @@ def handle_text_message(event):
     user_id = event.source.user_id
 
     if text == "料金プラン":
-        # ここだけを正確に書き換えてください（先頭の 'f' が最重要です）
-　　　   if text == "料金プラン":
+        # 変数の定義（すべて半角スペースで構成されています）
         u1 = f"https://buy.stripe.com/00w28sdezc5A8lR2ej18c00?client_reference_id={user_id}"
         u5 = f"https://buy.stripe.com/eVq3cw6Qb3z4atZdX118c06?client_reference_id={user_id}"
         um = f"https://buy.stripe.com/3cIfZi2zVd9E1XtdX118c05?client_reference_id={user_id}"
 
-        # 案内メッセージの内容
+        # メッセージ本文（既存のレイアウトを維持しています）
         message_content = (
             "GATE公式LINEへようこそ！⛳️\n\n"
-            "正確なAI解析結果をお届けするため、画面上部に「追加」ボタンが表示されている方は、まず登録をお願いいたします。\n"
-            "（すでに友だちの方は、そのまま下記よりプランをお選びください）\n\n"
-            "決済完了後は、このトーク画面にあなたのスイング動画を送っていただくだけで、すぐにAI解析がスタートします。\n"
+            "正確なAI解析結果をお届けするため、画面上部に「追加」ボタンが表示されている方は、まず登録をお願いいたします。\n\n"
+            "決済完了後は、このトーク画面にスイング動画を送るだけでAI解析がスタートします。\n"
             "--------------------\n\n"
             "【単発プラン】500円/1回\n"
             "単発プランで試す → \n\n"
