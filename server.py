@@ -1918,15 +1918,25 @@ from linebot.models import MessageEvent, TextMessage, TextSendMessage
 @handler.add(MessageEvent, message=TextMessage)
 def handle_text_message(event):
     text = event.message.text
+    user_id = event.source.user_id  # LINEのユーザーIDを取得
 
     if text == "料金プラン":
-        user_id = event.source.user_id
-        # HP側で ID を受け取れるように、?luid= を付けたURLを作成
-        checkout_url = f"https://gate-golf.com/?luid={user_id}#pricing"
+        # 各Stripe URLの末尾に client_reference_id として user_id を追加します
+        url_1time = f"https://buy.stripe.com/00w28sdezc5A8lR2ej18c00?client_reference_id={user_id}"
+        url_5times = f"https://buy.stripe.com/fZucN66QbfhM6dJ7yD18c03?client_reference_id={user_id}"
+        url_monthly = f"https://buy.stripe.com/3cIfZi2zVd9E1XtdX118c05?client_reference_id={user_id}"
+        
+        message = (
+            "ご希望のプランを選択して決済してください。\n"
+            "決済完了後、すぐに解析が利用可能になります。\n\n"
+            f"●1回券 (500円)\n{url_1time}\n\n"
+            f"●回数券 5回分 (1,980円)\n{url_5times}\n\n"
+            f"●月額会員 (4,980円)\n{url_monthly}"
+        )
         
         line_bot_api.reply_message(
             event.reply_token,
-            TextSendMessage(text=f"以下のリンクからプランを選択してください。\n{checkout_url}")
+            TextSendMessage(text=message)
         )
         
 if __name__ == "__main__":
