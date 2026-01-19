@@ -1619,28 +1619,46 @@ stripe.api_key = os.environ.get("STRIPE_SECRET_KEY", "")
 
 @app.route('/stripe/webhook', methods=['POST'])
 def stripe_webhook():
-    payload = request.data
+    payload = request.get_data()
     sig_header = request.headers.get('Stripe-Signature')
+    
     try:
+        # endpoint_secret (whsec_...) が正しく設定されていることが前提です
         event = stripe.Webhook.construct_event(payload, sig_header, endpoint_secret)
-    except:
-        return 'Invalid payload', 400
+    except stripe.error.SignatureVerificationError as e:
+        print(f"⚠️ 署名検証失敗: {e}")
+        return 'Invalid signature', 400
+    except Exception as e:
+        print(f"⚠️ エラー発生: {e}")
+        return 'Error', 400
 
+    # 1. 支払い完了イベントであることを確認
     if event['type'] == 'checkout.session.completed':
         session = event['data']['object']
         
-        # ホームページから引き継がれる ID を取得
+        # 2. ★【最重要】ここが、あなたが指摘した「IDを取得する一行」です
         line_user_id = session.get('client_reference_id')
 
         if line_user_id:
+            # 3. Firestoreのユーザー情報を更新（チケットを1増やす）
             user_ref = db.collection('users').document(line_user_id)
             user_ref.set({
                 'ticket_remaining': firestore.Increment(1),
                 'last_payment_date': firestore.SERVER_TIMESTAMP
             }, merge=True)
-            print(f"Success: Updated {line_user_id}")
+
+            # 4. 決済した本人にLINEで自動通知
+            try:
+                line_bot_api.push_message(
+                    line_user_id,
+                    TextSendMessage(text="決済を確認しました！⛳️\nこのままスイング動画を送ってください。AI解析を開始します。")
+                )
+                print(f"✅ 成功: {line_user_id} のチケットを更新し、メッセージを送りました。")
+            except Exception as e:
+                print(f"⚠️ LINEメッセージ送信失敗: {e}")
         else:
-            print("Warning: client_reference_id is empty")
+            # IDが空だった場合の警告
+            print("⚠️ 警告: client_reference_id が空です。URLの設定を確認してください。")
 
     return jsonify(success=True)
     
