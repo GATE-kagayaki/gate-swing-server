@@ -1840,16 +1840,31 @@ def handle_video(event: MessageEvent):
         task_name = create_cloud_task(report_id, user_id, msg.id)
         firestore_safe_update(report_id, {"task_name": task_name})
 
-        # 有料版として処理しなかった（＝無料枠利用）場合のみ、回数をカウント
+       # 有料版として処理しなかった（＝無料枠利用）場合のみ、回数をカウント
         if not force_paid_report:
             increment_free_usage(user_id)
 
-        safe_line_reply(event.reply_token, make_initial_reply(report_id), user_id=user_id)
-
-    except Exception as e:
-        print(f"[ERROR] タスク作成失敗: {traceback.format_exc()}")
-        firestore_safe_update(report_id, {"status": "TASK_FAILED", "error": str(e)})
-        safe_line_reply(event.reply_token, "システムエラーが発生しました。", user_id=user_id)
+        # -----------------------------------------------------------
+        # ここから書き換え：受付完了とフィッティング質問の出し分け
+        # -----------------------------------------------------------
+        if force_paid_report:
+            # 有料会員限定：最初の質問（ミスの傾向）を出す
+            items = [
+                QuickReplyButton(action=MessageAction(label="スライス/右", text="ミス：スライス")),
+                QuickReplyButton(action=MessageAction(label="フック/左", text="ミス：フック")),
+                QuickReplyButton(action=MessageAction(label="特に無し/その他", text="ミス：無し")),
+            ]
+            reply_text = (
+                "【有料版限定診断：1/3】\n動画を受付ました！⛳️\n\n"
+                "09フィッティング解析のため、現在の「主なミスの傾向」を下のボタンから教えてください。"
+            )
+            line_bot_api.reply_message(
+                event.reply_token,
+                TextSendMessage(text=reply_text, quick_reply=QuickReply(items=items))
+            )
+        else:
+            # 無料版：従来の受付メッセージのみ
+            safe_line_reply(event.reply_token, make_initial_reply(report_id), user_id=user_id)
 
 @app.route("/task-handler", methods=["POST"])
 def task_handler():
