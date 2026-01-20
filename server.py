@@ -1780,75 +1780,48 @@ def handle_video(event: MessageEvent):
     msg = event.message
     report_id = f"{user_id}_{msg.id}"
 
-    # 1. ユーザーデータの取得（チケット残数の確認）
     user_ref = db.collection('users').document(user_id)
     user_doc = user_ref.get()
     user_data = user_doc.to_dict() if user_doc.exists else {}
     tickets = user_data.get('ticket_remaining', 0)
 
-    # 今回の解析を有料版にするか決めるフラグ
     force_paid_report = False
-
     print(f"[LOG] 動画受信: {user_id}")
 
-    # ① プレミアム判定（月額会員かどうか）
     premium = is_premium_user(user_id)
 
-    # ② 優先順位に基づいた判定とチケット消費
     if premium:
-        # 月額会員は常に最優先で有料版
         force_paid_report = True
-        print(f"[LOG] 月額会員のため有料版で処理: {user_id}")
-
     elif tickets > 0:
-        # チケット保有者は、無料枠が残っていてもチケットを優先消費して有料版にする
-        user_ref.update({
-            'ticket_remaining': firestore.Increment(-1)
-        })
+        user_ref.update({'ticket_remaining': firestore.Increment(-1)})
         force_paid_report = True
-        print(f"[LOG] チケット消費成功: 有料版を確定")
-
     elif can_use_free_plan(user_id):
-        # どちらも無いが、無料枠がある場合は無料版
         force_paid_report = False
-        print(f"[LOG] 無料枠適用: {user_id}")
-
     else:
-        # すべて使い切っている場合
-        safe_line_reply(
-            event.reply_token,
-            "⚠️ チケットの残数がありません。🎫\n無料プランは【月1回まで】です。\n有料プランをご検討ください。",
-            user_id=user_id
-        )
+        safe_line_reply(event.reply_token, "⚠️ チケットの残数がありません。", user_id=user_id)
         return
 
-    # ③ Firestore にレポート作成（is_premium を判定結果に連動させる）
     firestore_safe_set(
         report_id,
         {
             "user_id": user_id,
             "status": "PROCESSING",
-            "is_premium": force_paid_report,  # ここが True なら有料版レポートになる
+            "is_premium": force_paid_report,
             "created_at": datetime.now(timezone.utc).isoformat(),
             "expire_at": (datetime.now(timezone.utc) + timedelta(days=365)).isoformat(),
             "user_inputs": {},
         },
     )
    
-    # ④ AI解析タスクの作成
     try:
         task_name = create_cloud_task(report_id, user_id, msg.id)
         firestore_safe_update(report_id, {"task_name": task_name})
 
-       # 有料版として処理しなかった（＝無料枠利用）場合のみ、回数をカウント
         if not force_paid_report:
             increment_free_usage(user_id)
 
-        # -----------------------------------------------------------
-        # ここから書き換え：受付完了とフィッティング質問の出し分け
-        # -----------------------------------------------------------
+        # ここが今回の追加ポイント
         if force_paid_report:
-            # 有料会員限定：最初の質問（ミスの傾向）を出す
             items = [
                 QuickReplyButton(action=MessageAction(label="スライス/右", text="ミス：スライス")),
                 QuickReplyButton(action=MessageAction(label="フック/左", text="ミス：フック")),
@@ -1856,15 +1829,19 @@ def handle_video(event: MessageEvent):
             ]
             reply_text = (
                 "【有料版限定診断：1/3】\n動画を受付ました！⛳️\n\n"
-                "09フィッティング解析のため、現在の「主なミスの傾向」を下のボタンから教えてください。"
+                "09フィッティング解析のため、現在の「主なミスの傾向」を教えてください。"
             )
             line_bot_api.reply_message(
                 event.reply_token,
                 TextSendMessage(text=reply_text, quick_reply=QuickReply(items=items))
             )
         else:
-            # 無料版：従来の受付メッセージのみ
             safe_line_reply(event.reply_token, make_initial_reply(report_id), user_id=user_id)
+
+    except Exception as e:
+        print(f"[ERROR] タスク作成失敗: {traceback.format_exc()}")
+        firestore_safe_update(report_id, {"status": "TASK_FAILED", "error": str(e)})
+        safe_line_reply(event.reply_token, "システムエラーが発生しました。", user_id=user_id)
 
 @app.route("/task-handler", methods=["POST"])
 def task_handler():
