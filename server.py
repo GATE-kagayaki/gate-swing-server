@@ -1843,11 +1843,23 @@ def handle_text_message(event):
 
     if "料金プラン" in text:
         plan_text = (
-            "【GATE 料金プラン】⛳️\n\n"
-            "🔹1回券: 500円(税込)\nhttps://buy.stripe.com/00w28sdezc5A8lR2ej18c00\n\n"
-            "🔹回数券: 1,980円(税込)\nhttps://buy.stripe.com/fZucN66QbfhM6dJ7yD18c03\n\n"
-            "🔹月額プラン: 4,980円(税込)\nhttps://buy.stripe.com/3cIfZi2zVd9E1XtdX118c05"
+           "GATE公式LINEへようこそ！⛳️\n\n"
+            "正確なAI解析結果をお届けするため、画面上部に「追加」ボタンが表示されている方は、まず登録をお願いいたします。\n\n"
+            "決済完了後は、このトーク画面にスイング動画を送るだけでAI解析がスタートします。\n"
+            "--------------------\n\n"
+            "【単発プラン】500円/1回\n"
+            "単発プランで試す → \n"
+            f"https://buy.stripe.com/00w28sdezc5A8lR2ej18c00?client_reference_id={user_id}\n\n"
+            "【回数券プラン】1,980円/5回\n"
+            "回数券を購入する → \n"
+            f"https://buy.stripe.com/eVq3cw6Qb3z4atZdX118c06?client_reference_id={user_id}\n\n"
+            "【月額プラン】4,980円/月\n"
+            "月額プランを申し込む → \n"
+            f"https://buy.stripe.com/3cIfZi2zVd9E1XtdX118c05?client_reference_id={user_id}\n\n"
+            "--------------------\n"
+            "※操作方法などは、このままトークでお気軽にご質問ください。"
         )
+        
         line_bot_api.reply_message(event.reply_token, TextSendMessage(text=plan_text))
         return
 
