@@ -1785,204 +1785,106 @@ def handle_video(event: MessageEvent):
     user_data = user_doc.to_dict() if user_doc.exists else {}
     tickets = user_data.get('ticket_remaining', 0)
 
-    force_paid_report = False
-    print(f"[LOG] 動画受信: {user_id}")
-
-    premium = is_premium_user(user_id)
-
-    if premium:
-        force_paid_report = True
-    elif tickets > 0:
+    force_paid_report = is_premium_user(user_id) or tickets > 0
+    if not is_premium_user(user_id) and tickets > 0:
         user_ref.update({'ticket_remaining': firestore.Increment(-1)})
-        force_paid_report = True
-    elif can_use_free_plan(user_id):
-        force_paid_report = False
-    else:
-        safe_line_reply(event.reply_token, "⚠️ チケットの残数がありません。", user_id=user_id)
-        return
 
-    firestore_safe_set(
-        report_id,
-        {
-            "user_id": user_id,
-            "status": "PROCESSING",
-            "is_premium": force_paid_report,
-            "created_at": datetime.now(timezone.utc).isoformat(),
-            "expire_at": (datetime.now(timezone.utc) + timedelta(days=365)).isoformat(),
-            "user_inputs": {},
-        },
-    )
+    firestore_safe_set(report_id, {
+        "user_id": user_id,
+        "status": "PROCESSING",
+        "is_premium": force_paid_report,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "user_inputs": {},
+    })
    
     try:
         task_name = create_cloud_task(report_id, user_id, msg.id)
         firestore_safe_update(report_id, {"task_name": task_name})
 
-        if not force_paid_report:
-            increment_free_usage(user_id)
-
-        # ここが今回の追加ポイント
-        if force_paid_report:
-            items = [
-                QuickReplyButton(action=MessageAction(label="スライス/右", text="ミス：スライス")),
-                QuickReplyButton(action=MessageAction(label="フック/左", text="ミス：フック")),
-                QuickReplyButton(action=MessageAction(label="特に無し/その他", text="ミス：無し")),
-            ]
-            reply_text = (
-                "【有料版限定診断：1/3】\n動画を受付ました！⛳️\n\n"
-                "09フィッティング解析のため、現在の「主なミスの傾向」を教えてください。"
-            )
-            line_bot_api.reply_message(
-                event.reply_token,
-                TextSendMessage(text=reply_text, quick_reply=QuickReply(items=items))
-            )
-        else:
-            safe_line_reply(event.reply_token, make_initial_reply(report_id), user_id=user_id)
-
-    except Exception as e:
-        print(f"[ERROR] タスク作成失敗: {traceback.format_exc()}")
-        firestore_safe_update(report_id, {"status": "TASK_FAILED", "error": str(e)})
-        safe_line_reply(event.reply_token, "システムエラーが発生しました。", user_id=user_id)
-
-@app.route("/task-handler", methods=["POST"])
-def task_handler():
-    d = request.get_json(silent=True) or {}
-    report_id = d.get("report_id")
-    message_id = d.get("message_id")
-    user_id = d.get("user_id")
-
-    if not report_id or not message_id or not user_id:
-        return "Invalid payload", 400
-
-    tmpdir = tempfile.mkdtemp()
-    video_path = os.path.join(tmpdir, f"{message_id}.mp4")
-
-    doc_ref = db.collection("reports").document(report_id)
-
-    try:
-        doc_ref.update({"status": "IN_PROGRESS"})
-
-        content = line_bot_api.get_message_content(message_id)
-        with open(video_path, "wb") as f:
-            for chunk in content.iter_content():
-                f.write(chunk)
-
-        raw_data = analyze_swing_with_mediapipe(video_path)
-
-        doc = doc_ref.get()
-        docd = doc.to_dict() or {}
-        premium = bool(docd.get("is_premium", False))
-        user_inputs = docd.get("user_inputs", {}) or {}
-
-        analysis = build_analysis(raw_data, premium, report_id, user_inputs)
-
-        consume_ticket_if_needed(user_id, report_id)
-
-        doc_ref.update(
-            {
-                "status": "COMPLETED",
-                "raw_data": raw_data,
-                "analysis": analysis,
-                "updated_at": firestore.SERVER_TIMESTAMP,
-            }
+        # 【待機時間を 1～3分 に修正しました】
+        base_message = (
+            "動画を正常に受け付けました！⛳️\n"
+            "AI解析を開始します。1～3分ほどで完了します。\n"
+            f"解析状況はこちら：\nhttps://gate-golf.com/mypage/?id={report_id}"
         )
 
-        safe_line_push(user_id, make_done_push(report_id))
-        return jsonify({"ok": True}), 200
+        if force_paid_report:
+            fitting_intro = "\n\n09フィッティング解析のため、現在の「ヘッドスピード」「主なミスの傾向」「性別（任意）」を教えてください。"
+            instruction = "\n\n【1/3】まずは「ヘッドスピード」を数字（例：42）だけで送ってください。"
+            
+            line_bot_api.reply_message(
+                event.reply_token,
+                TextSendMessage(text=f"{base_message}{fitting_intro}{instruction}")
+            )
+        else:
+            increment_free_usage(user_id)
+            line_bot_api.reply_message(event.reply_token, TextSendMessage(text=base_message))
 
     except Exception as e:
-        print(traceback.format_exc())
-        try:
-            doc_ref.update({"status": "FAILED", "error": str(e)})
-        except Exception:
-            print(traceback.format_exc())
-        safe_line_push(user_id, "システムエラーが発生し、解析を完了できませんでした。")
-        return "Internal Error", 500
+        print(f"[ERROR] {traceback.format_exc()}")
+        firestore_safe_update(report_id, {"status": "TASK_FAILED", "error": str(e)})
+        safe_line_reply(event.reply_token, "システムエラーが発生しました。時間を置いて再度お試しください。", user_id=user_id)
 
-    finally:
-        shutil.rmtree(tmpdir, ignore_errors=True)
-
-
-@app.route("/report/<report_id>")
-def report_page(report_id):
-    return render_template("report.html", report_id=report_id)
-
-
-@app.route("/api/report_data/<report_id>")
-def api_report_data(report_id):
-    doc = db.collection("reports").document(report_id).get()
-    if not doc.exists:
-        return jsonify({"error": "not found"}), 404
-    d = doc.to_dict() or {}
-    return jsonify(
-        {
-            "status": d.get("status"),
-            "analysis": d.get("analysis", {}),
-            "raw_data": d.get("raw_data", {}),
-            "is_premium": d.get("is_premium", False),
-            "error": d.get("error"),
-            "created_at": d.get("created_at"),
-        }
-    )
-
-@app.route("/success")
-def payment_success():
-    return render_template_string("""
-        <html><head><title>決済完了</title><meta name="viewport" content="width=device-width,initial-scale=1"></head>
-        <body style="text-align:center; padding-top:50px; font-family:sans-serif;">
-            <h1 style="color:#28a745;">決済が完了しました！</h1>
-            <p>LINEに戻ってスイング解析を開始してください。</p>
-            <button onclick="window.close();" style="padding:10px 20px;">閉じる</button>
-        </body></html>
-    """)
-
-@app.route("/cancel")
-def payment_cancel():
-    return render_template_string("""
-        <html><head><title>キャンセル</title><meta name="viewport" content="width=device-width,initial-scale=1"></head>
-        <body style="text-align:center; padding-top:50px; font-family:sans-serif;">
-            <h1>決済をキャンセルしました</h1>
-            <p>メニューからもう一度やり直してください。</p>
-            <button onclick="window.close();" style="padding:10px 20px;">閉じる</button>
-        </body></html>
-    """)
-
-# ここで必要な定義を読み込むことで、エラーを防ぎます
-from linebot.models import MessageEvent, TextMessage, TextSendMessage
 
 @handler.add(MessageEvent, message=TextMessage)
 def handle_text_message(event):
     text = event.message.text
     user_id = event.source.user_id
 
+    recent_reports = db.collection('reports') \
+        .where('user_id', '==', user_id) \
+        .order_by('created_at', direction=firestore.Query.DESCENDING) \
+        .limit(1).get()
+
+    if recent_reports:
+        report_ref = recent_reports[0].reference
+        
+        if text.isdigit():
+            val = int(text)
+            if 10 <= val <= 70:
+                report_ref.update({"user_inputs.head_speed": val})
+                items = [
+                    QuickReplyButton(action=MessageAction(label="スライス/右", text="ミス：スライス")),
+                    QuickReplyButton(action=MessageAction(label="フック/左", text="ミス：フック")),
+                    QuickReplyButton(action=MessageAction(label="特に無し", text="ミス：無し")),
+                ]
+                line_bot_api.reply_message(
+                    event.reply_token, 
+                    TextSendMessage(text=f"HS {val}m/s で保存しました。\n\n【2/3】次に「主なミスの傾向」を選択してください。", quick_reply=QuickReply(items=items))
+                )
+                return
+
+        elif "ミス：" in text:
+            val = text.replace("ミス：", "")
+            report_ref.update({"user_inputs.miss_tendency": val})
+            items = [
+                QuickReplyButton(action=MessageAction(label="男性", text="性別：男性")),
+                QuickReplyButton(action=MessageAction(label="女性", text="性別：女性")),
+                QuickReplyButton(action=MessageAction(label="回答しない", text="性別：none"))
+            ]
+            line_bot_api.reply_message(
+                event.reply_token, 
+                TextSendMessage(text="【3/3】最後に「性別」を教えてください（任意）。", quick_reply=QuickReply(items=items))
+            )
+            return
+
+        elif "性別：" in text:
+            val = text.replace("性別：", "")
+            report_ref.update({"user_inputs.gender": val})
+            line_bot_api.reply_message(
+                event.reply_token, 
+                TextSendMessage(text="ありがとうございます。情報を解析に反映します！完成まで今しばらくお待ちください。⛳️")
+            )
+            return
+
     if text == "料金プラン":
-        # 変数の定義（すべて半角スペースで構成されています）
-        u1 = f"https://buy.stripe.com/00w28sdezc5A8lR2ej18c00?client_reference_id={user_id}"
-        u5 = f"https://buy.stripe.com/eVq3cw6Qb3z4atZdX118c06?client_reference_id={user_id}"
-        um = f"https://buy.stripe.com/3cIfZi2zVd9E1XtdX118c05?client_reference_id={user_id}"
-
-        # メッセージ本文（既存のレイアウトを維持しています）
-        message_content = (
-            "GATE公式LINEへようこそ！⛳️\n\n"
-            "正確なAI解析結果をお届けするため、画面上部に「追加」ボタンが表示されている方は、まず登録をお願いいたします。\n\n"
-            "決済完了後は、このトーク画面にスイング動画を送るだけでAI解析がスタートします。\n"
-            "--------------------\n\n"
-            "【単発プラン】500円/1回\n"
-            "単発プランで試す → \n\n"
-            f"{u1}\n\n"
-            "【回数券プラン】1,980円/5回\n"
-            "回数券を購入する → \n\n"
-            f"{u5}\n\n"
-            "【月額プラン】4,980円/月\n"
-            "月額プランを申し込む → \n\n"
-            f"{um}\n\n"
-            "--------------------\n"
-            "※操作方法などは、このままトークでお気軽にご質問ください。"
+        plan_text = (
+            "【GATE 料金プラン】⛳️\n\n"
+            "🔹1回券: 500円\nhttps://buy.stripe.com/00w28sdezc5A8lR2ej18c00\n\n"
+            "🔹回数券: 2,000円\nhttps://buy.stripe.com/fZucN66QbfhM6dJ7yD18c03\n\n"
+            "🔹月額プラン: 3,000円\nhttps://buy.stripe.com/3cIfZi2zVd9E1XtdX118c05"
         )
-
-        line_bot_api.reply_message(
-            event.reply_token,
-            TextSendMessage(text=message_content)
-        )
+        line_bot_api.reply_message(event.reply_token, TextSendMessage(text=plan_text))
         
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", "8080"))
