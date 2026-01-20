@@ -1786,12 +1786,12 @@ def handle_video(event: MessageEvent):
     user_data = user_doc.to_dict() if user_doc.exists else {}
     tickets = user_data.get('ticket_remaining', 0)
 
-    # ★今回の解析を有料版にするか決めるフラグ（最初はFalse）
+    # 今回の解析を有料版にするか決めるフラグ
     force_paid_report = False
 
     print(f"[LOG] 動画受信: {user_id}")
 
-    # ① プレミアム判定（月額会員）
+    # ① プレミアム判定（月額会員かどうか）
     premium = is_premium_user(user_id)
 
     # ② 優先順位に基づいた判定とチケット消費
@@ -1801,35 +1801,34 @@ def handle_video(event: MessageEvent):
         print(f"[LOG] 月額会員のため有料版で処理: {user_id}")
 
     elif tickets > 0:
-        # 【重要】チケット保有者は、無料枠があってもチケットを消費して有料版にする
+        # チケット保有者は、無料枠が残っていてもチケットを優先消費して有料版にする
         user_ref.update({
             'ticket_remaining': firestore.Increment(-1)
         })
         force_paid_report = True
-        print(f"[LOG] チケット消費(残り {tickets - 1} 枚)のため有料版で処理: {user_id}")
+        print(f"[LOG] チケット消費成功: 有料版を確定")
 
     elif can_use_free_plan(user_id):
-        # チケットも月額会員権も無いが、無料枠がある場合は無料版
+        # どちらも無いが、無料枠がある場合は無料版
         force_paid_report = False
-        print(f"[LOG] 無料枠での解析: {user_id}")
+        print(f"[LOG] 無料枠適用: {user_id}")
 
     else:
         # すべて使い切っている場合
         safe_line_reply(
             event.reply_token,
-            "⚠️ チケットの残数がありません。🎫\n無料プランは【月1回まで】です。\n有料プランをご検討ください。\n\n"
-            "（500円/1回、1,980円/5回、4,980円/月・すべて税込）",
+            "⚠️ チケットの残数がありません。🎫\n無料プランは【月1回まで】です。\n有料プランをご検討ください。",
             user_id=user_id
         )
         return
 
-    # ③ Firestore にレポート作成（ここを force_paid_report に書き換えます）
+    # ③ Firestore にレポート作成（is_premium を判定結果に連動させる）
     firestore_safe_set(
         report_id,
         {
             "user_id": user_id,
             "status": "PROCESSING",
-            "is_premium": force_paid_report,  # ★修正点：単なる会員判定ではなく、チケット使用状況を反映
+            "is_premium": force_paid_report,  # ここが True なら有料版レポートになる
             "created_at": datetime.now(timezone.utc).isoformat(),
             "expire_at": (datetime.now(timezone.utc) + timedelta(days=365)).isoformat(),
             "user_inputs": {},
@@ -1838,26 +1837,19 @@ def handle_video(event: MessageEvent):
    
     # ④ AI解析タスクの作成
     try:
-        # タスクを作成してAI（Worker）に処理を依頼
         task_name = create_cloud_task(report_id, user_id, msg.id)
         firestore_safe_update(report_id, {"task_name": task_name})
 
-        # チケット消費もサブスク利用もしなかった（＝純粋な無料枠利用）場合のみ、無料利用回数をカウント
+        # 有料版として処理しなかった（＝無料枠利用）場合のみ、回数をカウント
         if not force_paid_report:
             increment_free_usage(user_id)
 
-        # 受付完了の返信
         safe_line_reply(event.reply_token, make_initial_reply(report_id), user_id=user_id)
 
     except Exception as e:
         print(f"[ERROR] タスク作成失敗: {traceback.format_exc()}")
         firestore_safe_update(report_id, {"status": "TASK_FAILED", "error": str(e)})
-        # エラー時の返信
-        safe_line_reply(
-            event.reply_token, 
-            "システムエラーが発生しました。時間を置いて再度お試しください。", 
-            user_id=user_id
-        )
+        safe_line_reply(event.reply_token, "システムエラーが発生しました。", user_id=user_id)
 
 @app.route("/task-handler", methods=["POST"])
 def task_handler():
