@@ -1797,6 +1797,7 @@ def handle_video(event: MessageEvent):
     if not is_premium_user(user_id) and tickets > 0:
         user_ref.update({'ticket_remaining': firestore.Increment(-1)})
 
+    # 【重要】URLエラーを防ぐため、先に保存を完了させる
     firestore_safe_set(report_id, {
         "user_id": user_id,
         "status": "PROCESSING",
@@ -1806,20 +1807,20 @@ def handle_video(event: MessageEvent):
     })
    
     try:
-        task_name = create_cloud_task(report_id, user_id, msg.id)
-        firestore_safe_update(report_id, {"task_name": task_name})
-
-        # 【待機時間を 1～3分 に修正しました】
+        # メッセージを組み立て
         base_message = (
             "動画を正常に受け付けました！⛳️\n"
             "AI解析を開始します。1～3分ほどで完了します。\n"
             f"解析状況はこちら：\nhttps://gate-golf.com/mypage/?id={report_id}"
         )
 
+        # 解析タスクの作成（これが失敗しても返信は届くように try 内の最後に置くか検討）
+        task_name = create_cloud_task(report_id, user_id, msg.id)
+        firestore_safe_update(report_id, {"task_name": task_name})
+
         if force_paid_report:
             fitting_intro = "\n\n09フィッティング解析のため、現在の「ヘッドスピード」「主なミスの傾向」「性別（任意）」を教えてください。"
             instruction = "\n\n【1/3】まずは「ヘッドスピード」を数字（例：42）だけで送ってください。"
-            
             line_bot_api.reply_message(
                 event.reply_token,
                 TextSendMessage(text=f"{base_message}{fitting_intro}{instruction}")
@@ -1830,23 +1831,35 @@ def handle_video(event: MessageEvent):
 
     except Exception as e:
         print(f"[ERROR] {traceback.format_exc()}")
-        firestore_safe_update(report_id, {"status": "TASK_FAILED", "error": str(e)})
-        safe_line_reply(event.reply_token, "システムエラーが発生しました。時間を置いて再度お試しください。", user_id=user_id)
+        # エラーが起きてもユーザーに状況を伝える
+        safe_line_reply(event.reply_token, "動画は受け取りましたが、解析の予約に失敗しました。事務局へお問い合わせください。", user_id=user_id)
 
 
 @handler.add(MessageEvent, message=TextMessage)
 def handle_text_message(event):
-    text = event.message.text
+    # 文字の整理と「料金プラン」の優先判定（リッチメニュー対策）
+    text = event.message.text.strip().translate(str.maketrans('０１２３４５６７８９', '0123456789'))
     user_id = event.source.user_id
 
-    recent_reports = db.collection('reports') \
-        .where('user_id', '==', user_id) \
-        .order_by('created_at', direction=firestore.Query.DESCENDING) \
-        .limit(1).get()
+    if "料金プラン" in text:
+        plan_text = (
+            "【GATE 料金プラン】⛳️\n\n"
+            "🔹1回券: 500円(税込)\nhttps://buy.stripe.com/00w28sdezc5A8lR2ej18c00\n\n"
+            "🔹回数券: 1,980円(税込)\nhttps://buy.stripe.com/fZucN66QbfhM6dJ7yD18c03\n\n"
+            "🔹月額プラン: 4,980円(税込)\nhttps://buy.stripe.com/3cIfZi2zVd9E1XtdX118c05"
+        )
+        line_bot_api.reply_message(event.reply_token, TextSendMessage(text=plan_text))
+        return
 
-    if recent_reports:
-        report_ref = recent_reports[0].reference
+    # インデックスエラーを回避するため、まず全取得してから最新の1件を特定
+    docs = db.collection('reports').where('user_id', '==', user_id).get()
+
+    if docs:
+        # 作成日時が一番新しいレポートを選ぶ
+        latest_report = max(docs, key=lambda d: d.to_dict().get('created_at', ''))
+        report_ref = latest_report.reference
         
+        # 数字（HS）の保存
         if text.isdigit():
             val = int(text)
             if 10 <= val <= 70:
@@ -1862,6 +1875,7 @@ def handle_text_message(event):
                 )
                 return
 
+        # ミスの傾向
         elif "ミス：" in text:
             val = text.replace("ミス：", "")
             report_ref.update({"user_inputs.miss_tendency": val})
@@ -1876,6 +1890,7 @@ def handle_text_message(event):
             )
             return
 
+        # 性別
         elif "性別：" in text:
             val = text.replace("性別：", "")
             report_ref.update({"user_inputs.gender": val})
@@ -1884,15 +1899,6 @@ def handle_text_message(event):
                 TextSendMessage(text="ありがとうございます。情報を解析に反映します！完成まで今しばらくお待ちください。⛳️")
             )
             return
-
-    if text == "料金プラン":
-        plan_text = (
-            "【GATE 料金プラン】⛳️\n\n"
-            "🔹1回券: 500円\nhttps://buy.stripe.com/00w28sdezc5A8lR2ej18c00\n\n"
-            "🔹回数券: 2,000円\nhttps://buy.stripe.com/fZucN66QbfhM6dJ7yD18c03\n\n"
-            "🔹月額プラン: 3,000円\nhttps://buy.stripe.com/3cIfZi2zVd9E1XtdX118c05"
-        )
-        line_bot_api.reply_message(event.reply_token, TextSendMessage(text=plan_text))
         
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", "8080"))
