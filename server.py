@@ -1633,19 +1633,31 @@ def build_analysis(raw: Dict[str, Any], premium: bool, report_id: str, user_inpu
 # ==================================================
 # Routes
 # ==================================================
-@app.route("/health", methods=["GET"])
-def health():
-    return jsonify(
-        {
-            "ok": True,
-            "project_id": PROJECT_ID,
-            "queue_location": QUEUE_LOCATION,
-            "queue_name": QUEUE_NAME,
-            "service_host_url": SERVICE_HOST_URL,
-            "task_handler_url": TASK_HANDLER_URL,
-            "task_sa_email_set": bool(TASK_SA_EMAIL),
-        }
+@app.route("/report/<report_id>", methods=["GET"])
+def report_page(report_id: str):
+    doc = db.collection("reports").document(report_id).get()
+    if not doc.exists:
+        return "Report not found", 404
+
+    report = doc.to_dict() or {}
+
+    # report.html が templates/ にある前提
+    return render_template(
+        "report.html",
+        report_id=report_id,
+        report=report,
+        status=report.get("status", "PROCESSING"),
+        premium=bool(report.get("is_premium", False)),
+        analysis=report.get("analysis"),
+        raw=report.get("raw"),
     )
+
+
+# 末尾スラッシュでも落ちないように保険（LINE/ブラウザが勝手に付ける事故対策）
+@app.route("/report/<report_id>/", methods=["GET"])
+def report_page_slash(report_id: str):
+    return report_page(report_id)
+
 
 # ==================================================
 # Stripe Checkout 作成
