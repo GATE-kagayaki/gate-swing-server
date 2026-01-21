@@ -208,7 +208,23 @@ def safe_line_push(user_id: str, text: str, force: bool = False) -> None:
 
 
 def make_initial_reply(report_id: str) -> str:
-    url = f"{SERVICE_HOST_URL}/report/{report_id}"
+    host = (SERVICE_HOST_URL or "").strip().rstrip("/")
+
+    # スキーム補完（https:// が無ければ付与）
+    if host and not host.startswith(("https://", "http://")):
+        host = "https://" + host
+
+    # host が空なら壊れたURLを出さない
+    if not host:
+        return (
+            "✅ 動画を受信しました。\n"
+            "AIによるスイング解析を開始します。\n\n"
+            "⚠️ システム設定エラーのため、URLを生成できませんでした。\n"
+            "時間を置いて再度お試しください。"
+        )
+
+    url = f"{host}/report/{report_id}"
+
     return (
         "✅ 動画を受信しました。\n"
         "AIによるスイング解析を開始します。\n\n"
@@ -223,10 +239,22 @@ def make_initial_reply(report_id: str) -> str:
 
 
 def make_done_push(report_id: str) -> str:
-    url = f"{SERVICE_HOST_URL}/report/{report_id}"
+    host = (SERVICE_HOST_URL or "").strip().rstrip("/")
+
+    # スキーム補完（https:// が無ければ付ける）
+    if host and not host.startswith(("https://", "http://")):
+        host = "https://" + host
+
+    # host が空なら、壊れたURLを出さない
+    if not host:
+        return "🎉 スイング計測が完了しました！（URL生成に失敗しました）"
+
+    url = f"{host}/report/{report_id}"
+
+    # URLは必ず「単独の1行」にする
     return (
         "🎉 スイング計測が完了しました！\n\n"
-        "以下のリンクから診断レポートを確認できます。\n\n"
+        "【診断レポートURL】\n"
         f"{url}"
     )
 
