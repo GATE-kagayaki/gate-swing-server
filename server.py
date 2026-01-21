@@ -1899,16 +1899,20 @@ def webhook_callback_alias():
 @app.route("/webhook", methods=["POST"])
 def webhook():
     import logging
+    from flask import request, abort
 
-　　logging.warning("[DEBUG RAW BODY] %s", request.get_data(as_text=True))
+    logging.warning("[DEBUG RAW BODY] %s", request.get_data(as_text=True))
 
     signature = request.headers.get("X-Line-Signature", "")
     body = request.get_data(as_text=True)
+
     try:
         handler.handle(body, signature)
     except InvalidSignatureError:
         abort(400)
+
     return "OK"
+
 
 
 @handler.add(MessageEvent, message=VideoMessage)
