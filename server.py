@@ -1679,6 +1679,62 @@ def api_report_data(report_id: str):
         "is_premium": bool(r.get("is_premium", False)),
         "analysis": r.get("analysis") or {},
     })
+    
+ @app.route("/task-handler", methods=["POST"])
+def task_handler():
+    try:
+        data = request.get_json(silent=True) or {}
+        report_id = data.get("report_id")
+        user_id = data.get("user_id")
+        message_id = data.get("message_id")
+
+        if not report_id or not user_id or not message_id:
+            return jsonify({"ok": False, "error": "missing fields"}), 400
+
+        report_ref = db.collection("reports").document(report_id)
+        snap = report_ref.get()
+        if not snap.exists:
+            return jsonify({"ok": False, "error": "report not found"}), 404
+
+        report = snap.to_dict() or {}
+        premium = bool(report.get("is_premium", False))
+        user_inputs = report.get("user_inputs") or {}
+
+        # 動画DL → 解析
+        with tempfile.TemporaryDirectory() as tmpdir:
+            video_path = os.path.join(tmpdir, f"{report_id}.mp4")
+            content = line_bot_api.get_message_content(message_id)
+            with open(video_path, "wb") as f:
+                for chunk in content.iter_content():
+                    f.write(chunk)
+
+            raw = analyze_swing_with_mediapipe(video_path)
+
+        analysis = build_analysis(raw=raw, premium=premium, report_id=report_id, user_inputs=user_inputs)
+
+        report_ref.set({
+            "status": "DONE",
+            "raw": raw,
+            "analysis": analysis,
+            "completed_at": datetime.now(timezone.utc).isoformat(),
+        }, merge=True)
+
+        # 完了通知
+        safe_line_push(user_id, make_done_push(report_id), force=True)
+
+        return jsonify({"ok": True}), 200
+
+    except Exception:
+        print("[ERROR] task-handler:", traceback.format_exc())
+        try:
+            data = request.get_json(silent=True) or {}
+            rid = data.get("report_id")
+            if rid:
+                firestore_safe_update(rid, {"status": "TASK_FAILED", "error": traceback.format_exc()})
+        except Exception:
+            pass
+        return jsonify({"ok": False, "error": "internal"}), 500
+   
 
 
 
