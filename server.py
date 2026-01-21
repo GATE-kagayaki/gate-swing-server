@@ -1930,13 +1930,24 @@ def handle_video(event: MessageEvent):
     force_paid_report = is_premium_user(user_id) or tickets > 0
 
     # 【重要】URLエラーを防ぐため、先に保存を完了させる
-    firestore_safe_set(report_id, {
-        "user_id": user_id,
-        "status": "PROCESSING",
-        "is_premium": force_paid_report,
-        "created_at": datetime.now(timezone.utc).isoformat(),
-        "user_inputs": {},
-    })
+    # 事前入力（分析スタート）をレポートに引き継ぐ
+　　prefill = user_data.get("prefill") or {}
+　　user_inputs = {
+    　　"head_speed": prefill.get("head_speed"),
+    　　"miss_tendency": prefill.get("miss_tendency"),
+   　　 "gender": prefill.get("gender"),
+　　}
+　　# Noneは保存しない
+　　user_inputs = {k: v for k, v in user_inputs.items() if v is not None}
+
+　　firestore_safe_set(report_id, {
+    　　"user_id": user_id,
+    　　"status": "PROCESSING",
+    　　"is_premium": force_paid_report,
+    　　"created_at": datetime.now(timezone.utc).isoformat(),
+    　　"user_inputs": user_inputs,
+　　})
+
 
     try:
         # 解析タスクの作成
