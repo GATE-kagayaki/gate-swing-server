@@ -1680,7 +1680,7 @@ def api_report_data(report_id: str):
         "analysis": r.get("analysis") or {},
     })
     
- @app.route("/task-handler", methods=["POST"])
+@app.route("/task-handler", methods=["POST"])
 def task_handler():
     try:
         data = request.get_json(silent=True) or {}
@@ -1734,9 +1734,8 @@ def task_handler():
         except Exception:
             pass
         return jsonify({"ok": False, "error": "internal"}), 500
+
    
-
-
 
 # ==================================================
 # Stripe Checkout 作成
