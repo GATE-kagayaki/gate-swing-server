@@ -1625,7 +1625,14 @@ def build_analysis(raw: Dict[str, Any], premium: bool, report_id: str, user_inpu
 
     analysis["07"] = build_paid_07_from_analysis(analysis, raw)
     analysis["08"] = build_paid_08(analysis)
-    analysis["09"] = build_paid_09(raw, user_inputs or {})
+
+    # ✅ 09は常にセクションを出す（入力があれば本体、無ければ案内のみ）
+    ui = user_inputs or {}
+    if ui.get("head_speed") is not None or ui.get("miss_tendency") or ui.get("gender"):
+        analysis["09"] = build_paid_09(raw, ui)
+    else:
+        analysis["09"] = build_paid_09_placeholder()
+
     analysis["10"] = build_paid_10(raw)
     return analysis
 
