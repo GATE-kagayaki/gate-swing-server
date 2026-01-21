@@ -1783,6 +1783,7 @@ def webhook():
 
 
 @handler.add(MessageEvent, message=VideoMessage)
+@handler.add(MessageEvent, message=VideoMessage)
 def handle_video(event: MessageEvent):
     user_id = event.source.user_id
     msg = event.message
@@ -1845,6 +1846,7 @@ def handle_video(event: MessageEvent):
             "動画は受け取りましたが、解析の予約に失敗しました。時間を置いて再度お試しください。",
             user_id=user_id
         )
+
 
 
 @handler.add(MessageEvent, message=TextMessage)
