@@ -52,7 +52,9 @@
 </div>
 
 <script>
-  const reportId = location.pathname.split("/").pop();
+  const parts = location.pathname.split("/").filter(Boolean);
+　const reportId = parts[parts.length - 1];
+
   document.getElementById("reportId").innerText = reportId;
 
   const reportContent = document.getElementById("report-content");
