@@ -1985,6 +1985,8 @@ def handle_video(event: MessageEvent):
 
 @handler.add(MessageEvent, message=TextMessage)
 def handle_text_message(event):
+    print("[DEBUG TEXT]", repr(event.message.text))
+
     # 文字の整理と「料金プラン」の優先判定（リッチメニュー対策）
     text = event.message.text.strip().translate(str.maketrans('０１２３４５６７８９', '0123456789'))
     user_id = event.source.user_id
