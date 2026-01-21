@@ -1806,29 +1806,6 @@ def handle_video(event: MessageEvent):
         "user_inputs": {},
     })
    
-    @handler.add(MessageEvent, message=VideoMessage)
-def handle_video(event: MessageEvent):
-    user_id = event.source.user_id
-    msg = event.message
-    report_id = f"{user_id}_{msg.id}"
-
-    user_ref = db.collection('users').document(user_id)
-    user_doc = user_ref.get()
-    user_data = user_doc.to_dict() if user_doc.exists else {}
-    tickets = user_data.get('ticket_remaining', 0)
-
-    force_paid_report = is_premium_user(user_id) or tickets > 0
-    if not is_premium_user(user_id) and tickets > 0:
-        user_ref.update({'ticket_remaining': firestore.Increment(-1)})
-
-    # 【重要】URLエラーを防ぐため、先に保存を完了させる
-    firestore_safe_set(report_id, {
-        "user_id": user_id,
-        "status": "PROCESSING",
-        "is_premium": force_paid_report,
-        "created_at": datetime.now(timezone.utc).isoformat(),
-        "user_inputs": {},
-    })
    
     try:
         # メッセージを組み立て
