@@ -10,7 +10,7 @@ from collections import Counter
 
 from linebot.models import (
     MessageEvent, 
-    TextMessage, 
+    TextMessage,     
     VideoMessage, 
     TextSendMessage,
     QuickReply,
@@ -1811,7 +1811,7 @@ def handle_video(event: MessageEvent):
         base_message = (
             "動画を正常に受け付けました！⛳️\n"
             "AI解析を開始します。1～3分ほどで完了します。\n"
-            f"解析状況はこちら：\nhttps://gate-kagayaki-562867875402.asia-northeast2.run.app/report/{report_id}"
+           f"解析状況はこちら：\n{SERVICE_HOST_URL}/report/{report_id}"
         )
 
         # 解析タスクの作成
