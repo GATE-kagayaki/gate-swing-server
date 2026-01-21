@@ -1898,6 +1898,7 @@ def webhook_callback_alias():
 
 @app.route("/webhook", methods=["POST"])
 def webhook():
+    print("[DEBUG RAW BODY]", request.get_data(as_text=True))
     signature = request.headers.get("X-Line-Signature", "")
     body = request.get_data(as_text=True)
     try:
