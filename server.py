@@ -1806,13 +1806,12 @@ def handle_video(event: MessageEvent):
         "user_inputs": {},
     })
    
-   
     try:
         # メッセージを組み立て
         base_message = (
             "動画を正常に受け付けました！⛳️\n"
             "AI解析を開始します。1～3分ほどで完了します。\n"
-            f"解析状況はこちら：\nhttps://gate-golf.com/mypage/?id={report_id}"
+            f"解析状況はこちら：\nhttps://gate-kagayaki-562867875402.asia-northeast2.run.app/report/{report_id}"
         )
 
         # 解析タスクの作成
@@ -1835,7 +1834,6 @@ def handle_video(event: MessageEvent):
         print(f"[ERROR] {traceback.format_exc()}")
         # エラーが起きてもユーザーに状況を伝える
         safe_line_reply(event.reply_token, "動画は受け取りましたが、解析の予約に失敗しました。事務局へお問い合わせください。", user_id=user_id)
-
 
 @handler.add(MessageEvent, message=TextMessage)
 def handle_text_message(event):
