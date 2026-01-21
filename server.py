@@ -1793,9 +1793,8 @@ def handle_video(event: MessageEvent):
     user_data = user_doc.to_dict() if user_doc.exists else {}
     tickets = user_data.get('ticket_remaining', 0)
 
+    # 有料扱い（プレミアム or チケット所持）
     force_paid_report = is_premium_user(user_id) or tickets > 0
-    if not is_premium_user(user_id) and tickets > 0:
-        user_ref.update({'ticket_remaining': firestore.Increment(-1)})
 
     # 【重要】URLエラーを防ぐため、先に保存を完了させる
     firestore_safe_set(report_id, {
@@ -1805,35 +1804,48 @@ def handle_video(event: MessageEvent):
         "created_at": datetime.now(timezone.utc).isoformat(),
         "user_inputs": {},
     })
-   
-    try:
-        # メッセージを組み立て
-        base_message = (
-            "動画を正常に受け付けました！⛳️\n"
-            "AI解析を開始します。1～3分ほどで完了します。\n"
-           f"解析状況はこちら：\n{SERVICE_HOST_URL}/report/{report_id}"
-        )
 
+    try:
         # 解析タスクの作成
         task_name = create_cloud_task(report_id, user_id, msg.id)
         firestore_safe_update(report_id, {"task_name": task_name})
 
-        if force_paid_report:
-            fitting_intro = "\n\n09フィッティング解析のため、現在の「ヘッドスピード」「主なミスの傾向」「性別（任意）」を教えてください。"
-            instruction = "\n\n【1/3】まずは「ヘッドスピード」を数字（例：42）だけで送ってください。"
-            
-            line_bot_api.reply_message(
-                event.reply_token,
-                TextSendMessage(text=f"{base_message}{fitting_intro}{instruction}")
-            )
-        else:
-            increment_free_usage(user_id)
-            line_bot_api.reply_message(event.reply_token, TextSendMessage(text=base_message))
+        # ✅ チケット消費は「タスク作成成功後」に行う（失敗時に減らさない）
+        if not is_premium_user(user_id) and tickets > 0:
+            user_ref.update({'ticket_remaining': firestore.Increment(-1)})
 
-    except Exception as e:
+        # ✅ 無料回数消費も「成功後」
+        if not force_paid_report:
+            increment_free_usage(user_id)
+        else:
+            # 有料の入力フローを使うなら pending を保存（後でTextMessageで拾う）
+            user_ref.set({
+                "pending_report_id": report_id,
+                "fitting_step": 1,
+                "updated_at": firestore.SERVER_TIMESTAMP,
+            }, merge=True)
+
+        # ✅ 返信URLは必ず既存の make_initial_reply を使う
+        reply_text = make_initial_reply(report_id)
+
+        # 有料なら追記（URLは既に入っている前提で追記だけ）
+        if force_paid_report:
+            reply_text += (
+                "\n\n09フィッティング解析のため、現在の「ヘッドスピード」「主なミスの傾向」「性別（任意）」を教えてください。"
+                "\n\n【1/3】まずは「ヘッドスピード」を数字（例：42）だけで送ってください。"
+            )
+
+        safe_line_reply(event.reply_token, reply_text, user_id=user_id)
+
+    except Exception:
         print(f"[ERROR] {traceback.format_exc()}")
-        # エラーが起きてもユーザーに状況を伝える
-        safe_line_reply(event.reply_token, "動画は受け取りましたが、解析の予約に失敗しました。事務局へお問い合わせください。", user_id=user_id)
+        firestore_safe_update(report_id, {"status": "TASK_FAILED", "error": traceback.format_exc()})
+        safe_line_reply(
+            event.reply_token,
+            "動画は受け取りましたが、解析の予約に失敗しました。時間を置いて再度お試しください。",
+            user_id=user_id
+        )
+
 
 @handler.add(MessageEvent, message=TextMessage)
 def handle_text_message(event):
