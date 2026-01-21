@@ -1658,6 +1658,29 @@ def report_page(report_id: str):
 def report_page_slash(report_id: str):
     return report_page(report_id)
 
+@app.route("/api/report_data/<report_id>", methods=["GET"])
+def api_report_data(report_id: str):
+    doc = db.collection("reports").document(report_id).get()
+    if not doc.exists:
+        return jsonify({"ok": False, "error": "not_found"}), 404
+
+    r = doc.to_dict() or {}
+
+    # report.html 側は COMPLETED のときだけ表示しているので、
+    # Firestore の DONE を COMPLETED に寄せて返す（HTMLを直さなくて済む）
+    status = (r.get("status") or "PROCESSING")
+    st_upper = str(status).upper()
+    status_out = "COMPLETED" if st_upper == "DONE" else status
+
+    return jsonify({
+        "ok": True,
+        "report_id": report_id,
+        "status": status_out,                 # PROCESSING / COMPLETED
+        "is_premium": bool(r.get("is_premium", False)),
+        "analysis": r.get("analysis") or {},
+    })
+
+
 
 # ==================================================
 # Stripe Checkout 作成
