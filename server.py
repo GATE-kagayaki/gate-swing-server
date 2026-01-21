@@ -1806,6 +1806,30 @@ def handle_video(event: MessageEvent):
         "user_inputs": {},
     })
    
+    @handler.add(MessageEvent, message=VideoMessage)
+def handle_video(event: MessageEvent):
+    user_id = event.source.user_id
+    msg = event.message
+    report_id = f"{user_id}_{msg.id}"
+
+    user_ref = db.collection('users').document(user_id)
+    user_doc = user_ref.get()
+    user_data = user_doc.to_dict() if user_doc.exists else {}
+    tickets = user_data.get('ticket_remaining', 0)
+
+    force_paid_report = is_premium_user(user_id) or tickets > 0
+    if not is_premium_user(user_id) and tickets > 0:
+        user_ref.update({'ticket_remaining': firestore.Increment(-1)})
+
+    # 【重要】URLエラーを防ぐため、先に保存を完了させる
+    firestore_safe_set(report_id, {
+        "user_id": user_id,
+        "status": "PROCESSING",
+        "is_premium": force_paid_report,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "user_inputs": {},
+    })
+   
     try:
         # メッセージを組み立て
         base_message = (
@@ -1814,13 +1838,14 @@ def handle_video(event: MessageEvent):
             f"解析状況はこちら：\nhttps://gate-golf.com/mypage/?id={report_id}"
         )
 
-        # 解析タスクの作成（これが失敗しても返信は届くように try 内の最後に置くか検討）
+        # 解析タスクの作成
         task_name = create_cloud_task(report_id, user_id, msg.id)
         firestore_safe_update(report_id, {"task_name": task_name})
 
         if force_paid_report:
             fitting_intro = "\n\n09フィッティング解析のため、現在の「ヘッドスピード」「主なミスの傾向」「性別（任意）」を教えてください。"
             instruction = "\n\n【1/3】まずは「ヘッドスピード」を数字（例：42）だけで送ってください。"
+            
             line_bot_api.reply_message(
                 event.reply_token,
                 TextSendMessage(text=f"{base_message}{fitting_intro}{instruction}")
