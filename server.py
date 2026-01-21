@@ -1980,6 +1980,27 @@ def handle_text_message(event):
     text = event.message.text.strip().translate(str.maketrans('０１２３４５６７８９', '0123456789'))
     user_id = event.source.user_id
 
+    if text == "分析スタート":
+        users_ref.document(user_id).set({
+            "prefill_step": 1,
+            "prefill": {},
+            "updated_at": firestore.SERVER_TIMESTAMP,
+        }, merge=True)
+
+        line_bot_api.reply_message(
+            event.reply_token,
+            TextSendMessage(
+                text=(
+                    "分析を開始します⛳️\n\n"
+                    "【任意】09フィッティング解析を希望する方は先に入力してください。\n"
+                    "スキップする場合は「スキップ」と送ってください。\n\n"
+                    "【1/3】ヘッドスピードを数字だけで送ってください（例：42）"
+                )
+            )
+        )
+        return
+
+
     if "料金プラン" in text:
         plan_text = (
            "GATE公式LINEへようこそ！⛳️\n\n"
