@@ -1908,7 +1908,6 @@ def webhook():
 
 
 @handler.add(MessageEvent, message=VideoMessage)
-@handler.add(MessageEvent, message=VideoMessage)
 def handle_video(event: MessageEvent):
     user_id = event.source.user_id
     msg = event.message
@@ -1918,6 +1917,14 @@ def handle_video(event: MessageEvent):
     user_doc = user_ref.get()
     user_data = user_doc.to_dict() if user_doc.exists else {}
     tickets = user_data.get('ticket_remaining', 0)
+
+    prefill = user_data.get("prefill") or {}
+    user_inputs = {
+        "head_speed": prefill.get("head_speed"),
+        "miss_tendency": prefill.get("miss_tendency"),
+        "gender": prefill.get("gender"),
+    }
+    user_inputs = {k: v for k, v in user_inputs.items() if v is not None}
 
     # 有料扱い（プレミアム or チケット所持）
     force_paid_report = is_premium_user(user_id) or tickets > 0
