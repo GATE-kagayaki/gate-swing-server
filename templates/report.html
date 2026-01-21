@@ -165,35 +165,48 @@
   }
 
   function render09(secData) {
-    const sec = sectionWrap(secData.title);
-    const table = document.createElement("table");
-    table.innerHTML = `
-      <thead>
-        <tr>
-          <th>項目</th>
-          <th>推奨</th>
-          <th>理由</th>
-        </tr>
-      </thead>
-      <tbody>
-        ${(secData.table||[]).map(r=>`
-          <tr>
-            <td class="font-semibold">${r.item}</td>
-            <td>${r.guide}</td>
-            <td>${r.reason}</td>
-          </tr>
-        `).join("")}
-      </tbody>`;
-    sec.appendChild(table);
+  const sec = sectionWrap(secData.title);
 
-    if (secData.note) {
-      const note = document.createElement("div");
-      note.className = "muted mt-2";
-      note.textContent = secData.note;
-      sec.appendChild(note);
-    }
+  // ✅ 入力が無い場合（空の09）
+  if (secData.empty) {
+    const box = document.createElement("div");
+    box.className = "card mt-3 muted whitespace-pre-line";
+    box.textContent = secData.message || "この項目は任意入力です。";
+    sec.appendChild(box);
     reportContent.appendChild(sec);
+    return;
   }
+
+  // ✅ 通常の09（テーブル）
+  const table = document.createElement("table");
+  table.innerHTML = `
+    <thead>
+      <tr>
+        <th>項目</th>
+        <th>推奨</th>
+        <th>理由</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${(secData.table||[]).map(r=>`
+        <tr>
+          <td class="font-semibold">${r.item}</td>
+          <td>${r.guide}</td>
+          <td>${r.reason}</td>
+        </tr>
+      `).join("")}
+    </tbody>`;
+  sec.appendChild(table);
+
+  if (secData.note) {
+    const note = document.createElement("div");
+    note.className = "muted mt-2";
+    note.textContent = secData.note;
+    sec.appendChild(note);
+  }
+
+  reportContent.appendChild(sec);
+}
 
   function renderTextSection(secData) {
     const sec = sectionWrap(secData.title);
