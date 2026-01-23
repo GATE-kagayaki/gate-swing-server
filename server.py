@@ -2035,11 +2035,7 @@ def handle_text_message(event):
     text = event.message.text.strip().translate(str.maketrans('０１２３４５６７８９', '0123456789'))
     user_id = event.source.user_id
 
-    if text == "分析スタート":
-        reply_quick_start(event.reply_token)
-        return
-
-
+    
     if "料金プラン" in text:
         plan_text = (
            "GATE公式LINEへようこそ！⛳️\n\n"
@@ -2082,18 +2078,30 @@ def handle_text_message(event):
         return
 
     if text == "ミス傾向":
-        users_ref.document(user_id).set({
-            "prefill_step": "miss_tendency",
-            "updated_at": firestore.SERVER_TIMESTAMP,
-        }, merge=True)
-        return
+    users_ref.document(user_id).set({
+        "prefill_step": "miss_tendency",
+        "updated_at": firestore.SERVER_TIMESTAMP,
+    }, merge=True)
+
+    line_bot_api.reply_message(
+        event.reply_token,
+        TextSendMessage(text="ミス傾向を送ってください")
+    )
+    return
+
 
     if text == "性別":
-        users_ref.document(user_id).set({
-            "prefill_step": "gender",
-            "updated_at": firestore.SERVER_TIMESTAMP,
-        }, merge=True)
-        return
+    users_ref.document(user_id).set({
+        "prefill_step": "gender",
+        "updated_at": firestore.SERVER_TIMESTAMP,
+    }, merge=True)
+
+    line_bot_api.reply_message(
+        event.reply_token,
+        TextSendMessage(text="性別を送ってください")
+    )
+    return
+
 
     if step == "head_speed" and text.isdigit():
         users_ref.document(user_id).set({
