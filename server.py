@@ -29,6 +29,20 @@ from google.cloud import firestore
 from google.cloud import tasks_v2
 from google.api_core.exceptions import NotFound, PermissionDenied
 
+def reply_quick_start(reply_token: str):
+    line_bot_api.reply_message(
+        reply_token,
+        TextSendMessage(
+            text="DEBUG: Quick Reply テスト",
+            quick_reply=QuickReply(items=[
+                QuickReplyButton(
+                    action=MessageAction(label="テスト", text="テスト")
+                )
+            ])
+        )
+    )
+
+
 
 # ==================================================
 # CONFIG
