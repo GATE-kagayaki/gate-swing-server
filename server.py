@@ -2010,19 +2010,104 @@ def handle_video(event: MessageEvent):
 @handler.add(MessageEvent, message=TextMessage)
 def handle_text_message(event):
     user_id = event.source.user_id
-    text = (event.message.text or "").strip()
 
     import logging
-    logging.warning("[DEBUG] text=%r", text)
-    logging.warning("[DEBUG] step=%r", (users_ref.document(user_id).get().to_dict() or {}).get("prefill_step"))
+    from google.cloud import firestore
 
+    # ========= 正規化（全角スペース事故対策 + 全角数字→半角） =========
+    raw_text = event.message.text or ""
+    text = raw_text.replace("\u3000", " ").strip()  # 全角スペース→半角スペース
+    text = text.translate(str.maketrans("０１２３４５６７８９", "0123456789"))
 
+    logging.warning("[DEBUG] raw_text=%r normalized_text=%r user_id=%s", raw_text, text, user_id)
+
+    # ========= 1) 分析スタート（最優先：Quick Reply出して終了） =========
     if text == "分析スタート":
         reply_quick_start(event.reply_token)
         return
 
+    # ========= 2) user取得 → step確認 =========
+    user_doc = users_ref.document(user_id).get()
+    user_data = user_doc.to_dict() or {}
+    step = user_data.get("prefill_step")
+    logging.warning("[DEBUG] prefill_step=%r", step)
+
+    # ========= 3) stepが立っているなら「保存処理が最優先」 =========
+    if step:
+        # スキップは step中でも受け付ける（任意入力なので）
+        if text == "スキップ":
+            users_ref.document(user_id).set({
+                "prefill_step": None,
+                "updated_at": firestore.SERVER_TIMESTAMP,
+            }, merge=True)
+
+            line_bot_api.reply_message(
+                event.reply_token,
+                TextSendMessage(text="OK！入力はスキップしました。動画を送ってください。")
+            )
+            return
+
+        if step == "head_speed":
+            # 数値チェック（例: 42, 42.5 を許可したいならここを変更）
+            if not text.isdigit():
+                line_bot_api.reply_message(
+                    event.reply_token,
+                    TextSendMessage(text="ヘッドスピードは数字だけで送ってください（例：42）。スキップなら「スキップ」")
+                )
+                return
+
+            users_ref.document(user_id).set({
+                "prefill_step": None,
+                "prefill": {"head_speed": int(text)},
+                "updated_at": firestore.SERVER_TIMESTAMP,
+            }, merge=True)
+
+            line_bot_api.reply_message(
+                event.reply_token,
+                TextSendMessage(text=f"OK！ヘッドスピード {text} で保存しました。動画を送ってください。")
+            )
+            return
+
+        if step == "miss_tendency":
+            users_ref.document(user_id).set({
+                "prefill_step": None,
+                "prefill": {"miss_tendency": text},
+                "updated_at": firestore.SERVER_TIMESTAMP,
+            }, merge=True)
+
+            line_bot_api.reply_message(
+                event.reply_token,
+                TextSendMessage(text="OK！ミス傾向を保存しました。動画を送ってください。")
+            )
+            return
+
+        if step == "gender":
+            users_ref.document(user_id).set({
+                "prefill_step": None,
+                "prefill": {"gender": text},
+                "updated_at": firestore.SERVER_TIMESTAMP,
+            }, merge=True)
+
+            line_bot_api.reply_message(
+                event.reply_token,
+                TextSendMessage(text="OK！性別を保存しました。動画を送ってください。")
+            )
+            return
+
+        # 想定外step保険：stepを落として案内
+        users_ref.document(user_id).set({
+            "prefill_step": None,
+            "updated_at": firestore.SERVER_TIMESTAMP,
+        }, merge=True)
+
+        line_bot_api.reply_message(
+            event.reply_token,
+            TextSendMessage(text="入力状態をリセットしました。もう一度「分析スタート」からお願いします。")
+        )
+        return
+
+    # ========= 4) stepが無い場合だけ：ボタン押下の処理 =========
     if text == "HS":
-        # HS入力待ち状態にして促す
         users_ref.document(user_id).set({
             "prefill_step": "head_speed",
             "updated_at": firestore.SERVER_TIMESTAMP,
@@ -2034,16 +2119,42 @@ def handle_text_message(event):
         )
         return
 
+    if text == "ミス傾向":
+        users_ref.document(user_id).set({
+            "prefill_step": "miss_tendency",
+            "updated_at": firestore.SERVER_TIMESTAMP,
+        }, merge=True)
 
+        line_bot_api.reply_message(
+            event.reply_token,
+            TextSendMessage(text="ミス傾向を送ってください（例：スライス/フック/トップ/ダフリ など）。スキップなら「スキップ」")
+        )
+        return
 
-    # 文字の整理と「料金プラン」の優先判定（リッチメニュー対策）
-    text = event.message.text.strip().translate(str.maketrans('０１２３４５６７８９', '0123456789'))
-    user_id = event.source.user_id
+    if text == "性別":
+        users_ref.document(user_id).set({
+            "prefill_step": "gender",
+            "updated_at": firestore.SERVER_TIMESTAMP,
+        }, merge=True)
 
-    
+        line_bot_api.reply_message(
+            event.reply_token,
+            TextSendMessage(text="性別を送ってください（例：男性/女性）。スキップなら「スキップ」")
+        )
+        return
+
+    if text == "スキップ":
+        # stepが無い状態でスキップが来た場合も返信だけ返す（任意）
+        line_bot_api.reply_message(
+            event.reply_token,
+            TextSendMessage(text="OK！入力はスキップしました。動画を送ってください。")
+        )
+        return
+
+    # ========= 5) 最後に既存分岐（料金プラン等） =========
     if "料金プラン" in text:
         plan_text = (
-           "GATE公式LINEへようこそ！⛳️\n\n"
+            "GATE公式LINEへようこそ！⛳️\n\n"
             "正確なAI解析結果をお届けするため、画面上部に「追加」ボタンが表示されている方は、まず登録をお願いいたします。\n\n"
             "決済完了後は、このトーク画面にスイング動画を送るだけでAI解析がスタートします。\n"
             "--------------------\n\n"
@@ -2059,78 +2170,16 @@ def handle_text_message(event):
             "--------------------\n"
             "※操作方法などは、このままトークでお気軽にご質問ください。"
         )
-        
         line_bot_api.reply_message(event.reply_token, TextSendMessage(text=plan_text))
         return
 
-        # ===== prefill保存ロジック =====
-    user_doc = users_ref.document(user_id).get()
-    user_data = user_doc.to_dict() or {}
-    step = user_data.get("prefill_step")
-
-    if text == "スキップ":
-        users_ref.document(user_id).set({
-            "prefill_step": None,
-            "updated_at": firestore.SERVER_TIMESTAMP,
-        }, merge=True)
-        return
-
-    if text == "HS":
-        users_ref.document(user_id).set({
-            "prefill_step": "head_speed",
-            "updated_at": firestore.SERVER_TIMESTAMP,
-        }, merge=True)
-        return
-
-    if text == "ミス傾向":
-        users_ref.document(user_id).set({
-            "prefill_step": "miss_tendency",
-            "updated_at": firestore.SERVER_TIMESTAMP,
-        }, merge=True)
-
-        line_bot_api.reply_message(
-            event.reply_token,
-            TextSendMessage(text="ミス傾向を送ってください")
-        )
-        return
-
-
-    if text == "性別":
-        users_ref.document(user_id).set({
-            "prefill_step": "gender",
-            "updated_at": firestore.SERVER_TIMESTAMP,
-        }, merge=True)
-
-        line_bot_api.reply_message(
-            event.reply_token,
-            TextSendMessage(text="性別を送ってください")
-        )
-        return
-
-
-    if step == "head_speed" and text.isdigit():
-        users_ref.document(user_id).set({
-            "prefill_step": None,
-            "prefill": {"head_speed": int(text)},
-            "updated_at": firestore.SERVER_TIMESTAMP,
-        }, merge=True)
-        return
-
-    if step == "miss_tendency":
-        users_ref.document(user_id).set({
-            "prefill_step": None,
-            "prefill": {"miss_tendency": text},
-            "updated_at": firestore.SERVER_TIMESTAMP,
-        }, merge=True)
-        return
-
-    if step == "gender":
-        users_ref.document(user_id).set({
-            "prefill_step": None,
-            "prefill": {"gender": text},
-            "updated_at": firestore.SERVER_TIMESTAMP,
-        }, merge=True)
-        return
+    # ========= 6) 何にも当たらないとき（任意） =========
+    # ここは既存の通常QA/旧ロジックに繋げる or 無視する
+    line_bot_api.reply_message(
+        event.reply_token,
+        TextSendMessage(text="「分析スタート」から入力できます。動画送信でも解析できます。")
+    )
+    return
 
         
 if __name__ == "__main__":
