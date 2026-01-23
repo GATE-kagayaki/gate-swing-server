@@ -2023,8 +2023,24 @@ def handle_text_message(event):
 
     # ===== 1) 分析スタート → Quick Reply =====
     if text == "分析スタート":
-        reply_quick_start(event.reply_token)
+        users_ref.document(user_id).set({
+            "prefill_step": "head_speed",
+            "updated_at": firestore.SERVER_TIMESTAMP,
+        }, merge=True)
+
+        line_bot_api.reply_message(
+            event.reply_token,
+            TextSendMessage(
+                text=(
+                    "フィッティング解析用に、分かる範囲で入力してください。\n"
+                    "入力は HS → ミスの傾向（必須）→ 性別（任意） の順です。\n\n"
+                    "まず、ヘッドスピードを数字だけで送ってください（例：43）。\n"
+                    "スキップして動画を送る場合は「スキップ」と送ってください。"
+                )
+            )
+        )
         return
+
 
     # ===== 2) user取得 → step =====
     user_doc = users_ref.document(user_id).get()
