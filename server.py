@@ -2091,16 +2091,16 @@ def handle_text_message(event):
 
 
     if text == "性別":
-    users_ref.document(user_id).set({
-        "prefill_step": "gender",
-        "updated_at": firestore.SERVER_TIMESTAMP,
-    }, merge=True)
+        users_ref.document(user_id).set({
+            "prefill_step": "gender",
+            "updated_at": firestore.SERVER_TIMESTAMP,
+        }, merge=True)
 
-    line_bot_api.reply_message(
-        event.reply_token,
-        TextSendMessage(text="性別を送ってください")
-    )
-    return
+        line_bot_api.reply_message(
+            event.reply_token,
+            TextSendMessage(text="性別を送ってください")
+        )
+        return
 
 
     if step == "head_speed" and text.isdigit():
