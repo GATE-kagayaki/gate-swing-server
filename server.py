@@ -2078,16 +2078,16 @@ def handle_text_message(event):
         return
 
     if text == "ミス傾向":
-    users_ref.document(user_id).set({
-        "prefill_step": "miss_tendency",
-        "updated_at": firestore.SERVER_TIMESTAMP,
-    }, merge=True)
+        users_ref.document(user_id).set({
+            "prefill_step": "miss_tendency",
+            "updated_at": firestore.SERVER_TIMESTAMP,
+        }, merge=True)
 
-    line_bot_api.reply_message(
-        event.reply_token,
-        TextSendMessage(text="ミス傾向を送ってください")
-    )
-    return
+        line_bot_api.reply_message(
+            event.reply_token,
+            TextSendMessage(text="ミス傾向を送ってください")
+        )
+        return
 
 
     if text == "性別":
