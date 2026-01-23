@@ -2014,70 +2014,76 @@ def handle_text_message(event):
     import logging
     from google.cloud import firestore
 
-    # ========= 正規化（全角スペース事故対策 + 全角数字→半角） =========
+    # ===== 正規化（全角スペース & 全角数字）=====
     raw_text = event.message.text or ""
-    text = raw_text.replace("\u3000", " ").strip()  # 全角スペース→半角スペース
+    text = raw_text.replace("\u3000", " ").strip()
     text = text.translate(str.maketrans("０１２３４５６７８９", "0123456789"))
 
-    logging.warning("[DEBUG] raw_text=%r normalized_text=%r user_id=%s", raw_text, text, user_id)
+    logging.warning("[DEBUG] raw=%r normalized=%r user_id=%s", raw_text, text, user_id)
 
-    # ========= 1) 分析スタート（最優先：Quick Reply出して終了） =========
+    # ===== 1) 分析スタート → Quick Reply =====
     if text == "分析スタート":
         reply_quick_start(event.reply_token)
         return
 
-    # ========= 2) user取得 → step確認 =========
+    # ===== 2) user取得 → step =====
     user_doc = users_ref.document(user_id).get()
     user_data = user_doc.to_dict() or {}
     step = user_data.get("prefill_step")
     logging.warning("[DEBUG] prefill_step=%r", step)
 
-    # ========= 3) stepが立っているなら「保存処理が最優先」 =========
+    # ===== 3) stepが立っているなら最優先で保存 =====
     if step:
-        # スキップは step中でも受け付ける（任意入力なので）
+        # 任意：途中で抜けたい人（09やめる）はスキップ扱いでリセット
         if text == "スキップ":
             users_ref.document(user_id).set({
                 "prefill_step": None,
                 "updated_at": firestore.SERVER_TIMESTAMP,
             }, merge=True)
-
             line_bot_api.reply_message(
                 event.reply_token,
-                TextSendMessage(text="OK！入力はスキップしました。動画を送ってください。")
+                TextSendMessage(text="OK！入力は中断しました。このまま動画を送ってください。")
             )
             return
 
         if step == "head_speed":
-            # 数値チェック（例: 42, 42.5 を許可したいならここを変更）
             if not text.isdigit():
                 line_bot_api.reply_message(
                     event.reply_token,
-                    TextSendMessage(text="ヘッドスピードは数字だけで送ってください（例：42）。スキップなら「スキップ」")
+                    TextSendMessage(text="ヘッドスピードは数字だけで送ってください（例：42）。")
                 )
                 return
 
+            # ★必須なので次は必ずミス傾向へ
             users_ref.document(user_id).set({
-                "prefill_step": None,
+                "prefill_step": "miss_tendency",
                 "prefill": {"head_speed": int(text)},
                 "updated_at": firestore.SERVER_TIMESTAMP,
             }, merge=True)
 
             line_bot_api.reply_message(
                 event.reply_token,
-                TextSendMessage(text=f"OK！ヘッドスピード {text} で保存しました。動画を送ってください。")
+                TextSendMessage(text="OK！ヘッドスピードを保存しました。続けてミスの傾向を1つだけ送ってください（例：スライス/フック/トップ/ダフリ）。")
             )
             return
 
         if step == "miss_tendency":
+            # ★1つだけ保存（ユーザーの入力をそのまま格納）
             users_ref.document(user_id).set({
-                "prefill_step": None,
+                "prefill_step": None,  # 必須2つ完了でstep解除
                 "prefill": {"miss_tendency": text},
                 "updated_at": firestore.SERVER_TIMESTAMP,
             }, merge=True)
 
+            # 性別は任意：入力したい人だけボタン
             line_bot_api.reply_message(
                 event.reply_token,
-                TextSendMessage(text="OK！ミス傾向を保存しました。動画を送ってください。")
+                TextSendMessage(
+                    text="OK！ミス傾向を保存しました。性別は任意です（入力する場合は下のボタンから）。入力しない場合はこのまま動画を送ってください。",
+                    quick_reply=QuickReply(items=[
+                        QuickReplyButton(action=MessageAction(label="性別を入力する", text="性別")),
+                    ])
+                )
             )
             return
 
@@ -2090,44 +2096,30 @@ def handle_text_message(event):
 
             line_bot_api.reply_message(
                 event.reply_token,
-                TextSendMessage(text="OK！性別を保存しました。動画を送ってください。")
+                TextSendMessage(text="OK！性別を保存しました。このまま動画を送ってください。")
             )
             return
 
-        # 想定外step保険：stepを落として案内
+        # 想定外step保険
         users_ref.document(user_id).set({
             "prefill_step": None,
             "updated_at": firestore.SERVER_TIMESTAMP,
         }, merge=True)
-
         line_bot_api.reply_message(
             event.reply_token,
             TextSendMessage(text="入力状態をリセットしました。もう一度「分析スタート」からお願いします。")
         )
         return
 
-    # ========= 4) stepが無い場合だけ：ボタン押下の処理 =========
-    if text == "HS":
+    # ===== 4) stepがない場合：09希望/性別ボタンなど =====
+    if text == "09希望":
         users_ref.document(user_id).set({
             "prefill_step": "head_speed",
             "updated_at": firestore.SERVER_TIMESTAMP,
         }, merge=True)
-
         line_bot_api.reply_message(
             event.reply_token,
-            TextSendMessage(text="ヘッドスピードを数字だけで送ってください（例：42）。スキップなら「スキップ」")
-        )
-        return
-
-    if text == "ミス傾向":
-        users_ref.document(user_id).set({
-            "prefill_step": "miss_tendency",
-            "updated_at": firestore.SERVER_TIMESTAMP,
-        }, merge=True)
-
-        line_bot_api.reply_message(
-            event.reply_token,
-            TextSendMessage(text="ミス傾向を送ってください（例：スライス/フック/トップ/ダフリ など）。スキップなら「スキップ」")
+            TextSendMessage(text="まずヘッドスピードを数字だけで送ってください（例：42）。")
         )
         return
 
@@ -2136,22 +2128,13 @@ def handle_text_message(event):
             "prefill_step": "gender",
             "updated_at": firestore.SERVER_TIMESTAMP,
         }, merge=True)
-
         line_bot_api.reply_message(
             event.reply_token,
             TextSendMessage(text="性別を送ってください（例：男性/女性）。スキップなら「スキップ」")
         )
         return
 
-    if text == "スキップ":
-        # stepが無い状態でスキップが来た場合も返信だけ返す（任意）
-        line_bot_api.reply_message(
-            event.reply_token,
-            TextSendMessage(text="OK！入力はスキップしました。動画を送ってください。")
-        )
-        return
-
-    # ========= 5) 最後に既存分岐（料金プラン等） =========
+    # ===== 5) 最後に既存分岐（料金プランなど） =====
     if "料金プラン" in text:
         plan_text = (
             "GATE公式LINEへようこそ！⛳️\n\n"
@@ -2173,8 +2156,7 @@ def handle_text_message(event):
         line_bot_api.reply_message(event.reply_token, TextSendMessage(text=plan_text))
         return
 
-    # ========= 6) 何にも当たらないとき（任意） =========
-    # ここは既存の通常QA/旧ロジックに繋げる or 無視する
+    # 任意：デフォルト返信（不要なら消してOK）
     line_bot_api.reply_message(
         event.reply_token,
         TextSendMessage(text="「分析スタート」から入力できます。動画送信でも解析できます。")
