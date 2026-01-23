@@ -2009,11 +2009,26 @@ def handle_video(event: MessageEvent):
 
 @handler.add(MessageEvent, message=TextMessage)
 def handle_text_message(event):
-    print("[DEBUG TEXT]", repr(event.message.text))
+    user_id = event.source.user_id
+    text = (event.message.text or "").strip()
 
-    if (event.message.text or "").strip() == "分析スタート":
+    if text == "分析スタート":
         reply_quick_start(event.reply_token)
         return
+
+    if text == "HS":
+        # HS入力待ち状態にして促す
+        users_ref.document(user_id).set({
+            "prefill_step": "head_speed",
+            "updated_at": firestore.SERVER_TIMESTAMP,
+        }, merge=True)
+
+        line_bot_api.reply_message(
+            event.reply_token,
+            TextSendMessage(text="ヘッドスピードを数字だけで送ってください（例：42）。スキップなら「スキップ」")
+        )
+        return
+
 
 
     # 文字の整理と「料金プラン」の優先判定（リッチメニュー対策）
