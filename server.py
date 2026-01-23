@@ -2022,7 +2022,7 @@ def handle_text_message(event):
     logging.warning("[DEBUG] raw=%r normalized=%r user_id=%s", raw_text, text, user_id)
 
     # ===== 1) 分析スタート → Quick Reply =====
-    if text == "分析スタート":
+   if text == "分析スタート":
     users_ref.document(user_id).set({
         "prefill_step": "head_speed",
         "updated_at": firestore.SERVER_TIMESTAMP,
@@ -2045,13 +2045,12 @@ def handle_text_message(event):
     )
     return
 
-
-
-   # ===== 2) user取得 → step =====
-   user_doc = users_ref.document(user_id).get()
-   user_data = user_doc.to_dict() or {}
-   step = user_data.get("prefill_step")
-   logging.warning("[DEBUG] prefill_step=%r", step)
+# ここから下の行頭スペースを削除し、一番左（ifと同じ位置）に合わせました
+# ===== 2) user取得 → step =====
+user_doc = users_ref.document(user_id).get()
+user_data = user_doc.to_dict() or {}
+step = user_data.get("prefill_step")
+logging.warning("[DEBUG] prefill_step=%r", step)
 
 
     # ===== 3) stepが立っているなら最優先で保存 =====
