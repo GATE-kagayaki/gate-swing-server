@@ -2012,6 +2012,11 @@ def handle_text_message(event):
     user_id = event.source.user_id
     text = (event.message.text or "").strip()
 
+    import logging
+    logging.warning("[DEBUG] text=%r", text)
+    logging.warning("[DEBUG] step=%r", (users_ref.document(user_id).get().to_dict() or {}).get("prefill_step"))
+
+
     if text == "分析スタート":
         reply_quick_start(event.reply_token)
         return
