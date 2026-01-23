@@ -2022,36 +2022,35 @@ def handle_text_message(event):
     logging.warning("[DEBUG] raw=%r normalized=%r user_id=%s", raw_text, text, user_id)
 
     # ===== 1) 分析スタート → Quick Reply =====
-   if text == "分析スタート":
-    users_ref.document(user_id).set({
-        "prefill_step": "head_speed",
-        "updated_at": firestore.SERVER_TIMESTAMP,
-    }, merge=True)
+    if text == "分析スタート":
+        users_ref.document(user_id).set({
+            "prefill_step": "head_speed",
+            "updated_at": firestore.SERVER_TIMESTAMP,
+        }, merge=True)
 
-    msg_text = (
-        "ご利用ありがとうございます。\n\n"
-        "より正確なフィッティング分析レポート（09）をご希望の方は、分かる範囲で入力をお願いします。\n\n"
-        "【必須】ヘッドスピード／主なミスの傾向（1つ）\n"
-        "【任意】性別\n\n"
-        "このあと順番にご案内します。\n"
-        "まずはヘッドスピードを数字だけで送ってください（例：43）。\n\n"
-        "※フィッティング分析レポートを希望されない場合は、そのまま動画を送信してください。\n"
-        "※途中で入力をやめたい場合は「スキップ」と送ってください。"
-    )
+        msg_text = (
+            "ご利用ありがとうございます。\n\n"
+            "より正確なフィッティング分析レポート（09）をご希望の方は、分かる範囲で入力をお願いします。\n\n"
+            "【必須】ヘッドスピード／主なミスの傾向（1つ）\n"
+            "【任意】性別\n\n"
+            "このあと順番にご案内します。\n"
+            "まずはヘッドスピードを数字だけで送ってください（例：43）。\n\n"
+            "※フィッティング分析レポートを希望されない場合は、そのまま動画を送信してください。\n"
+            "※途中で入力をやめたい場合は「スキップ」と送ってください。"
+        )
 
-    line_bot_api.reply_message(
-        event.reply_token,
-        TextSendMessage(text=msg_text)
-    )
-    return
+        line_bot_api.reply_message(
+            event.reply_token,
+            TextSendMessage(text=msg_text)
+        )
+        return
 
-# ここから下の行頭スペースを削除し、一番左（ifと同じ位置）に合わせました
-# ===== 2) user取得 → step =====
-user_doc = users_ref.document(user_id).get()
-user_data = user_doc.to_dict() or {}
-step = user_data.get("prefill_step")
-logging.warning("[DEBUG] prefill_step=%r", step)
-
+    # ===== 2) user取得 → step =====
+    # ここは「if text == "分析スタート":」と同じ深さ（4スペース）に揃える必要があります
+    user_doc = users_ref.document(user_id).get()
+    user_data = user_doc.to_dict() or {}
+    step = user_data.get("prefill_step")
+    logging.warning("[DEBUG] prefill_step=%r", step)
 
     # ===== 3) stepが立っているなら最優先で保存 =====
     if step:
@@ -2177,7 +2176,7 @@ logging.warning("[DEBUG] prefill_step=%r", step)
         line_bot_api.reply_message(event.reply_token, TextSendMessage(text=plan_text))
         return
 
-    # 任意：デフォルト返信（不要なら消してOK）
+    # 任意：デフォルト返信
     line_bot_api.reply_message(
         event.reply_token,
         TextSendMessage(text="「分析スタート」から入力できます。動画送信でも解析できます。")
