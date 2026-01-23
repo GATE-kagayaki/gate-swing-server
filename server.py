@@ -1937,6 +1937,14 @@ def handle_video(event: MessageEvent):
     msg = event.message
     report_id = f"{user_id}_{msg.id}"
 
+    import logging
+    logging.warning(
+        "[DEBUG] handle_video HIT user_id=%s message_id=%s",
+        user_id,
+        msg.id
+    )
+
+
     user_ref = db.collection('users').document(user_id)
     user_doc = user_ref.get()
     user_data = user_doc.to_dict() if user_doc.exists else {}
