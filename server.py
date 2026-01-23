@@ -33,14 +33,16 @@ def reply_quick_start(reply_token: str):
     line_bot_api.reply_message(
         reply_token,
         TextSendMessage(
-            text="DEBUG: Quick Reply テスト",
+            text="【任意】分かる範囲で選んでください（スキップ可）",
             quick_reply=QuickReply(items=[
-                QuickReplyButton(
-                    action=MessageAction(label="テスト", text="テスト")
-                )
+                QuickReplyButton(action=MessageAction(label="HS", text="HS")),
+                QuickReplyButton(action=MessageAction(label="ミス傾向", text="ミス傾向")),
+                QuickReplyButton(action=MessageAction(label="性別", text="性別")),
+                QuickReplyButton(action=MessageAction(label="スキップ", text="スキップ")),
             ])
         )
     )
+
 
 
 
@@ -2008,6 +2010,11 @@ def handle_video(event: MessageEvent):
 @handler.add(MessageEvent, message=TextMessage)
 def handle_text_message(event):
     print("[DEBUG TEXT]", repr(event.message.text))
+
+    if (event.message.text or "").strip() == "分析スタート":
+        reply_quick_start(event.reply_token)
+        return
+
 
     # 文字の整理と「料金プラン」の優先判定（リッチメニュー対策）
     text = event.message.text.strip().translate(str.maketrans('０１２３４５６７８９', '0123456789'))
