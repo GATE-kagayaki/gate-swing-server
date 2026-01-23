@@ -2062,63 +2062,63 @@ def handle_text_message(event):
         line_bot_api.reply_message(event.reply_token, TextSendMessage(text=plan_text))
         return
 
-    # インデックスエラーを回避するため、まず全取得してから最新の1件を特定
-    docs = db.collection('reports').where('user_id', '==', user_id).get()
+        # ===== prefill保存ロジック =====
+    user_doc = users_ref.document(user_id).get()
+    user_data = user_doc.to_dict() or {}
+    step = user_data.get("prefill_step")
 
-    from datetime import datetime, timezone
+    if text == "スキップ":
+        users_ref.document(user_id).set({
+            "prefill_step": None,
+            "updated_at": firestore.SERVER_TIMESTAMP,
+        }, merge=True)
+        return
 
-    def get_created_at(doc):
-        value = doc.to_dict().get("created_at")
-        if value is None:
-            # FirestoreのTimestampに合わせて timezone-aware にする
-            return datetime.min.replace(tzinfo=timezone.utc)
-        return value
+    if text == "HS":
+        users_ref.document(user_id).set({
+            "prefill_step": "head_speed",
+            "updated_at": firestore.SERVER_TIMESTAMP,
+        }, merge=True)
+        return
 
+    if text == "ミス傾向":
+        users_ref.document(user_id).set({
+            "prefill_step": "miss_tendency",
+            "updated_at": firestore.SERVER_TIMESTAMP,
+        }, merge=True)
+        return
 
-        latest_report = max(docs, key=get_created_at)
-        report_ref = latest_report.reference
+    if text == "性別":
+        users_ref.document(user_id).set({
+            "prefill_step": "gender",
+            "updated_at": firestore.SERVER_TIMESTAMP,
+        }, merge=True)
+        return
 
-        
-        # 数字（HS）の保存
-        if text.isdigit():
-            val = int(text)
-            if 10 <= val <= 70:
-                report_ref.update({"user_inputs.head_speed": val})
-                items = [
-                    QuickReplyButton(action=MessageAction(label="スライス/右", text="ミス：スライス")),
-                    QuickReplyButton(action=MessageAction(label="フック/左", text="ミス：フック")),
-                    QuickReplyButton(action=MessageAction(label="特に無し", text="ミス：無し")),
-                ]
-                line_bot_api.reply_message(
-                    event.reply_token, 
-                    TextSendMessage(text=f"HS {val}m/s で保存しました。\n\n【2/3】次に「主なミスの傾向」を選択してください。", quick_reply=QuickReply(items=items))
-                )
-                return
+    if step == "head_speed" and text.isdigit():
+        users_ref.document(user_id).set({
+            "prefill_step": None,
+            "prefill": {"head_speed": int(text)},
+            "updated_at": firestore.SERVER_TIMESTAMP,
+        }, merge=True)
+        return
 
-        # ミスの傾向
-        elif "ミス：" in text:
-            val = text.replace("ミス：", "")
-            report_ref.update({"user_inputs.miss_tendency": val})
-            items = [
-                QuickReplyButton(action=MessageAction(label="男性", text="性別：男性")),
-                QuickReplyButton(action=MessageAction(label="女性", text="性別：女性")),
-                QuickReplyButton(action=MessageAction(label="回答しない", text="性別：none"))
-            ]
-            line_bot_api.reply_message(
-                event.reply_token, 
-                TextSendMessage(text="【3/3】最後に「性別」を教えてください（任意）。", quick_reply=QuickReply(items=items))
-            )
-            return
+    if step == "miss_tendency":
+        users_ref.document(user_id).set({
+            "prefill_step": None,
+            "prefill": {"miss_tendency": text},
+            "updated_at": firestore.SERVER_TIMESTAMP,
+        }, merge=True)
+        return
 
-        # 性別
-        elif "性別：" in text:
-            val = text.replace("性別：", "")
-            report_ref.update({"user_inputs.gender": val})
-            line_bot_api.reply_message(
-                event.reply_token, 
-                TextSendMessage(text="ありがとうございます。情報を解析に反映します！完成まで今しばらくお待ちください。⛳️")
-            )
-            return
+    if step == "gender":
+        users_ref.document(user_id).set({
+            "prefill_step": None,
+            "prefill": {"gender": text},
+            "updated_at": firestore.SERVER_TIMESTAMP,
+        }, merge=True)
+        return
+
         
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", "8080"))
