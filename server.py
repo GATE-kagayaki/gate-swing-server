@@ -1482,8 +1482,12 @@ def infer_hs_band(power_idx: int) -> str:
 
 
 def build_paid_09(raw: Dict[str, Any], user_inputs: Dict[str, Any]) -> Dict[str, Any]:
+    import logging
+    logging.warning("[DEBUG] build_paid_09 user_inputs=%r", user_inputs)
+
     power_idx = calc_power_idx(raw)
     stability_idx = calc_stability_idx(raw)
+
 
     hs = _to_float_or_none(user_inputs.get("head_speed"))
     miss = _norm_miss(user_inputs.get("miss_tendency"))
