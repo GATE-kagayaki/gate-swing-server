@@ -2029,10 +2029,18 @@ def handle_text_message(event):
     # インデックスエラーを回避するため、まず全取得してから最新の1件を特定
     docs = db.collection('reports').where('user_id', '==', user_id).get()
 
+    from datetime import datetime
+
     if docs:
-        # 作成日時が一番新しいレポートを選ぶ
-        latest_report = max(docs, key=lambda d: d.to_dict().get('created_at', ''))
+        def get_created_at(doc):
+            value = doc.to_dict().get("created_at")
+            if value is None:
+                return datetime.min
+            return value
+
+        latest_report = max(docs, key=get_created_at)
         report_ref = latest_report.reference
+
         
         # 数字（HS）の保存
         if text.isdigit():
