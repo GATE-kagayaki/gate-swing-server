@@ -2050,14 +2050,15 @@ def handle_text_message(event):
     # インデックスエラーを回避するため、まず全取得してから最新の1件を特定
     docs = db.collection('reports').where('user_id', '==', user_id).get()
 
-    from datetime import datetime
+    from datetime import datetime, timezone
 
-    if docs:
-        def get_created_at(doc):
-            value = doc.to_dict().get("created_at")
-            if value is None:
-                return datetime.min
-            return value
+    def get_created_at(doc):
+        value = doc.to_dict().get("created_at")
+        if value is None:
+            # FirestoreのTimestampに合わせて timezone-aware にする
+            return datetime.min.replace(tzinfo=timezone.utc)
+        return value
+
 
         latest_report = max(docs, key=get_created_at)
         report_ref = latest_report.reference
