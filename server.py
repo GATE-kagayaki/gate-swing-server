@@ -2023,27 +2023,27 @@ def handle_text_message(event):
 
     # ===== 1) 分析スタート → Quick Reply =====
     if text == "分析スタート":
-        users_ref.document(user_id).set({
-            "prefill_step": "head_speed",
-            "updated_at": firestore.SERVER_TIMESTAMP,
-        }, merge=True)
+    users_ref.document(user_id).set({
+        "prefill_step": "head_speed",
+        "updated_at": firestore.SERVER_TIMESTAMP,
+    }, merge=True)
 
-        msg_text = (
-            "ご利用ありがとうございます。\n\n"
-            "より正確なフィッティング分析レポート（09）をご希望の方は、分かる範囲で入力をお願いします。\n\n"
-            "【必須】ヘッドスピード／主なミスの傾向（1つ）\n"
-            "【任意】性別\n\n"
-            "このあと順番にご案内します。\n"
-            "まずはヘッドスピードを数字だけで送ってください（例：43）。\n\n"
-            "※フィッティング分析レポートを希望されない場合は、そのまま動画を送信してください。\n"
-            "※途中で入力をやめたい場合は「スキップ」と送ってください。"
-        )
+    msg_text = (
+        "ご利用ありがとうございます。\n\n"
+        "より正確なフィッティング分析レポート（09）をご希望の方は、分かる範囲で入力をお願いします。\n\n"
+        "【必須】ヘッドスピード／主なミスの傾向（1つ）\n"
+        "【任意】性別\n\n"
+        "このあと順番にご案内します。\n"
+        "まずはヘッドスピードを数字だけで送ってください（例：43）。\n\n"
+        "※フィッティング分析レポートを希望されない場合は、そのまま動画を送信してください。\n"
+        "※途中で入力をやめたい場合は「スキップ」と送ってください。"
+    )
 
-        line_bot_api.reply_message(
-            event.reply_token,
-            TextSendMessage(text=msg_text)
-        )
-        return
+    line_bot_api.reply_message(
+        event.reply_token,
+        TextSendMessage(text=msg_text)
+    )
+    return
 
 
 
