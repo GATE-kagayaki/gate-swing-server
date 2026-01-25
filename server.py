@@ -2083,9 +2083,15 @@ def handle_text_message(event):
 
             line_bot_api.reply_message(
                 event.reply_token,
-                TextSendMessage(text="OK！ヘッドスピードを保存しました。続けてミスの傾向を1つだけ送ってください（例：スライス/フック/トップ/ダフリ）。")
+                TextSendMessage(
+                    text=(
+                        "ありがとうございます。\n\n"
+                        "続けて、主なミスの傾向を1つだけ送ってください。\n"
+                        "（例：スライス／フック／トップ／ダフリ）"
+                    )
+                )
             )
-            return
+
 
         if step == "miss_tendency":
             # ★1つだけ保存（ユーザーの入力をそのまま格納）
