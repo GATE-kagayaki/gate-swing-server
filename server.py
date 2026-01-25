@@ -2101,17 +2101,18 @@ def handle_text_message(event):
                 "updated_at": firestore.SERVER_TIMESTAMP,
             }, merge=True)
 
-            # 性別は任意：入力したい人だけボタン
             line_bot_api.reply_message(
                 event.reply_token,
                 TextSendMessage(
-                    text="OK！ミス傾向を保存しました。性別は任意です（入力する場合は下のボタンから）。入力しない場合はこのまま動画を送ってください。",
-                    quick_reply=QuickReply(items=[
-                        QuickReplyButton(action=MessageAction(label="性別を入力する", text="性別")),
-                    ])
+                    text=(
+                        "ありがとうございます。ミスの傾向を保存しました。\n\n"
+                        "性別は任意です。\n"
+                        "入力する場合は「男性」または「女性」と送ってください。\n\n"
+                        "入力しない場合は、このまま動画を送信してください。"
+                    )
                 )
             )
-            return
+
 
         if step == "gender":
             users_ref.document(user_id).set({
