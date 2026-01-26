@@ -1791,29 +1791,29 @@ def stripe_webhook():
 
     # 支払い完了イベント（checkout.session.completed）の処理
     if event['type'] == 'checkout.session.completed':
-    session = event['data']['object']
-    line_user_id = session.get('client_reference_id')
+        session = event['data']['object']
+        line_user_id = session.get('client_reference_id')
 
-    if line_user_id:
-        user_ref = db.collection('users').document(line_user_id)
-        user_ref.set({
-            'ticket_remaining': firestore.Increment(1),
-            'last_payment_date': firestore.SERVER_TIMESTAMP
-        }, merge=True)
-        print(f"✅ Firestore更新成功: {line_user_id}")
+        if line_user_id:
+            user_ref = db.collection('users').document(line_user_id)
+            user_ref.set({
+                'ticket_remaining': firestore.Increment(1),
+                'last_payment_date': firestore.SERVER_TIMESTAMP
+            }, merge=True)
+            print(f"✅ Firestore更新成功: {line_user_id}")
 
-        try:
-            line_bot_api.push_message(
-                line_user_id,
-                TextSendMessage(text="決済を確認しました！⛳️\nこのままスイング動画を送ってください。AI解析を開始します。")
-            )
-            print(f"✅ LINEメッセージ送信成功: {line_user_id}")
-        except Exception as e:
-            print(f"⚠️ LINE送信失敗: {e}")
-    else:
-        print("⚠️ 警告: client_reference_id が空です")
+            try:
+                line_bot_api.push_message(
+                    line_user_id,
+                    TextSendMessage(text="決済を確認しました！⛳️\nこのままスイング動画を送ってください。AI解析を開始します。")
+                )
+                print(f"✅ LINEメッセージ送信成功: {line_user_id}")
+            except Exception as e:
+                print(f"⚠️ LINE送信失敗: {e}")
+        else:
+            print("⚠️ 警告: client_reference_id が空です")
 
-    return jsonify(success=True)
+        return jsonify(success=True)
 
     
 def handle_successful_payment(user_id: str, plan: str):
