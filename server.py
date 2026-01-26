@@ -1776,7 +1776,7 @@ endpoint_secret = "whsec_dZAi4sELzWVwKECvIAUdZ8Jd8QMQhrsw"
 @app.route('/stripe/webhook', methods=['POST'])
 def stripe_webhook():
     # 生データを確実に取得するため get_data() を使用します
-    payload = request.get_data()
+    payload = request.get_data(as_text=True)
     sig_header = request.headers.get('Stripe-Signature')
     
     try:
