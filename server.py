@@ -1800,20 +1800,16 @@ def stripe_webhook():
                 'ticket_remaining': firestore.Increment(1),
                 'last_payment_date': firestore.SERVER_TIMESTAMP
             }, merge=True)
-            print(f"✅ Firestore更新成功: {line_user_id}")
 
             try:
-                line_bot_api.push_message(
-                    line_user_id,
-                    TextSendMessage(text="決済を確認しました！⛳️\nこのままスイング動画を送ってください。AI解析を開始します。")
-                )
-                print(f"✅ LINEメッセージ送信成功: {line_user_id}")
+                line_bot_api.push_message(...)
             except Exception as e:
-                print(f"⚠️ LINE送信失敗: {e}")
+                ...
         else:
             print("⚠️ 警告: client_reference_id が空です")
 
         return jsonify(success=True)
+
 
     
 def handle_successful_payment(user_id: str, plan: str):
