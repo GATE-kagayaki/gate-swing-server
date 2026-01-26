@@ -2091,6 +2091,7 @@ def handle_text_message(event):
                     )
                 )
             )
+            return
 
 
         if step == "miss_tendency":
