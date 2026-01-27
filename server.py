@@ -1778,6 +1778,9 @@ def stripe_webhook():
     # 生データを確実に取得するため get_data() を使用します
     payload = request.get_data(as_text=True)
     sig_header = request.headers.get('Stripe-Signature')
+
+    print("USING_SECRET_HEAD=", endpoint_secret[:8])
+
     
     try:
         # ここで「本物のStripeからの通知か」を署名検証します
