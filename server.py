@@ -1862,6 +1862,8 @@ def stripe_checkout():
 # LINEのWebhook URLが /webhook 以外でも落ちないように受け口を複数用意
 import traceback
 from google.cloud import firestore
+print(f"✅ Firestore updated user={line_user_id} add={add_tickets}")
+
 
 @app.route("/stripe/webhook", methods=["POST"])
 def stripe_webhook():
@@ -1880,6 +1882,8 @@ def stripe_webhook():
 
     if event["type"] != "checkout.session.completed":
         return "OK", 200
+        print(f"[STRIPE] livemode={event.get('livemode')} event_id={event.get('id')} client_reference_id={session.get('client_reference_id')}")
+
 
     session = event["data"]["object"]
     line_user_id = session.get("client_reference_id")
