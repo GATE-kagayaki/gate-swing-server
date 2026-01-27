@@ -79,8 +79,11 @@ TASK_HANDLER_PATH = "/task-handler"
 TASK_HANDLER_URL = f"{SERVICE_HOST_URL}{TASK_HANDLER_PATH}"
 
 # Firestore
-db = firestore.Client(project=PROJECT_ID)
+FIRESTORE_DB = os.environ.get("FIRESTORE_DB", "(default)")  # "(default)" or "gate-kagayaki"
+db = firestore.Client(project=PROJECT_ID, database=FIRESTORE_DB)
 users_ref = db.collection("users")
+
+print(f"[BOOT] project={PROJECT_ID} firestore_db={FIRESTORE_DB}")
 
 
 # ==================================================
