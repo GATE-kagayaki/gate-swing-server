@@ -1860,11 +1860,6 @@ def stripe_checkout():
 
 
 # LINEのWebhook URLが /webhook 以外でも落ちないように受け口を複数用意
-import traceback
-from google.cloud import firestore
-print(f"✅ Firestore updated user={line_user_id} add={add_tickets}")
-
-
 @app.route("/stripe/webhook", methods=["POST"])
 def stripe_webhook():
     endpoint_secret = os.environ.get("STRIPE_WEBHOOK_SECRET", "")
