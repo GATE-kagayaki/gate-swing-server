@@ -19,6 +19,10 @@ from linebot.models import (
 )
 
 import stripe
+
+stripe.api_key = os.environ.get("STRIPE_SECRET_KEY", "")
+endpoint_secret = os.environ.get("STRIPE_WEBHOOK_SECRET", "")
+
 from flask import Flask, request, jsonify, abort, render_template, render_template_string
 
 from linebot import LineBotApi, WebhookHandler
