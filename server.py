@@ -20,8 +20,10 @@ from linebot.models import (
 
 import stripe
 
-stripe.api_key = os.environ.get("STRIPE_SECRET_KEY", "")
-endpoint_secret = os.environ.get("STRIPE_WEBHOOK_SECRET", "")
+def get_stripe_secrets():
+    stripe.api_key = os.environ.get("STRIPE_SECRET_KEY", "")
+    endpoint_secret = os.environ.get("STRIPE_WEBHOOK_SECRET", "")
+    return stripe.api_key, endpoint_secret
 
 from flask import Flask, request, jsonify, abort, render_template, render_template_string
 
@@ -1770,11 +1772,7 @@ def task_handler():
 
 # ==================================================
 # Stripe Checkout 作成
-# ==================================================
-import stripe
-stripe.api_key = os.environ.get("STRIPE_SECRET_KEY", "")
-
-    
+# ==================================================    
 def handle_successful_payment(user_id: str, plan: str):
     """
     Firestoreのユーザー権限をプランに応じて更新する
