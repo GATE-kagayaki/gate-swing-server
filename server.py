@@ -1889,77 +1889,36 @@ def webhook():
 
 @app.route("/stripe/webhook", methods=["POST"])
 def stripe_webhook():
+    import os
+    import stripe
+    from flask import request
+
+    endpoint_secret = os.environ.get("STRIPE_WEBHOOK_SECRET", "")
     payload = request.get_data()  # bytes
     sig_header = request.headers.get("Stripe-Signature", "")
-    print("[DEBUG] stripe_sig_header_present=", bool(sig_header))
-    print("[DEBUG] payload_len=", len(payload))
-    print("[DEBUG] endpoint_secret_len=", len(os.environ.get("STRIPE_WEBHOOK_SECRET","")))
-    print("[DEBUG] endpoint_secret_prefix=", os.environ.get("STRIPE_WEBHOOK_SECRET","")[:8])
 
+    # ★判定ログ（secret本体は出さない）
+    print("[STRIPE] sig_header_present=", bool(sig_header))
+    print("[STRIPE] payload_len=", len(payload) if payload else 0)
+    print("[STRIPE] endpoint_secret_len=", len(endpoint_secret) if endpoint_secret else 0)
+    print("[STRIPE] endpoint_secret_prefix=", endpoint_secret[:10] if endpoint_secret else "")
+
+    if not endpoint_secret:
+        print("[STRIPE] ❌ STRIPE_WEBHOOK_SECRET is empty")
+        return "misconfigured", 500
 
     try:
-        event = stripe.Webhook.construct_event(
-            payload,
-            sig_header,
-            endpoint_secret
-        )
+        event = stripe.Webhook.construct_event(payload, sig_header, endpoint_secret)
     except stripe.error.SignatureVerificationError as e:
-        print(f"⚠️ Stripe署名検証に失敗しました: {e}")
+        print("[STRIPE] ❌ SignatureVerificationError:", str(e))
         return "Invalid signature", 400
     except Exception as e:
-        print(f"⚠️ Stripe webhook error: {e}")
+        print("[STRIPE] ❌ Other error:", repr(e))
         return "Error", 400
 
-    # ===== 支払い完了 =====
-    if event["type"] == "checkout.session.completed":
-        session = event["data"]["object"]
-        line_user_id = session.get("client_reference_id")
-
-        if not line_user_id:
-            print("⚠️ client_reference_id が空です")
-            return "OK", 200
-
-        try:
-            # line_items から price_id を取る
-            session_full = stripe.checkout.Session.retrieve(
-                session["id"],
-                expand=["line_items.data.price"]
-            )
-            items = session_full.get("line_items", {}).get("data", [])
-            price_id = items[0]["price"]["id"] if items else None
-            print(f"✅ checkout.session.completed line_user_id={line_user_id} price_id={price_id}")
-
-            # チケット数：回数券(5回)なら +5、それ以外は +1
-            add_tickets = 1
-            if price_id == "price_1SrGGcK85rGl4ns4FpiYMXtt":
-                add_tickets = 5
-
-            user_ref = db.collection("users").document(line_user_id)
-            user_ref.set({
-                "ticket_remaining": firestore.Increment(add_tickets),
-                "last_payment_date": firestore.SERVER_TIMESTAMP,
-            }, merge=True)
-            print(f"✅ Firestore更新成功: {line_user_id} +{add_tickets}")
-
-            # 任意：LINEへ通知（不要ならコメントアウトOK）
-            try:
-                line_bot_api.push_message(
-                    line_user_id,
-                    TextSendMessage(
-                        text=f"決済を確認しました！⛳️\nチケットを {add_tickets} 回分付与しました。\nこのままスイング動画を送ってください。"
-                    )
-                )
-                print(f"✅ LINE通知成功: {line_user_id}")
-            except Exception as e:
-                print(f"⚠️ LINE通知失敗: {e}")
-
-        except Exception as e:
-            print(f"⚠️ 決済後処理でエラー: {e}")
-
-        return "OK", 200
-
-    # 他イベントはOKで返す（Stripeの再送を止める）
+    print("[STRIPE] ✅ verified event type=", event.get("type"))
     return "OK", 200
+
 
 
 
