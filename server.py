@@ -1931,6 +1931,75 @@ def webhook():
 
     return "OK"
 
+@app.route("/stripe/webhook", methods=["POST"])
+def stripe_webhook():
+    payload = request.get_data(as_text=True)
+    sig_header = request.headers.get("Stripe-Signature", "")
+
+    try:
+        event = stripe.Webhook.construct_event(
+            payload,
+            sig_header,
+            endpoint_secret
+        )
+    except stripe.error.SignatureVerificationError as e:
+        print(f"⚠️ Stripe署名検証に失敗しました: {e}")
+        return "Invalid signature", 400
+    except Exception as e:
+        print(f"⚠️ Stripe webhook error: {e}")
+        return "Error", 400
+
+    # ===== 支払い完了 =====
+    if event["type"] == "checkout.session.completed":
+        session = event["data"]["object"]
+        line_user_id = session.get("client_reference_id")
+
+        if not line_user_id:
+            print("⚠️ client_reference_id が空です")
+            return "OK", 200
+
+        try:
+            # line_items から price_id を取る
+            session_full = stripe.checkout.Session.retrieve(
+                session["id"],
+                expand=["line_items.data.price"]
+            )
+            items = session_full.get("line_items", {}).get("data", [])
+            price_id = items[0]["price"]["id"] if items else None
+            print(f"✅ checkout.session.completed line_user_id={line_user_id} price_id={price_id}")
+
+            # チケット数：回数券(5回)なら +5、それ以外は +1
+            add_tickets = 1
+            if price_id == "price_1SrGGcK85rGl4ns4FpiYMXtt":
+                add_tickets = 5
+
+            user_ref = db.collection("users").document(line_user_id)
+            user_ref.set({
+                "ticket_remaining": firestore.Increment(add_tickets),
+                "last_payment_date": firestore.SERVER_TIMESTAMP,
+            }, merge=True)
+            print(f"✅ Firestore更新成功: {line_user_id} +{add_tickets}")
+
+            # 任意：LINEへ通知（不要ならコメントアウトOK）
+            try:
+                line_bot_api.push_message(
+                    line_user_id,
+                    TextSendMessage(
+                        text=f"決済を確認しました！⛳️\nチケットを {add_tickets} 回分付与しました。\nこのままスイング動画を送ってください。"
+                    )
+                )
+                print(f"✅ LINE通知成功: {line_user_id}")
+            except Exception as e:
+                print(f"⚠️ LINE通知失敗: {e}")
+
+        except Exception as e:
+            print(f"⚠️ 決済後処理でエラー: {e}")
+
+        return "OK", 200
+
+    # 他イベントはOKで返す（Stripeの再送を止める）
+    return "OK", 200
+
 
 
 @handler.add(MessageEvent, message=VideoMessage)
