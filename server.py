@@ -1862,10 +1862,16 @@ def stripe_checkout():
 # LINEのWebhook URLが /webhook 以外でも落ちないように受け口を複数用意
 @app.route("/stripe/webhook", methods=["POST"])
 def stripe_webhook():
+    import os, traceback
+    from flask import request
+    import stripe
+    from google.cloud import firestore
+
     endpoint_secret = os.environ.get("STRIPE_WEBHOOK_SECRET", "")
-    payload = request.get_data()  # bytes
+    payload = request.get_data()  # bytes（重要）
     sig_header = request.headers.get("Stripe-Signature", "")
 
+    # 1) 署名検証（ここが通らないとFirestoreは絶対更新されない）
     try:
         event = stripe.Webhook.construct_event(payload, sig_header, endpoint_secret)
     except stripe.error.SignatureVerificationError as e:
@@ -1875,56 +1881,58 @@ def stripe_webhook():
         print(f"⚠️ Stripe webhook error: {e}")
         return "Error", 400
 
-    if event["type"] != "checkout.session.completed":
+    # 2) 必要なイベント以外は即OK
+    if event.get("type") != "checkout.session.completed":
         return "OK", 200
-        print(f"[STRIPE] livemode={event.get('livemode')} event_id={event.get('id')} client_reference_id={session.get('client_reference_id')}")
-
 
     session = event["data"]["object"]
-    line_user_id = session.get("client_reference_id")
-    session_id = session.get("id")
     event_id = event.get("id")
+    session_id = session.get("id")
+    line_user_id = session.get("client_reference_id")
 
-    print(f"[STRIPE] event_id={event_id} session_id={session_id} line_user_id={line_user_id}")
+    print(f"[STRIPE] livemode={event.get('livemode')} event_id={event_id} session_id={session_id} client_reference_id={line_user_id}")
 
-    if not line_user_id or not session_id:
-        print("[STRIPE] missing line_user_id or session_id")
+    if not line_user_id:
+        print("❌ client_reference_id missing")
         return "OK", 200
 
     try:
-        # ✅ これが一番堅い：Sessionからline itemsを別APIで取得
+        # 3) price_idを確実に取る（expandより堅い）
         li = stripe.checkout.Session.list_line_items(session_id, limit=1)
         first = li["data"][0] if li and li.get("data") else None
-        price_id = (first.get("price", {}).get("id") if first else None)
-
+        price_id = first.get("price", {}).get("id") if first else None
         print(f"[STRIPE] price_id={price_id}")
 
-        # 付与数（あなたのロジックを維持）
+        # 4) 付与数（回数券だけ +5 / それ以外 +1）
         add_tickets = 1
         if price_id == "price_1SrGGcK85rGl4ns4FpiYMXtt":
             add_tickets = 5
 
         user_ref = db.collection("users").document(line_user_id)
 
-        # BEFORE/AFTER をログで確定（これで「増えてない」を潰せる）
+        # 5) 冪等（Stripe再送でも二重加算しない）
         before = user_ref.get().to_dict() or {}
-        print(f"[BEFORE] ticket_remaining={before.get('ticket_remaining')} plan={before.get('plan')}")
+        print(f"[BEFORE] ticket_remaining={before.get('ticket_remaining')} last_stripe_event_id={before.get('last_stripe_event_id')}")
 
+        if before.get("last_stripe_event_id") == event_id:
+            print("✅ duplicate event ignored")
+            return "OK", 200
+
+        # 6) Firestore更新（ここで必ず増える）
         user_ref.set({
             "plan": "ticket" if add_tickets > 1 else "single",
             "ticket_remaining": firestore.Increment(add_tickets),
             "last_payment_date": firestore.SERVER_TIMESTAMP,
-            "last_stripe_event_id": event_id,   # デバッグ用（後で冪等にも使える）
+            "last_stripe_event_id": event_id,
             "updated_at": firestore.SERVER_TIMESTAMP,
         }, merge=True)
 
         after = user_ref.get().to_dict() or {}
         print(f"[AFTER] ticket_remaining={after.get('ticket_remaining')} plan={after.get('plan')}")
-        print(f"✅ Firestore更新成功: {line_user_id} +{add_tickets}")
+        print(f"✅ Firestore updated user={line_user_id} add={add_tickets}")
 
     except Exception:
-        print("❌ 決済後処理で例外:", traceback.format_exc())
-        # まず再送地獄を避けるためOK返す（本番では冪等処理を入れる）
+        print("❌ post-payment handler failed:", traceback.format_exc())
         return "OK", 200
 
     return "OK", 200
