@@ -1860,63 +1860,74 @@ def stripe_checkout():
 
 
 # LINEのWebhook URLが /webhook 以外でも落ちないように受け口を複数用意
-@app.route("/", methods=["POST"])
-def webhook_root_alias():
-    return webhook()
-
-
-@app.route("/callback", methods=["POST"])
-def webhook_callback_alias():
-    return webhook()
-
-
-@app.route("/webhook", methods=["POST"])
-def webhook():
-    import logging
-    from flask import request, abort
-
-    logging.warning("[DEBUG RAW BODY] %s", request.get_data(as_text=True))
-
-    signature = request.headers.get("X-Line-Signature", "")
-    body = request.get_data(as_text=True)
-
-    try:
-        handler.handle(body, signature)
-    except InvalidSignatureError:
-        abort(400)
-
-    return "OK"
+import traceback
+from google.cloud import firestore
 
 @app.route("/stripe/webhook", methods=["POST"])
 def stripe_webhook():
-    import os
-    import stripe
-    from flask import request
-
     endpoint_secret = os.environ.get("STRIPE_WEBHOOK_SECRET", "")
     payload = request.get_data()  # bytes
     sig_header = request.headers.get("Stripe-Signature", "")
 
-    # ★判定ログ（secret本体は出さない）
-    print("[STRIPE] sig_header_present=", bool(sig_header))
-    print("[STRIPE] payload_len=", len(payload) if payload else 0)
-    print("[STRIPE] endpoint_secret_len=", len(endpoint_secret) if endpoint_secret else 0)
-    print("[STRIPE] endpoint_secret_prefix=", endpoint_secret[:10] if endpoint_secret else "")
-
-    if not endpoint_secret:
-        print("[STRIPE] ❌ STRIPE_WEBHOOK_SECRET is empty")
-        return "misconfigured", 500
-
     try:
         event = stripe.Webhook.construct_event(payload, sig_header, endpoint_secret)
     except stripe.error.SignatureVerificationError as e:
-        print("[STRIPE] ❌ SignatureVerificationError:", str(e))
+        print(f"⚠️ Stripe署名検証に失敗しました: {e}")
         return "Invalid signature", 400
     except Exception as e:
-        print("[STRIPE] ❌ Other error:", repr(e))
+        print(f"⚠️ Stripe webhook error: {e}")
         return "Error", 400
 
-    print("[STRIPE] ✅ verified event type=", event.get("type"))
+    if event["type"] != "checkout.session.completed":
+        return "OK", 200
+
+    session = event["data"]["object"]
+    line_user_id = session.get("client_reference_id")
+    session_id = session.get("id")
+    event_id = event.get("id")
+
+    print(f"[STRIPE] event_id={event_id} session_id={session_id} line_user_id={line_user_id}")
+
+    if not line_user_id or not session_id:
+        print("[STRIPE] missing line_user_id or session_id")
+        return "OK", 200
+
+    try:
+        # ✅ これが一番堅い：Sessionからline itemsを別APIで取得
+        li = stripe.checkout.Session.list_line_items(session_id, limit=1)
+        first = li["data"][0] if li and li.get("data") else None
+        price_id = (first.get("price", {}).get("id") if first else None)
+
+        print(f"[STRIPE] price_id={price_id}")
+
+        # 付与数（あなたのロジックを維持）
+        add_tickets = 1
+        if price_id == "price_1SrGGcK85rGl4ns4FpiYMXtt":
+            add_tickets = 5
+
+        user_ref = db.collection("users").document(line_user_id)
+
+        # BEFORE/AFTER をログで確定（これで「増えてない」を潰せる）
+        before = user_ref.get().to_dict() or {}
+        print(f"[BEFORE] ticket_remaining={before.get('ticket_remaining')} plan={before.get('plan')}")
+
+        user_ref.set({
+            "plan": "ticket" if add_tickets > 1 else "single",
+            "ticket_remaining": firestore.Increment(add_tickets),
+            "last_payment_date": firestore.SERVER_TIMESTAMP,
+            "last_stripe_event_id": event_id,   # デバッグ用（後で冪等にも使える）
+            "updated_at": firestore.SERVER_TIMESTAMP,
+        }, merge=True)
+
+        after = user_ref.get().to_dict() or {}
+        print(f"[AFTER] ticket_remaining={after.get('ticket_remaining')} plan={after.get('plan')}")
+        print(f"✅ Firestore更新成功: {line_user_id} +{add_tickets}")
+
+    except Exception:
+        print("❌ 決済後処理で例外:", traceback.format_exc())
+        # まず再送地獄を避けるためOK返す（本番では冪等処理を入れる）
+        return "OK", 200
+
     return "OK", 200
 
 
