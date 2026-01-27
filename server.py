@@ -1889,8 +1889,13 @@ def webhook():
 
 @app.route("/stripe/webhook", methods=["POST"])
 def stripe_webhook():
-    payload = request.get_data(as_text=True)
+    payload = request.get_data()  # bytes
     sig_header = request.headers.get("Stripe-Signature", "")
+    print("[DEBUG] stripe_sig_header_present=", bool(sig_header))
+    print("[DEBUG] payload_len=", len(payload))
+    print("[DEBUG] endpoint_secret_len=", len(os.environ.get("STRIPE_WEBHOOK_SECRET","")))
+    print("[DEBUG] endpoint_secret_prefix=", os.environ.get("STRIPE_WEBHOOK_SECRET","")[:8])
+
 
     try:
         event = stripe.Webhook.construct_event(
