@@ -79,7 +79,7 @@ TASK_HANDLER_PATH = "/task-handler"
 TASK_HANDLER_URL = f"{SERVICE_HOST_URL}{TASK_HANDLER_PATH}"
 
 # Firestore
-db = firestore.Client()
+db = firestore.Client(project=PROJECT_ID)
 users_ref = db.collection("users")
 
 
