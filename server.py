@@ -1774,48 +1774,6 @@ def task_handler():
 import stripe
 stripe.api_key = os.environ.get("STRIPE_SECRET_KEY", "")
 
-
-@app.route('/stripe/webhook', methods=['POST'])
-def stripe_webhook():
-    # 生データを確実に取得するため get_data() を使用します
-    payload = request.get_data(as_text=True)
-    sig_header = request.headers.get('Stripe-Signature')
-
-    print("USING_SECRET_HEAD=", endpoint_secret[:8])
-
-    
-    try:
-        # ここで「本物のStripeからの通知か」を署名検証します
-        event = stripe.Webhook.construct_event(payload, sig_header, endpoint_secret)
-    except stripe.error.SignatureVerificationError as e:
-        print(f"⚠️ 署名検証に失敗しました: {e}")
-        return 'Invalid signature', 400
-    except Exception as e:
-        print(f"⚠️ エラーが発生しました: {e}")
-        return 'Error', 400
-
-    # 支払い完了イベント（checkout.session.completed）の処理
-    if event['type'] == 'checkout.session.completed':
-        session = event['data']['object']
-        line_user_id = session.get('client_reference_id')
-
-        if line_user_id:
-            user_ref = db.collection('users').document(line_user_id)
-            user_ref.set({
-                'ticket_remaining': firestore.Increment(1),
-                'last_payment_date': firestore.SERVER_TIMESTAMP
-            }, merge=True)
-
-            try:
-                line_bot_api.push_message(...)
-            except Exception as e:
-                ...
-        else:
-            print("⚠️ 警告: client_reference_id が空です")
-
-        return jsonify(success=True)
-
-
     
 def handle_successful_payment(user_id: str, plan: str):
     """
