@@ -2251,10 +2251,3 @@ def handle_text_message(event):
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", "8080"))
     app.run(host="0.0.0.0", port=port)
-@app.route("/test")
-def test_route():
-    return "Routing is OK!"
-
-# これがファイル内に1つだけであることを確認してください
-if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 8080)))
