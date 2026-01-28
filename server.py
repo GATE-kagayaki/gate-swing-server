@@ -1931,8 +1931,8 @@ def stripe_webhook():
         }, merge=True)
 
         after = user_ref.get().to_dict() or {}
-            print(f"[AFTER] ticket_remaining={after.get('ticket_remaining')} plan={after.get('plan')}")
-            print(f"✅ Firestore updated user={line_user_id} add={add_tickets}")
+        print(f"[AFTER] ticket_remaining={after.get('ticket_remaining')} plan={after.get('plan')}")
+        print(f"✅ Firestore updated user={line_user_id} add={add_tickets}")
 
     except Exception:
         print("❌ post-payment handler failed:", traceback.format_exc())
