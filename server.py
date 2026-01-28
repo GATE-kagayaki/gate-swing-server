@@ -1669,6 +1669,20 @@ def build_analysis(raw: Dict[str, Any], premium: bool, report_id: str, user_inpu
 # ==================================================
 # Routes
 # ==================================================
+# ===== Firestore 接続確認用（一時テスト）=====
+@app.route("/debug/create_user", methods=["GET"])
+def debug_create_user():
+    test_user_id = "U_DEBUG_CREATE_001"
+
+    db.collection("users").document(test_user_id).set({
+        "plan": "free",
+        "ticket_remaining": 0,
+        "created_at": firestore.SERVER_TIMESTAMP,
+        "updated_at": firestore.SERVER_TIMESTAMP,
+    }, merge=True)
+
+    return "users created", 200
+
 @app.route("/report/<report_id>", methods=["GET"])
 def report_page(report_id: str):
     doc = db.collection("reports").document(report_id).get()
