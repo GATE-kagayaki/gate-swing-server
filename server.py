@@ -48,7 +48,10 @@ def callback():
     body = request.get_data(as_text=True)
     try:
         handler.handle(body, signature)
-    except:
+    except Exception as e:
+        # エラーの内容をログに書き出すように変更します
+        print(f"[CRITICAL_ERROR] Webhook内でのエラー: {e}")
+        print(traceback.format_exc())
         abort(400)
     return 'OK'
 
