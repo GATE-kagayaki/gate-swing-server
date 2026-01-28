@@ -1879,7 +1879,10 @@ def stripe_checkout():
         return jsonify({"error": str(e)}), 500
 
 
-# LINEのWebhook URLが /webhook 以外でも落ちないように受け口を複数用意
+# server.py 上部（1回だけ）
+stripe.api_key = os.environ.get("STRIPE_SECRET_KEY", "")
+db = firestore.Client()
+
 @app.route("/stripe/webhook", methods=["POST"])
 def stripe_webhook():
     import os, traceback
