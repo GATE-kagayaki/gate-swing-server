@@ -47,12 +47,13 @@ def callback():
     signature = request.headers.get('X-Line-Signature')
     body = request.get_data(as_text=True)
     try:
+        # ここで処理を実行します
         handler.handle(body, signature)
     except Exception as e:
-        # エラーの内容をログに書き出すように変更します
-        print(f"[CRITICAL_ERROR] Webhook内でのエラー: {e}")
-        print(traceback.format_exc())
-        abort(400)
+        # エラーが起きたら、ログに詳しく書き出すようにします！
+        print(f"!!! Webhook Error !!!: {e}")
+        logging.error(traceback.format_exc())
+        return 'Internal Error', 500 # 400から500に変えて、サーバー側のミスだと明示します
     return 'OK'
 
 @handler.add(MessageEvent, message=TextMessage)
