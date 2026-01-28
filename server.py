@@ -1888,7 +1888,9 @@ def stripe_webhook():
     from google.cloud import firestore
 
     endpoint_secret = os.environ.get("STRIPE_WEBHOOK_SECRET", "")
-    payload = request.get_data()  # bytes（重要）
+    stripe.api_key = os.environ.get("STRIPE_SECRET_KEY", "") # ★追加
+    db = firestore.Client() # ★追加
+    payload = request.get_data()
     sig_header = request.headers.get("Stripe-Signature", "")
     print(f"[BOOT] webhook_secret_prefix={endpoint_secret[:10]} len={len(endpoint_secret)}", flush=True)
 
@@ -1956,7 +1958,7 @@ def stripe_webhook():
 
     except Exception:
         print("❌ post-payment handler failed:", traceback.format_exc(), flush=True)
-        return "OK", 200
+        return "OK", 500
 
     return "OK", 200
 
