@@ -19,6 +19,9 @@ from linebot.models import (
 )
 
 import stripe
+app = Flask(__name__)
+line_bot_api = LineBotApi(os.environ.get('LINE_CHANNEL_ACCESS_TOKEN'))
+handler = WebhookHandler(os.environ.get('LINE_CHANNEL_SECRET'))
 
 def get_stripe_secrets():
     stripe.api_key = os.environ.get("STRIPE_SECRET_KEY", "")
@@ -34,6 +37,24 @@ from linebot.models import MessageEvent, VideoMessage, TextSendMessage
 from google.cloud import firestore
 from google.cloud import tasks_v2
 from google.api_core.exceptions import NotFound, PermissionDenied
+
+@app.route("/webhook", methods=['POST'])
+def callback():
+    signature = request.headers.get('X-Line-Signature')
+    body = request.get_data(as_text=True)
+    try:
+        handler.handle(body, signature)
+    except:
+        abort(400)
+    return 'OK'
+
+@handler.add(MessageEvent, message=TextMessage)
+def handle_message(event):
+    # LINEからメッセージが来たら、下の handle_text_message を実行する
+    handle_text_message(event)
+
+db = firestore.Client()
+users_ref = db.collection("users")
 
 def reply_quick_start(reply_token: str):
     line_bot_api.reply_message(
