@@ -61,13 +61,8 @@ app.config["JSON_AS_ASCII"] = False
 LINE_CHANNEL_ACCESS_TOKEN = os.environ.get("LINE_CHANNEL_ACCESS_TOKEN", "")
 LINE_CHANNEL_SECRET = os.environ.get("LINE_CHANNEL_SECRET", "")
 
-PROJECT_ID = (
-    os.environ.get("PROJECT_ID")
-    or os.environ.get("GCP_PROJECT_ID")
-    or os.environ.get("GOOGLE_CLOUD_PROJECT")
-    or os.environ.get("GCP_PROJECT")
-    or ""
-)
+PROJECT_ID = os.environ.get("GOOGLE_CLOUD_PROJECT", "")
+
 
 QUEUE_NAME = os.environ.get("TASK_QUEUE_NAME", "video-analysis-queue")
 QUEUE_LOCATION = os.environ.get("TASK_QUEUE_LOCATION", "asia-northeast2")
@@ -79,11 +74,15 @@ TASK_HANDLER_PATH = "/task-handler"
 TASK_HANDLER_URL = f"{SERVICE_HOST_URL}{TASK_HANDLER_PATH}"
 
 # Firestore
-FIRESTORE_DB = os.environ.get("FIRESTORE_DB", "(default)")  # "(default)" or "gate-kagayaki"
-db = firestore.Client(project=PROJECT_ID, database=FIRESTORE_DB)
-users_ref = db.collection("users")
+FIRESTORE_DB = os.environ.get("FIRESTORE_DB", "(default)")
 
-print(f"[BOOT] project={PROJECT_ID} firestore_db={FIRESTORE_DB}")
+db = firestore.Client(project=PROJECT_ID, database=FIRESTORE_DB)
+
+print(
+    f"[BOOT] GOOGLE_CLOUD_PROJECT={os.environ.get('GOOGLE_CLOUD_PROJECT')} "
+    f"PROJECT_ID={PROJECT_ID} firestore_db={FIRESTORE_DB}",
+    flush=True
+)
 
 
 # ==================================================
