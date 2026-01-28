@@ -2244,14 +2244,6 @@ def handle_text_message(event):
         )
         line_bot_api.reply_message(event.reply_token, TextSendMessage(text=plan_text))
         return
-
-    # 任意：デフォルト返信
-    line_bot_api.reply_message(
-        event.reply_token,
-        TextSendMessage(text="「分析スタート」から入力できます。動画送信でも解析できます。")
-    )
-    return
-
         
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", "8080"))
