@@ -7,6 +7,7 @@ import tempfile
 from datetime import timedelta, datetime, timezone
 from typing import Any, Dict, List, Tuple, Optional
 from collections import Counter
+import logging
 
 from linebot.models import (
     MessageEvent, 
