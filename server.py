@@ -18,16 +18,6 @@ from linebot.models import (
     MessageAction
 )
 
-import stripe
-app = Flask(__name__)
-line_bot_api = LineBotApi(os.environ.get('LINE_CHANNEL_ACCESS_TOKEN'))
-handler = WebhookHandler(os.environ.get('LINE_CHANNEL_SECRET'))
-
-def get_stripe_secrets():
-    stripe.api_key = os.environ.get("STRIPE_SECRET_KEY", "")
-    endpoint_secret = os.environ.get("STRIPE_WEBHOOK_SECRET", "")
-    return stripe.api_key, endpoint_secret
-
 from flask import Flask, request, jsonify, abort, render_template, render_template_string
 
 from linebot import LineBotApi, WebhookHandler
@@ -37,6 +27,18 @@ from linebot.models import MessageEvent, VideoMessage, TextSendMessage
 from google.cloud import firestore
 from google.cloud import tasks_v2
 from google.api_core.exceptions import NotFound, PermissionDenied
+
+import stripe
+
+app = Flask(__name__)
+line_bot_api = LineBotApi(os.environ.get('LINE_CHANNEL_ACCESS_TOKEN'))
+handler = WebhookHandler(os.environ.get('LINE_CHANNEL_SECRET'))
+
+def get_stripe_secrets():
+    stripe.api_key = os.environ.get("STRIPE_SECRET_KEY", "")
+    endpoint_secret = os.environ.get("STRIPE_WEBHOOK_SECRET", "")
+    return stripe.api_key, endpoint_secret
+
 
 @app.route("/webhook", methods=['POST'])
 def callback():
