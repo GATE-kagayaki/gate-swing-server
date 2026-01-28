@@ -76,7 +76,11 @@ TASK_HANDLER_URL = f"{SERVICE_HOST_URL}{TASK_HANDLER_PATH}"
 # Firestore
 FIRESTORE_DB = os.environ.get("FIRESTORE_DB", "(default)")
 
-db = firestore.Client(project=PROJECT_ID, database=FIRESTORE_DB)
+from google.cloud import firestore
+
+db = firestore.Client()
+users_ref = db.collection("users")
+
 
 print(
     f"[BOOT] GOOGLE_CLOUD_PROJECT={os.environ.get('GOOGLE_CLOUD_PROJECT')} "
