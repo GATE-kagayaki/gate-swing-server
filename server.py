@@ -1904,7 +1904,7 @@ def stripe_webhook():
         li = stripe.checkout.Session.list_line_items(session_id, limit=1)
         first = li["data"][0] if li and li.get("data") else None
         price_id = first.get("price", {}).get("id") if first else None
-        print(f"[STRIPE] price_id={price_id}")
+        print(f"[STRIPE] price_id={price_id}", flush=True)
 
         # 4) 付与数（回数券だけ +5 / それ以外 +1）
         add_tickets = 1
@@ -1932,10 +1932,11 @@ def stripe_webhook():
 
         after = user_ref.get().to_dict() or {}
         print(f"[AFTER] ticket_remaining={after.get('ticket_remaining')} plan={after.get('plan')}")
-        print(f"✅ Firestore updated user={line_user_id} add={add_tickets}")
+        print(f"✅ Firestore updated user={line_user_id} add={add_tickets}", flush=True)
+
 
     except Exception:
-        print("❌ post-payment handler failed:", traceback.format_exc())
+        print("❌ post-payment handler failed:", traceback.format_exc(), flush=True)
         return "OK", 200
 
     return "OK", 200
