@@ -30,7 +30,9 @@ from google.api_core.exceptions import NotFound, PermissionDenied
 
 import stripe
 
-app = Flask(__name__)
+app = Flask(__name__, template_folder="templates")
+app.config["JSON_AS_ASCII"] = False
+
 line_bot_api = LineBotApi(os.environ.get('LINE_CHANNEL_ACCESS_TOKEN'))
 handler = WebhookHandler(os.environ.get('LINE_CHANNEL_SECRET'))
 
@@ -78,9 +80,6 @@ def reply_quick_start(reply_token: str):
 # ==================================================
 # CONFIG
 # ==================================================
-app = Flask(__name__, template_folder="templates")
-app.config["JSON_AS_ASCII"] = False
-
 LINE_CHANNEL_ACCESS_TOKEN = os.environ.get("LINE_CHANNEL_ACCESS_TOKEN", "")
 LINE_CHANNEL_SECRET = os.environ.get("LINE_CHANNEL_SECRET", "")
 
