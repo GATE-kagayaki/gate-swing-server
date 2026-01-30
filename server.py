@@ -2188,7 +2188,7 @@ def handle_text_message(event):
                 TextSendMessage(text="ありがとうございます！性別を保存しました。このまま動画を送ってください。")
             )
             return
-
+           
         # 想定外step保険
         users_ref.document(user_id).set({
             "prefill_step": None,
