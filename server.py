@@ -2176,7 +2176,8 @@ def handle_text_message(event):
             return
 
 
-        if step == "gender":
+        # 修正ポイント：stepがNoneでも、文字が「男性」「女性」なら反応するように変更
+        if text in ["男性", "女性"] or step == "gender":
             users_ref.document(user_id).set({
                 "prefill_step": None,
                 "prefill": {"gender": text},
