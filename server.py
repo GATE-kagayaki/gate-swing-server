@@ -2176,7 +2176,7 @@ def handle_text_message(event):
             return
 
 
-        if step == "gender":
+       if step == "gender":
             users_ref.document(user_id).set({
                 "prefill_step": None,
                 "prefill": {"gender": text},
@@ -2185,7 +2185,7 @@ def handle_text_message(event):
 
             line_bot_api.reply_message(
                 event.reply_token,
-                TextSendMessage(text="OK！性別を保存しました。このまま動画を送ってください。")
+                TextSendMessage(text="ありがとうございます！性別を保存しました。このまま動画を送ってください。")
             )
             return
 
