@@ -2223,7 +2223,7 @@ def handle_text_message(event):
         )
         return
 
-    # ===== 5) 最後に既存分岐（料金プランなど） =====
+   # ===== 5) 最後に既存分岐（料金プランなど） =====
     if "料金プラン" in text:
         plan_text = (
             "GATE公式LINEへようこそ！⛳️\n\n"
@@ -2232,13 +2232,13 @@ def handle_text_message(event):
             "--------------------\n\n"
             "【単発プラン】500円/1回\n"
             "単発プランで試す → \n"
-            f"https://buy.stripe.com/00w28sdezc5A8lR2ej?client_reference_id={user_id}\n\n"
+            f"https://buy.stripe.com/00w28sdezc5A8lR2ej18c00?client_reference_id={user_id}\n\n"
             "【回数券プラン】1,980円/5回\n"
             "回数券を購入する → \n"
-            f"https://buy.stripe.com/fZucN66QbfhM6dJ7yD18c03?client_reference_id={user_id}\n\n" # ←ここを新しいURLに！
+            f"https://buy.stripe.com/fZucN66QbfhM6dJ7yD18c03?client_reference_id={user_id}\n\n"
             "【月額プラン】4,980円/月\n"
             "月額プランを申し込む → \n"
-            f"https://buy.stripe.com/3cIfZi2zVd9E1Xt?client_reference_id={user_id}\n\n"
+            f"https://buy.stripe.com/3cIfZi2zVd9E1XtdX118c05?client_reference_id={user_id}\n\n"
             "--------------------\n"
             "※操作方法などは、このままトークでお気軽にご質問ください。"
         )
