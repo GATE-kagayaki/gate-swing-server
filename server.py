@@ -2106,15 +2106,29 @@ def handle_text_message(event):
         return
 
     # ===== 2) user取得 → step =====
-    # ここは「if text == "分析スタート":」と同じ深さ（4スペース）に揃える必要があります
     user_doc = users_ref.document(user_id).get()
     user_data = user_doc.to_dict() or {}
     step = user_data.get("prefill_step")
     logging.warning("[DEBUG] prefill_step=%r", step)
 
+    # 【修正箇所】性別判定を if step: の外に配置。
+    # ここに置くことで、stepがNoneになっても「男性/女性」という文字を最優先で捕まえます。
+    if text in ["男性", "女性"] or step == "gender":
+        users_ref.document(user_id).set({
+            "prefill_step": None,
+            "prefill": {"gender": text},
+            "updated_at": firestore.SERVER_TIMESTAMP,
+        }, merge=True)
+
+        line_bot_api.reply_message(
+            event.reply_token,
+            TextSendMessage(text="ありがとうございます！性別を保存しました。このまま動画を送ってください。")
+        )
+        return
+
     # ===== 3) stepが立っているなら最優先で保存 =====
     if step:
-        # 任意：途中で抜けたい人（09やめる）はスキップ扱いでリセット
+        # 任意：途中で抜けたい人はスキップ扱いでリセット
         if text == "スキップ":
             users_ref.document(user_id).set({
                 "prefill_step": None,
@@ -2134,7 +2148,6 @@ def handle_text_message(event):
                 )
                 return
 
-            # ★必須なので次は必ずミス傾向へ
             users_ref.document(user_id).set({
                 "prefill_step": "miss_tendency",
                 "prefill": {"head_speed": int(text)},
@@ -2153,11 +2166,9 @@ def handle_text_message(event):
             )
             return
 
-
         if step == "miss_tendency":
-            # ★1つだけ保存（ユーザーの入力をそのまま格納）
             users_ref.document(user_id).set({
-                "prefill_step": None,  # 必須2つ完了でstep解除
+                "prefill_step": None,  # ここでリセットされるため、性別判定は上にないと動かない
                 "prefill": {"miss_tendency": text},
                 "updated_at": firestore.SERVER_TIMESTAMP,
             }, merge=True)
@@ -2174,22 +2185,7 @@ def handle_text_message(event):
                 )
             )
             return
-
-
-        # 修正ポイント：stepがNoneでも、文字が「男性」「女性」なら反応するように変更
-        if text in ["男性", "女性"] or step == "gender":
-            users_ref.document(user_id).set({
-                "prefill_step": None,
-                "prefill": {"gender": text},
-                "updated_at": firestore.SERVER_TIMESTAMP,
-            }, merge=True)
-
-            line_bot_api.reply_message(
-                event.reply_token,
-                TextSendMessage(text="ありがとうございます！性別を保存しました。このまま動画を送ってください。")
-            )
-            return
-           
+                   
         # 想定外step保険
         users_ref.document(user_id).set({
             "prefill_step": None,
