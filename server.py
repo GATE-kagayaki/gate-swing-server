@@ -2176,7 +2176,7 @@ def handle_text_message(event):
             return
 
 
-       if step == "gender":
+        if step == "gender":
             users_ref.document(user_id).set({
                 "prefill_step": None,
                 "prefill": {"gender": text},
