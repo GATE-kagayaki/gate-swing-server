@@ -1367,7 +1367,7 @@ def build_free_07(raw: Dict[str, Any]) -> Dict[str, Any]:
 
 
 # ==================================================
-# 08 ドリル（現状維持）
+# 08 ドリル（07の優先順位連動 ＋ バリエーション拡充版）
 # ==================================================
 DRILL_DEFINITIONS: List[Dict[str, Any]] = [
     {
@@ -1434,11 +1434,37 @@ DRILL_DEFINITIONS: List[Dict[str, Any]] = [
         "purpose": "体全体で回る感覚を作る",
         "how": "①腕を胸の前でクロス\n②胸と腰を同時に回す\n③左右10回",
     },
+    # --- 新規追加ドリル ---
+    {
+        "id": "step_transition",
+        "name": "足踏みステップドリル",
+        "category": "下半身",
+        "tags": ["腰回転不足", "下半身不安定", "捻転差不足"],
+        "purpose": "下半身主導の切り返しタイミングと連動性を習得する",
+        "how": "①足を閉じて構える\n②バックスイングの頂点に合わせて左足を踏み出す\n③そのまま一気に振り抜く",
+    },
+    {
+        "id": "tempo_rhythm",
+        "name": "テンポ一定ドリル（メトロノーム）",
+        "category": "再現性",
+        "tags": ["ばらつき大"], # ロジック内で動的に付与
+        "purpose": "スイングのリズムを一定にし、各部位のばらつきを抑える",
+        "how": "①等速のリズム（イチ、ニ、サン）を口に出す\n②フィニッシュまで一定の速さで振る\n③連続素振り20回",
+    },
+    {
+        "id": "towel_release",
+        "name": "タオルスイング（リリース管理）",
+        "category": "手首",
+        "tags": ["コック過多", "リリースのばらつき大"],
+        "purpose": "手首の早解けを防ぎ、体幹で振る感覚を養う（自宅用）",
+        "how": "①タオルの先端を結ぶ\n②インパクト以降（左足前）で音が鳴るように振る\n③10回×3セット",
+    },
 ]
 
 
 def collect_all_tags(analysis: Dict[str, Any]) -> List[str]:
     tags: List[str] = []
+    # 02〜06の各セクションからタグを収集
     for k in ["02", "03", "04", "05", "06"]:
         sec = analysis.get(k)
         if sec and "tags" in sec:
@@ -1446,37 +1472,91 @@ def collect_all_tags(analysis: Dict[str, Any]) -> List[str]:
     return tags
 
 
-def select_drills_by_tags(tags: List[str], max_drills: int = 3) -> List[Dict[str, str]]:
-    tagset = set(tags)
-    scored: List[Tuple[int, Dict[str, Any]]] = []
-    for d in DRILL_DEFINITIONS:
-        score = len(set(d["tags"]) & tagset)
-        if score > 0:
-            scored.append((score, d))
-
-    scored.sort(key=lambda x: x[0], reverse=True)
-
+def select_drills_with_priority(tags: List[str], priorities: List[str], max_drills: int = 3) -> List[Dict[str, Any]]:
+    """
+    07で決まった優先課題(priorities)に合致するドリルを最優先で選出し、
+    残りの枠を他の検知タグで埋める（カテゴリの重複は避ける）。
+    """
     selected: List[Dict[str, Any]] = []
     used_categories: set = set()
+    used_drill_ids: set = set()
 
-    for score, d in scored:
-        if d["category"] in used_categories:
-            continue
-        selected.append(d)
-        used_categories.add(d["category"])
+    # 1. 最優先課題(priorities)に合致するドリルを最優先
+    for p_tag in priorities:
+        for d in DRILL_DEFINITIONS:
+            if p_tag in d["tags"] and d["category"] not in used_categories:
+                selected.append(d.copy())
+                used_categories.add(d["category"])
+                used_drill_ids.add(d["id"])
+                break
         if len(selected) >= max_drills:
             break
 
+    # 2. 枠が余っていれば、その他の検知タグ(tags)で補充
+    if len(selected) < max_drills:
+        tagset = set(tags)
+        scored: List[Tuple[int, Dict[str, Any]]] = []
+        for d in DRILL_DEFINITIONS:
+            if d["id"] in used_drill_ids:
+                continue
+            # 一致するタグの数でスコアリング
+            score = len(set(d["tags"]) & tagset)
+            if score > 0:
+                scored.append((score, d))
+        
+        # スコア順（一致タグが多い順）にソート
+        scored.sort(key=lambda x: x[0], reverse=True)
+        
+        for _, d in scored:
+            if d["category"] not in used_categories:
+                selected.append(d.copy())
+                used_categories.add(d["category"])
+                used_drill_ids.add(d["id"])
+            if len(selected) >= max_drills:
+                break
+
+    # 3. フォールバック（何も選ばれない場合）
     if not selected:
-        selected = [DRILL_DEFINITIONS[0]]
+        selected = [DRILL_DEFINITIONS[0].copy()]
 
-    return [{"name": d["name"], "purpose": d["purpose"], "how": d["how"]} for d in selected]
+    return selected
 
 
-def build_paid_08(analysis: Dict[str, Any]) -> Dict[str, Any]:
-    tags = collect_all_tags(analysis)
-    drills = select_drills_by_tags(tags, 3)
-    return {"title": "08. Training Drills（練習ドリル）", "drills": drills}
+def build_paid_08(analysis: Dict[str, Any], raw: Dict[str, Any]) -> Dict[str, Any]:
+    # 07の解析結果から優先課題を取得
+    sec07 = analysis.get("07") or {}
+    meta07 = sec07.get("meta") or {}
+    priorities = meta07.get("priorities", [])
+    
+    # すべての検知タグを収集
+    all_tags = collect_all_tags(analysis)
+    
+    # 【数値による動的タグ付与】ばらつきが大きい場合、再現性ドリルを候補に入れる
+    sh_std = raw.get("shoulder", {}).get("std", 0)
+    if sh_std > 15:
+        all_tags.append("ばらつき大")
+        all_tags.append("肩回転のばらつき大")
+
+    # 優先順位を考慮してドリルを選定
+    selected_drills = select_drills_with_priority(all_tags, priorities, 3)
+    
+    # 【AI数値アドバイス】ばらつき（σ）が大きいユーザーへの動的注釈
+    for d in selected_drills:
+        if sh_std > 15:
+            # 再現性に課題がある場合、ドリルに意識ポイントを追加
+            d["how"] += f"\n※現在、動作のばらつき（σ {sh_std}）が大きいため、最初は回数よりも『ゆっくりとした正確な動き』を最優先してください。"
+
+    return {
+        "title": "08. Training Drills（練習ドリル）", 
+        "drills": [
+            {
+                "name": d["name"], 
+                "purpose": d["purpose"], 
+                "how": d["how"]
+            } 
+            for d in selected_drills
+        ]
+    }
 
 
 # ==================================================
