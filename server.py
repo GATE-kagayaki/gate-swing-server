@@ -1902,8 +1902,11 @@ def build_analysis(raw: Dict[str, Any], premium: bool, report_id: str, user_inpu
     analysis["05"] = build_paid_05_head(raw, seed=report_id)
     analysis["06"] = build_paid_06_knee(raw, seed=report_id)
 
+    # 07は「解析結果のまとめ(analysis)」と「生データ(raw)」の両方を使用
     analysis["07"] = build_paid_07_from_analysis(analysis, raw)
-    analysis["08"] = build_paid_08(analysis)
+
+    # ✅ 修正箇所1：build_paid_08 は (analysis, raw) の2つが必要です
+    analysis["08"] = build_paid_08(analysis, raw)
 
     # ✅ 09は常にセクションを出す（入力があれば本体、無ければ案内のみ）
     ui = user_inputs or {}
@@ -1912,9 +1915,11 @@ def build_analysis(raw: Dict[str, Any], premium: bool, report_id: str, user_inpu
     else:
         analysis["09"] = build_paid_09_placeholder()
 
-    analysis["10"] = build_paid_10(raw)
-    return analysis
+    # ✅ 修正箇所2：build_paid_10 は 01〜09の結果をまとめるため (analysis) を渡します
+    # ※ raw を渡すと、まとめロジック内でデータが参照できずエラーになります
+    analysis["10"] = build_paid_10(analysis)
 
+    return analysis
 
 # ==================================================
 # Routes
