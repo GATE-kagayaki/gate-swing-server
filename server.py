@@ -502,6 +502,12 @@ def create_cloud_task(report_id: str, user_id: str, message_id: str) -> str:
 def analyze_swing_with_mediapipe(video_path: str) -> Dict[str, Any]:
     import cv2
     import mediapipe as mp
+    import math
+    import os  # 環境変数設定用に追加
+    from typing import List, Dict, Any
+
+    # Cloud Run 等のGPU非搭載環境でEGLエラー(0x3008)が出るのを防ぐため、CPUを強制指定します。
+    os.environ['MP_DEVICE'] = 'cpu'
 
     mp_pose = mp.solutions.pose
     cap = cv2.VideoCapture(video_path)
@@ -529,6 +535,7 @@ def analyze_swing_with_mediapipe(video_path: str) -> Dict[str, Any]:
         c = max(-1.0, min(1.0, dot / (na * nb)))
         return math.degrees(math.acos(c))
 
+    # model_complexity=1 はCPU環境で速度と精度のバランスが最も良い設定です。
     with mp_pose.Pose(
         static_image_mode=False,
         model_complexity=1,
@@ -542,6 +549,8 @@ def analyze_swing_with_mediapipe(video_path: str) -> Dict[str, Any]:
                 break
             total_frames += 1
             rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            
+            # ここでGPUを探しに行ってエラーが出ていましたが、CPU指定により回避されます。
             res = pose.process(rgb)
             if not res.pose_landmarks:
                 continue
@@ -582,6 +591,14 @@ def analyze_swing_with_mediapipe(video_path: str) -> Dict[str, Any]:
 
     conf = float(valid_frames) / float(total_frames)
 
+    def _safe_mean(xs):
+        return sum(xs) / len(xs) if xs else 0.0
+
+    def _safe_std(xs):
+        if not xs: return 0.0
+        m = _safe_mean(xs)
+        return math.sqrt(sum((x - m)**2 for x in xs) / len(xs))
+
     def pack(xs: List[float], nd: int = 2) -> Dict[str, float]:
         if not xs:
             return {"max": 0.0, "mean": 0.0, "std": 0.0}
@@ -602,7 +619,6 @@ def analyze_swing_with_mediapipe(video_path: str) -> Dict[str, Any]:
         "knee": pack(knees, 4),
         "x_factor": pack(x_factors, 2),
     }
-
 
 # ==================================================
 # Section 01
