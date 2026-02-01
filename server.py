@@ -1796,18 +1796,77 @@ def build_paid_09(raw: Dict[str, Any], user_inputs: Dict[str, Any]) -> Dict[str,
     }
 
 # ==================================================
-# 10 まとめ（現状維持）
+# 10 まとめ（07, 08, 09 の結果を動的に統合した最終総括版）
 # ==================================================
-def build_paid_10(raw: Dict[str, Any]) -> Dict[str, Any]:
+def build_paid_10(analysis: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    各セクションの解析結果を引用し、ユーザーに最適な改善ストーリーを提示する。
+    - 07 から：スイング型と最優先課題
+    - 08 から：取り組むべきメインドリル
+    - 09 から：推奨シャフトとその選定根拠
+    """
+    # --- 07. 総合評価（型と優先課題）の抽出 ---
+    # analysis辞書内の 07 セクション、またはそれに相当するキーから取得
+    sec07 = analysis.get("07") or {}
+    meta07 = sec07.get("meta") or {}
+    swing_type = meta07.get("swing_type", "バランス型")
+    priorities = meta07.get("priorities", [])
+
+    # --- 08. 練習ドリルの抽出 ---
+    sec08 = analysis.get("08") or {}
+    drills = sec08.get("drills", [])
+    drill_names = [d["name"] for d in drills]
+
+    # --- 09. フィッティングの抽出 ---
+    sec09 = analysis.get("09") or {}
+    table = sec09.get("table", [])
+    meta09 = sec09.get("meta") or {}
+    
+    # キックポイントの推奨情報と選定理由(AI逆転判定の根拠)を取得
+    kp_info = next((item for item in table if item["item"] == "キックポイント"), {})
+    kp_guide = kp_info.get("guide", "中")
+    kp_reason = kp_info.get("reason", "")
+
+    # --- 文章の組み立て（ストーリー構築） ---
+    summary_text = []
+
+    # 1. スイング型の総評
+    summary_text.append(f"今回の解析結果、あなたのスイングは『{swing_type}』に分類されます。")
+    
+    # 2. 優先課題とアクションプランの連動
+    if priorities:
+        p_str = "／".join(priorities)
+        summary_text.append(f"現在、スコアアップのために最も優先すべきテーマは『{p_str}』の改善です。")
+        
+        if drill_names:
+            summary_text.append(f"この課題を克服するために、まずは推奨ドリル筆頭の「{drill_names[0]}」に集中して取り組んでください。")
+            summary_text.append("複数の動きを同時に直すよりも、この一点を整えることで他の数値も連鎖的に向上します。")
+    else:
+        summary_text.append("全体的に大きな破綻はなく、非常にバランスの良いスイングです。提示されたドリルでさらなる再現性の向上を目指しましょう。")
+
+    summary_text.append("")  # 視認性のための改行
+
+    # 3. フィッティングとスイングの相関（09の逆転ロジックを尊重）
+    summary_text.append(f"道具の面では、AIの解析数値に基づき『{kp_guide}調子』のシャフトを提案しました。")
+    if kp_reason:
+        # 09で生成された「理由」には、スライス傾向と解析数値の矛盾などが含まれているため、そのまま引用
+        summary_text.append(f"【選定根拠】{kp_reason}")
+
+    summary_text.append("")  # 視認性のための改行
+
+    # 4. 結びの言葉（動的メッセージ）
+    summary_text.append("『練習による動作の最適化』と『シャフトによる挙動の補正』。")
+    summary_text.append("この両輪を回すことが、目標達成への最短距離となります。")
+    summary_text.append("次回の解析で、各数値がどのように進化しているかを楽しみにしています！")
+
+    summary_text.append("")  # 視認性のための改行
+
+    # 5. 共通メッセージ（全ての利用者共通）
+    summary_text.append("あなたのゴルフライフが、より充実したものになることを願っています。")
+
     return {
         "title": "10. Summary（まとめ）",
-        "text": [
-            "今回の解析では、回転量を活かせる土台が確認できました。",
-            "次のステップは「優先テーマを2点に絞って改善すること」です。",
-            "08のドリルと09の指針を使い、同じ幅・同じテンポを作っていきましょう。",
-            "",
-            "あなたのゴルフライフが、より充実したものになることを願っています。",
-        ],
+        "text": summary_text,
     }
 
 
