@@ -1480,7 +1480,7 @@ def build_paid_08(analysis: Dict[str, Any]) -> Dict[str, Any]:
 
 
 # ==================================================
-# 09 フィッティング（現状維持）
+# 09 フィッティング（AIによる逆転判定ロジック版）
 # ==================================================
 def _clamp01(x: float) -> float:
     return max(0.0, min(1.0, x))
@@ -1565,14 +1565,17 @@ def build_paid_09(raw: Dict[str, Any], user_inputs: Dict[str, Any]) -> Dict[str,
     power_idx = calc_power_idx(raw)
     stability_idx = calc_stability_idx(raw)
 
-
     hs = _to_float_or_none(user_inputs.get("head_speed"))
     miss = _norm_miss(user_inputs.get("miss_tendency"))
     gender = _norm_gender(user_inputs.get("gender"))
 
+    # 追加：解析数値の直接参照
+    wrist_mean = float(raw["wrist"]["mean"])
+    sh_mean = float(raw["shoulder"]["mean"])
+
     rows: List[Dict[str, str]] = []
 
-    # 重量
+    # --- 1. 重量 ---
     if hs is not None:
         if hs < 35:
             weight = "40〜50g"
@@ -1604,7 +1607,7 @@ def build_paid_09(raw: Dict[str, Any], user_inputs: Dict[str, Any]) -> Dict[str,
 
     rows.append({"item": "重量", "guide": weight, "reason": reason})
 
-    # フレックス
+    # --- 2. フレックス ---
     if hs is not None:
         if hs < 33:
             flex = "L〜A"
@@ -1635,7 +1638,8 @@ def build_paid_09(raw: Dict[str, Any], user_inputs: Dict[str, Any]) -> Dict[str,
 
     rows.append({"item": "フレックス", "guide": flex, "reason": reason})
 
-    # キックポイント
+    # --- 3. キックポイント（★AI逆転判定ロジック） ---
+    # まずベースをミスの傾向で決める
     if miss == "right":
         kp = "先〜中"
         reason = "右へのミス傾向は、つかまり側（先〜中）が結果を整えます。"
@@ -1643,18 +1647,36 @@ def build_paid_09(raw: Dict[str, Any], user_inputs: Dict[str, Any]) -> Dict[str,
         kp = "中〜元"
         reason = "左へのミス傾向は、つかまり過ぎを抑える（中〜元）が結果を整えます。"
     else:
-        wrist_high = float(raw["wrist"]["mean"]) > 90
-        head_bad = float(raw["head"]["mean"]) > 0.15
-        if wrist_high or head_bad or stability_idx <= 40:
+        kp = "中"
+        reason = "一般的指針として、挙動に癖のない中調子が基準となります。"
+
+    # 【逆転判定1：スライス悩みだが、タメが強すぎる場合】
+    if miss == "right" and wrist_mean > 95:
+        kp = "元"
+        reason = f"右ミス傾向ですが、解析の結果、手首のタメ（mean {wrist_mean:.1f}°）が非常に強く、振り遅れがスライスの主因です。先調子ではヘッドが戻りきらず暴れるため、手元がしなる『元調子』でインパクトのタイミングを整えます。"
+
+    # 【逆転判定2：スライス悩みだが、軸が極端に不安定な場合】
+    elif miss == "right" and stability_idx < 35:
+        kp = "中"
+        reason = f"右ミス傾向ですが、スイング軸の安定性（指数 {stability_idx}）に課題があり、打点が乱れています。先端が走る先調子よりも、挙動が素直な『中調子』で軸の再現性を高めることを優先します。"
+
+    # 【逆転判定3：フック悩みだが、体の回転が浅い場合】
+    elif miss == "left" and sh_mean < 80:
+        kp = "中"
+        reason = f"左ミス傾向ですが、肩の回転（mean {sh_mean:.1f}°）が浅く、手打ちによる引っ掛けが原因です。元調子で抑え込むより、中調子でオートマチックに振り抜く方が、スイング全体の質を整えやすくなります。"
+    
+    # 【入力なし等の補完】
+    elif miss == "none":
+        if wrist_mean > 90 or stability_idx <= 40:
             kp = "中〜元"
-            reason = f"入力が無いため数値で判定します。安定性指数{stability_idx}のため元寄りで挙動を抑えます。"
+            reason = f"数値解析に基づき判定します。安定性指数{stability_idx}のため元寄りで挙動を抑えます。"
         else:
             kp = "中"
             reason = "入力が無いため一般的指針を採用します。中調子が基準です。"
 
     rows.append({"item": "キックポイント", "guide": kp, "reason": reason})
 
-    # トルク
+    # --- 4. トルク ---
     if stability_idx <= 40:
         tq = "3.0〜4.0"
         reason = f"安定性指数{stability_idx}のため、低トルクでフェース挙動を抑えます。"
@@ -1684,6 +1706,8 @@ def build_paid_09(raw: Dict[str, Any], user_inputs: Dict[str, Any]) -> Dict[str,
             "head_speed": hs,
             "miss_tendency": user_inputs.get("miss_tendency"),
             "gender": user_inputs.get("gender"),
+            "final_kp": kp, # 10で参照用
+            "final_kp_reason": reason # 10で参照用
         },
     }
 
