@@ -656,7 +656,6 @@ def build_section_01(raw: Dict[str, Any]) -> Dict[str, Any]:
         ],
     }
 
-
 # ==================================================
 # 02〜06：良い点／改善点
 #  - 良い点は最低1行（無い場合は「良い点は特にありません。」）
@@ -712,13 +711,21 @@ def build_paid_02_shoulder(raw: Dict[str, Any], seed: str) -> Dict[str, Any]:
     good: List[str] = []
     bad: List[str] = []
 
-    # 良い点（最低1行）
+    # 良い点（最低1行） --- ポジティブバッファ拡充 ---
     if sh["std"] <= 10:
         good.append("肩の回し幅は揃っており、上半身の再現性は確保されています。")
     if 85 <= sh["mean"] <= 105:
-        good.append("肩の回旋量は基準レンジに収まっています。")
+        good.append("肩の回旋量は基準レンジに収まっており、効率的な捻転ができています。")
     if xf["mean"] >= 35:
-        good.append("肩と腰の差（捻転差）は確保できています。")
+        good.append("肩と腰の差（捻転差）は確保できており、出力の準備が整っています。")
+    
+    # バッファ：回転量が多い場合
+    if sh["mean"] > 105:
+        good.append("深い肩の回転を可能にする柔軟性があり、大きな飛距離を生む潜在能力があります。")
+    # バッファ：数値は外れていても安定している場合
+    if sh["std"] <= 7 and not (85 <= sh["mean"] <= 105):
+        good.append("角度自体は調整の余地がありますが、常に同じ深さまで回せる安定感は大きな武器です。")
+
     if not good:
         good = ["良い点は特にありません。"]
 
@@ -798,11 +805,19 @@ def build_paid_03_hip(raw: Dict[str, Any], seed: str) -> Dict[str, Any]:
     good: List[str] = []
     bad: List[str] = []
 
-    # 良い点（最低1行）
+    # 良い点（最低1行） --- ポジティブバッファ拡充 ---
     if hip["std"] <= 10:
         good.append("腰の回し幅は揃っており、下半身の再現性は確保されています。")
     if 36 <= hip["mean"] <= 50:
-        good.append("腰の回旋量は基準レンジに収まっています。")
+        good.append("腰の回旋量は基準レンジに収まっており、土台として機能しています。")
+    
+    # バッファ：安定性
+    if hip["std"] <= 5:
+        good.append("下半身の動きが非常に安定しており、ミート率を高める基礎ができています。")
+    # バッファ：捻転の深さ
+    if hip["mean"] < 36 and xf["mean"] >= 40:
+        good.append("腰の回転は控えめですが、その分肩との捻転差をしっかり作れています。")
+
     if not good:
         good = ["良い点は特にありません。"]
 
@@ -882,11 +897,19 @@ def build_paid_04_wrist(raw: Dict[str, Any], seed: str) -> Dict[str, Any]:
     good: List[str] = []
     bad: List[str] = []
 
-    # 良い点（最低1行）
+    # 良い点（最低1行） --- ポジティブバッファ拡充 ---
     if w["std"] <= 10:
         good.append("手元の角度変化は揃っており、インパクト条件の再現性は確保されています。")
     if 70 <= w["mean"] <= 90:
-        good.append("手首コック量は基準レンジに収まっています。")
+        good.append("手首コック量は基準レンジに収まっており、効率的にパワーを伝えられています。")
+    
+    # バッファ：タメの強さ
+    if w["mean"] > 90:
+        good.append("手首のタメを深く使える能力があり、インパクトでの爆発力を秘めています。")
+    # バッファ：シンプルさ
+    if w["mean"] < 70 and w["std"] <= 8:
+        good.append("手首の余計な介入が少なく、シンプルに体を回して打てる特性を持っています。")
+
     if not good:
         good = ["良い点は特にありません。"]
 
@@ -939,7 +962,7 @@ def judge_head(raw: Dict[str, Any]) -> Dict[str, Any]:
     if h["mean"] > 0.15:
         tags.append("頭部ブレ大")
     if k["mean"] > 0.20:
-        tags.append("膝ブレ大")  # 07判定の整合のため head側にも付与してよい
+        tags.append("膝ブレ大")
     if k["mean"] > 0.20:
         tags.append("下半身不安定")
     return {"tags": tags}
@@ -954,11 +977,19 @@ def build_paid_05_head(raw: Dict[str, Any], seed: str) -> Dict[str, Any]:
     good: List[str] = []
     bad: List[str] = []
 
-    # 良い点（最低1行）：「軸が揃っている」＝stdで拾う
+    # 良い点（最低1行） --- ポジティブバッファ拡充 ---
     if h["std"] <= 0.03:
-        good.append("頭の位置は揃っており、再現性の土台はあります。")
+        good.append("頭の位置は非常に揃っており、スイング軸の再現性は極めて高いです。")
     if h["mean"] <= 0.10:
-        good.append("頭の左右ブレは抑えられており、軸は安定しています。")
+        good.append("頭の左右ブレは最小限に抑えられており、理想的な軸の安定感があります。")
+    
+    # バッファ：許容範囲内の動き
+    if 0.10 < h["mean"] <= 0.15:
+        good.append("多少の左右移動はありますが、許容範囲内でダイナミックな動きができています。")
+    # バッファ：下半身との連動
+    if h["mean"] <= 0.12 and k["mean"] <= 0.15:
+        good.append("上下の軸が連動して安定しており、ミート率を支える良い土台があります。")
+
     if not good:
         good = ["良い点は特にありません。"]
 
@@ -1020,11 +1051,19 @@ def build_paid_06_knee(raw: Dict[str, Any], seed: str) -> Dict[str, Any]:
     good: List[str] = []
     bad: List[str] = []
 
-    # 良い点（最低1行）：「揃い」をstdで拾う
+    # 良い点（最低1行） --- ポジティブバッファ拡充 ---
     if k["std"] <= 0.04:
-        good.append("膝の位置は揃っており、下半身の再現性の土台はあります。")
+        good.append("膝の位置は揃っており、下半身の再現性がインパクトの安定感を生んでいます。")
     if k["mean"] <= 0.12:
-        good.append("膝の左右ブレは抑えられており、土台は安定しています。")
+        good.append("膝の左右ブレが抑えられており、エネルギーを逃がさない強い土台があります。")
+    
+    # バッファ：粘りのある下半身
+    if 0.12 < k["mean"] <= 0.18:
+        good.append("下半身に粘りがあり、スイング中のパワーをしっかり受け止めています。")
+    # バッファ：再現性重視
+    if k["std"] <= 0.05 and k["mean"] > 0.20:
+        good.append("ブレ自体はありますが、毎回同じ場所で踏み込めている点は安定への足がかりになります。")
+
     if not good:
         good = ["良い点は特にありません。"]
 
@@ -1063,7 +1102,6 @@ def build_paid_06_knee(raw: Dict[str, Any], seed: str) -> Dict[str, Any]:
         "bad": bad[:3],
         "pro_comment": pro_comment,
     }
-
 
 # ==================================================
 # 07：プロ要約（パターンを1〜2増やす／初回ユーザー向けの一文を入れる）
