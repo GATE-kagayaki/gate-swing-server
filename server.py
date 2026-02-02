@@ -1892,11 +1892,8 @@ def build_paid_09(raw: Dict[str, Any], user_inputs: Dict[str, Any]) -> Dict[str,
 
     return {
         "title": "09. Shaft Fitting Guide（推奨）",
-        "items": [
-            {"name": r["item"], "value": r["guide"], "descriptions": r["reason"].split("\n")}
-            for r in rows
-        ],
-        # メタも欲しければ残してOK（LINE表示に不要なら消して軽く）
+        "table": rows,  # ← ここが重要（表示側がこれを見ている可能性が高い）
+        "note": "※本結果は解析数値に基づく指標です。購入時は試打での最終確認を推奨します。",
         "meta": {
             "power_idx": power_idx,
             "stability_idx": stability_idx,
@@ -1907,6 +1904,7 @@ def build_paid_09(raw: Dict[str, Any], user_inputs: Dict[str, Any]) -> Dict[str,
             "max_wrist": max_wrist,
         },
     }
+
 
 # ==================================================
 # 10 まとめ（07, 08, 09 の結果を動的に統合した最終総括版）
