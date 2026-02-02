@@ -648,7 +648,7 @@ def analyze_swing_with_mediapipe(video_path: str) -> Dict[str, Any]:
     }
 
 # ==================================================
-# Section 01
+# Section 01: 修正版（3D・％単位対応）
 # ==================================================
 def build_section_01(raw: Dict[str, Any]) -> Dict[str, Any]:
     return {
@@ -668,37 +668,39 @@ def build_section_01(raw: Dict[str, Any]) -> Dict[str, Any]:
             },
             {
                 "name": "肩回転（°）",
-                "value": f'max {raw["shoulder"]["max"]} / mean {raw["shoulder"]["mean"]} / σ {raw["shoulder"]["std"]}',
-                "description": "上半身の回旋量です（本動画内の統計）。",
-                "guide": "比較は同条件で",
+                # 【修正】3D角度なので小数点第1位まで表示
+                "value": f'max {raw["shoulder"]["max"]:.1f} / mean {raw["shoulder"]["mean"]:.1f} / σ {raw["shoulder"]["std"]:.1f}',
+                "description": "3D空間での上半身の回旋量です。",
+                "guide": "目安: 85°〜105°",
             },
             {
                 "name": "腰回転（°）",
-                "value": f'max {raw["hip"]["max"]} / mean {raw["hip"]["mean"]} / σ {raw["hip"]["std"]}',
-                "description": "下半身の回旋量です（本動画内の統計）。",
-                "guide": "比較は同条件で",
+                "value": f'max {raw["hip"]["max"]:.1f} / mean {raw["hip"]["mean"]:.1f} / σ {raw["hip"]["std"]:.1f}',
+                "description": "3D空間での下半身の回旋量です。",
+                "guide": "目安: 35°〜50°",
             },
             {
                 "name": "手首コック（°）",
-                "value": f'max {raw["wrist"]["max"]} / mean {raw["wrist"]["mean"]} / σ {raw["wrist"]["std"]}',
-                "description": "手首角の統計です（本動画内）。",
-                "guide": "比較は同条件で",
+                # 【重要】バックエンドで反転済みなので、そのまま表示
+                "value": f'max {raw["wrist"]["max"]:.1f} / mean {raw["wrist"]["mean"]:.1f} / σ {raw["wrist"]["std"]:.1f}',
+                "description": "手首のタメの角度（3D）です。",
+                "guide": "目安: 45°〜75°",
             },
             {
-                "name": "頭部ブレ（Sway）",
-                "value": f'max {raw["head"]["max"]} / mean {raw["head"]["mean"]} / σ {raw["head"]["std"]}',
-                "description": "頭の左右ブレ量です（本動画内）。",
-                "guide": "小さいほど安定",
+                "name": "頭部ブレ（%）",
+                # 【重要】アドレス位置からの移動距離（％）
+                "value": f'max {raw["head"]["max"]:.1f} / mean {raw["head"]["mean"]:.1f} / σ {raw["head"]["std"]:.1f}',
+                "description": "アドレス時からの頭部の移動量です（画面幅比）。",
+                "guide": "5.0%以下が理想",
             },
             {
-                "name": "膝ブレ（Sway）",
-                "value": f'max {raw["knee"]["max"]} / mean {raw["knee"]["mean"]} / σ {raw["knee"]["std"]}',
-                "description": "膝の左右ブレ量です（本動画内）。",
-                "guide": "小さいほど安定",
+                "name": "膝ブレ（%）",
+                "value": f'max {raw["knee"]["max"]:.1f} / mean {raw["knee"]["mean"]:.1f} / σ {raw["knee"]["std"]:.1f}',
+                "description": "アドレス時からの膝の移動量です（画面幅比）。",
+                "guide": "8.0%以下が理想",
             },
         ],
     }
-
 # ==================================================
 # 02〜06：良い点／改善点
 #  - 良い点は最低1行（無い場合は「良い点は特にありません。」）
