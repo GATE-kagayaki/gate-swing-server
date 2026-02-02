@@ -1749,65 +1749,59 @@ def infer_hs_band(power_idx: int) -> str:
 
 
 def build_paid_09(raw: Dict[str, Any], user_inputs: Dict[str, Any]) -> Dict[str, Any]:
-    # --- 必要なモジュールと型定義を関数内で確実にインポート ---
     import logging
-    import math
-    from typing import List, Dict, Any, Optional
-    
-    logging.warning("[DEBUG] build_paid_09 START")
+    from typing import List, Dict, Any
+
+    logging.warning("[DEBUG] build_paid_09 START (Using aggregate raw data)")
 
     # --- 1. 基礎データの取得と正規化 ---
     hs = _to_float_or_none(user_inputs.get("head_speed"))
     miss = _norm_miss(user_inputs.get("miss_tendency"))
     gender = _norm_gender(user_inputs.get("gender"))
-    
-    # 【KeyError ガード】外部関数の実行に失敗した場合はデフォルト値を代入
-    try:
-        power_idx = calc_power_idx(raw)
-    except (KeyError, TypeError, ValueError):
-        logging.warning("[DEBUG] calc_power_idx failed, fallback to 10.0")
-        power_idx = 10.0
-        
-    try:
-        stability_idx = calc_stability_idx(raw)
-    except (KeyError, TypeError, ValueError):
-        logging.warning("[DEBUG] calc_stability_idx failed, fallback to 10.0")
-        stability_idx = 10.0
 
-    # 手首の数値をコック角（180 - 内角）に変換
+    # 外部関数（KeyErrorガード）: 返り型に合わせて int fallback
     try:
-        wrist_cock = 180.0 - float(raw["wrist"]["mean"])
-    except (KeyError, TypeError, ValueError):
-        wrist_cock = 0.0
+        power_idx = int(calc_power_idx(raw))
+    except Exception:
+        logging.warning("[DEBUG] calc_power_idx failed; fallback")
+        power_idx = 10
 
-    # --- 2. 3D解析データの定義（定義を先に行い NameError を防ぐ） ---
-    # raw からリストを取得。存在しない場合は空リストを代入
-    heads = raw.get("heads") if isinstance(raw.get("heads"), list) else []
-    knees = raw.get("knees") if isinstance(raw.get("knees"), list) else []
-    x_factors = raw.get("x_factors") if isinstance(raw.get("x_factors"), list) else []
-    wrists = raw.get("wrists") if isinstance(raw.get("wrists"), list) else []
+    try:
+        stability_idx = int(calc_stability_idx(raw))
+    except Exception:
+        logging.warning("[DEBUG] calc_stability_idx failed; fallback")
+        stability_idx = 10
+
+    # --- 2. 実測値（単数形キー）の抽出 ---
+    def _f(path: List[str], default: float) -> float:
+        """raw のネスト辞書から float を安全に取り出す"""
+        cur: Any = raw
+        try:
+            for k in path:
+                if not isinstance(cur, dict):
+                    return default
+                cur = cur.get(k)
+            return float(cur)
+        except Exception:
+            return default
+
+    # head/knee は analyze 側で hd/kn を *100 しているので「%相当」の値になっている想定
+    h_mean = _f(["head", "mean"], 10.0)
+    k_mean = _f(["knee", "mean"], 10.0)
+    stability_val = (h_mean + k_mean) / 2.0  # %相当
+
+    avg_xfactor = _f(["x_factor", "mean"], 0.0)
+
+    # wrist は analyze 側で wr = 180 - angle(...) を入れているので、
+    # ここで 180 - mean すると二重変換になる可能性が高い。
+    # したがって「そのまま使う」方が安全。
+    wrist_cock = _f(["wrist", "mean"], 0.0)
+    max_wrist = _f(["wrist", "max"], wrist_cock)
 
     rows: List[Dict[str, str]] = []
 
-    # --- 3. 判定用統計値の算出（★ここで一度だけ計算：括弧で保護） ---
-    # 軸の安定性（%）：頭部と膝の3D移動量の平均
-    stability_val = (
-        (sum(heads)/len(heads) + sum(knees)/len(knees)) / 2 
-        if (heads and knees) else 10.0
-    )
-    
-    # 最大捻転差（X-Factor）の算出
-    avg_xfactor = (
-        sum(x_factors) / len(x_factors) 
-        if x_factors else 0.0
-    )
-    
-    # 手首の最大タメ角（リスト内の最大値）
-    max_wrist = max(wrists) if wrists else 0.0
-
-    # --- 4. 重量セクション（性別考慮 × 3D安定性解析） ---
+    # --- 3. 重量（HS × 性別 × 安定性） ---
     if hs is not None:
-        # 基本重量の決定（性別による仕分け）
         if gender == "female":
             if hs < 35: weight = "30〜40g"
             elif hs < 40: weight = "40〜50g"
@@ -1818,39 +1812,38 @@ def build_paid_09(raw: Dict[str, Any], user_inputs: Dict[str, Any]) -> Dict[str,
             elif hs < 40: weight = "50g前後"
             elif hs < 45: weight = "50〜60g"
             else: weight = "60〜70g"
-        
+
         reason = f"● ヘッドスピード {hs:.1f}m/s の基準重量\n"
         if gender == "female":
-            reason += "● 女性の身体特性（平均的な握力・腕力）を考慮し、振り抜きやすさを優先\n"
-        
-        # ★計算済みの stability_val を使用して重量アップを推奨
+            reason += "● 女性の身体特性を考慮し、振り抜きやすさを優先\n"
+
+        # stability_val は %相当（大きいほどブレ）
         if hs >= 40 and stability_val > 7.0:
             weight = "60g前後"
-            reason += f"● 3D解析による軸ブレ（{stability_val:.1f}%）が大きいため、重量を増やして軌道を物理的に安定化"
+            reason += f"● 3D解析による軸ブレ実測（{stability_val:.1f}%）が大きいため、重量を増やして軌道を安定化"
     else:
-        # HSが取得できない場合のフォールバック（既存ロジックを維持）
         band = infer_hs_band(power_idx)
         weight = {"low": "40〜50g", "mid": "50〜60g", "high": "60〜70g"}[band]
         reason = f"● パワー指数（{power_idx}）に基づく推奨重量"
 
     rows.append({"item": "重量", "guide": weight, "reason": reason})
 
-    # --- 5. フレックス（HS × 3D捻転差解析） ---
+    # --- 4. フレックス（HS × 捻転差） ---
     if hs is not None:
         flex_map = [(33, "L〜A"), (38, "A〜R"), (42, "R〜SR"), (46, "SR〜S"), (50, "S〜X")]
         flex = next((f for h, f in flex_map if hs < h), "X")
         reason = f"● HS {hs:.1f}m/s に対してしなり戻りが適正な硬さ\n"
-        
-        # ★計算済みの avg_xfactor を使用
+
         if avg_xfactor > 45.0:
             flex = "一ランク硬め"
-            reason += f"● 平均捻転差（{avg_xfactor:.1f}°）が大きく、シャフトへの負荷が強いため"
+            reason += f"● 実測平均捻転差（{avg_xfactor:.1f}°）が大きく、シャフトへの負荷が強いため"
     else:
         flex = {"low": "A〜R", "mid": "R〜SR", "high": "SR〜S"}[infer_hs_band(power_idx)]
         reason = f"● パワー指数（{power_idx}）に対する適正剛性"
+
     rows.append({"item": "フレックス", "guide": flex, "reason": reason})
 
-    # --- 6. キックポイント（ミス傾向 × 3Dタメ解析：逆転ロジック） ---
+    # --- 5. キックポイント（ミス傾向 × タメ角：逆転ロジック） ---
     if miss == "right":
         kp, base_reason = "先〜中", "● 右ミスに対し、つかまりを助ける先調子系を基準"
     elif miss == "left":
@@ -1858,49 +1851,61 @@ def build_paid_09(raw: Dict[str, Any], user_inputs: Dict[str, Any]) -> Dict[str,
     else:
         kp, base_reason = "中", "● ニュートラルな挙動の中調子を基準"
 
-    # 右ミス ＋ ★計算済みの max_wrist が浅い場合に逆転発想
+    # max_wrist（wrの最大）を「タメ角」として扱う前提。
+    # もし wr が「コック角」なら値域は 0〜180 になり得るので、閾値30°は妥当。
     if miss == "right" and max_wrist < 30.0:
         kp = "元"
-        reason = (f"● 右ミス傾向かつ、3D解析による手首のタメ（{max_wrist:.1f}°）が非常に浅い状態です\n"
-                  "● アーリーリリースによる振り遅れがスライスの主因と判定\n"
-                  "● あえて手元がしなる『元調子』を使用し、強制的にタメを維持させインパクトの厚みを作ります")
+        reason = (
+            f"● 右ミス傾向かつ、手首のタメ実測（{max_wrist:.1f}°）が浅い状態\n"
+            "● アーリーリリースによる振り遅れが主因と判定\n"
+            "● 手元がしなる『元調子』でタメ維持を補助"
+        )
     elif miss == "right" and stability_val > 7.0:
         kp = "中"
-        reason = f"● 右ミスがあるが、3D解析による軸ブレ（{stability_val:.1f}%）が大きく体幹が不安定\n● 先端を走らせるより、挙動が安定する『中調子』で打点を整えるのが優先"
+        reason = (
+            f"● 右ミスがあるが、軸ブレ実測（{stability_val:.1f}%）が大きく体幹が不安定\n"
+            "● 先端を走らせるより、挙動が安定する『中調子』で打点を整えるのが優先"
+        )
     else:
         reason = base_reason
+
     rows.append({"item": "キックポイント", "guide": kp, "reason": reason})
 
-    # --- 7. トルク（3D安定性解析 × ミス補正） ---
-    # ★計算済みの stability_val を使用
+    # --- 6. トルク（安定性 × ミス補正） ---
     if stability_val >= 9.0:
-        tq, base_reason = "3.0〜4.0", f"● 3D解析による軸ブレ（{stability_val:.1f}%）が大きいため、低トルクでねじれを抑制"
+        tq, base_reason = "3.0〜4.0", f"● 軸ブレ実測（{stability_val:.1f}%）が大きいため、低トルクでねじれを抑制"
     elif stability_val >= 5.0:
-        tq, base_reason = "3.5〜5.0", f"● 3D解析による軸ブレ（{stability_val:.1f}%）に基づき標準帯のねじれ量を選択"
+        tq, base_reason = "3.5〜5.0", f"● 軸ブレ実測（{stability_val:.1f}%）に基づき標準帯を選択"
     else:
-        tq, base_reason = "4.5〜6.0", f"● 3D解析による軸ブレ（{stability_val:.1f}%）が極めて小さく、高トルクでも再現性が維持可能"
+        tq, base_reason = "4.5〜6.0", f"● 軸ブレ実測（{stability_val:.1f}%）が小さく、高トルクでも再現性を維持しやすい"
 
     if miss == "right":
         tq = "4.5〜5.5" if stability_val >= 5.0 else "5.5以上"
-        reason = base_reason + "\n● 右ミス補正：トルクを増やしてフェースの返り（つかまり）をサポート"
+        reason = base_reason + "\n● 右ミス補正：トルクを増やしてフェースターンをサポート"
     elif miss == "left":
         tq = "2.5〜3.5"
-        reason = base_reason + "\n● 左ミス補正：トルクを絞り、つかまり過ぎ（引っ掛け）を抑制"
+        reason = base_reason + "\n● 左ミス補正：トルクを絞り、つかまり過ぎを抑制"
     else:
         reason = base_reason
+
     rows.append({"item": "トルク", "guide": tq, "reason": reason})
 
-    # --- 8. 最終結果の構築 ---
     return {
         "title": "09. Shaft Fitting Guide（推奨）",
         "items": [
-            {
-                "name": r["item"], 
-                "value": r["guide"], 
-                "descriptions": r["reason"].split("\n")
-            }
+            {"name": r["item"], "value": r["guide"], "descriptions": r["reason"].split("\n")}
             for r in rows
-        ]
+        ],
+        # メタも欲しければ残してOK（LINE表示に不要なら消して軽く）
+        "meta": {
+            "power_idx": power_idx,
+            "stability_idx": stability_idx,
+            "wrist_cock": wrist_cock,
+            "head_speed": hs,
+            "stability_val": stability_val,
+            "avg_xfactor": avg_xfactor,
+            "max_wrist": max_wrist,
+        },
     }
 
 # ==================================================
