@@ -1758,6 +1758,7 @@ def build_paid_09(raw: Dict[str, Any], user_inputs: Dict[str, Any]) -> Dict[str,
     miss = _norm_miss(user_inputs.get("miss_tendency"))
     gender = _norm_gender(user_inputs.get("gender"))
     power_idx = calc_power_idx(raw)
+    stability_idx = calc_stability_idx(raw)
 
     # --- 2. 3D解析データの取得（変数名を heads, knees 等に統一） ---
     # ここで「heads」という箱を確実に作ることで、後の計算での NameError を防ぎます
