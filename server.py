@@ -716,23 +716,29 @@ def _frames(raw: Dict[str, Any]) -> int:
 
 
 def _value_line(maxv: float, meanv: float, stdv: float, conf: float) -> str:
-    return f"max {maxv} / mean {meanv} / σ {stdv}（conf {conf:.3f}）"
+    # {v:.1f} を加えることで、18.632... を 18.6 に整えます
+    return f"max {maxv:.1f} / mean {meanv:.1f} / σ {stdv:.1f}（conf {conf:.3f}）"
 
 
 def judge_shoulder(raw: Dict[str, Any]) -> Dict[str, Any]:
     sh = raw["shoulder"]
     xf = raw["x_factor"]
 
+    # 【整合性】3D解析により数値が適正化（0-110度）されるため、判定は「最大値(max)」を基準にします
+    # スイング全体の平均(mean)だとアドレス等が含まれ数値が低く出るため、最大捻転（max）で評価します
+    sh_val = sh["max"]
+    xf_val = xf["max"]
+
     main = "mid"
-    if sh["mean"] < 85:
+    if sh_val < 85:
         main = "low"
-    elif sh["mean"] > 105:
+    elif sh_val > 110:
         main = "high"
 
     rel = "mid"
-    if xf["mean"] < 35:
+    if xf_val < 35:
         rel = "low"
-    elif xf["mean"] > 55:
+    elif xf_val > 60:
         rel = "high"
 
     tags: List[str] = []
@@ -744,6 +750,7 @@ def judge_shoulder(raw: Dict[str, Any]) -> Dict[str, Any]:
         tags.append("捻転差不足")
     if rel == "high":
         tags.append("捻転差過多")
+    
     return {"main": main, "related": rel, "tags": tags}
 
 
@@ -756,45 +763,47 @@ def build_paid_02_shoulder(raw: Dict[str, Any], seed: str) -> Dict[str, Any]:
     good: List[str] = []
     bad: List[str] = []
 
-    # 良い点（最低1行） --- ポジティブバッファ拡充 ---
+    # 良い点（最低1行） --- 3D解析の数値に基づき判定 ---
     if sh["std"] <= 10:
         good.append("肩の回し幅は揃っており、上半身の再現性は確保されています。")
-    if 85 <= sh["mean"] <= 105:
-        good.append("肩の回旋量は基準レンジに収まっており、効率的な捻転ができています。")
-    if xf["mean"] >= 35:
+    if 85 <= sh["max"] <= 110:
+        good.append("肩の最大回旋量は基準レンジに収まっており、効率的な捻転ができています。")
+    if xf["max"] >= 35:
         good.append("肩と腰の差（捻転差）は確保できており、出力の準備が整っています。")
     
     # バッファ：回転量が多い場合
-    if sh["mean"] > 105:
+    if sh["max"] > 110:
         good.append("深い肩の回転を可能にする柔軟性があり、大きな飛距離を生む潜在能力があります。")
     # バッファ：数値は外れていても安定している場合
-    if sh["std"] <= 7 and not (85 <= sh["mean"] <= 105):
+    if sh["std"] <= 7 and not (85 <= sh["max"] <= 110):
         good.append("角度自体は調整の余地がありますが、常に同じ深さまで回せる安定感は大きな武器です。")
 
     if not good:
-        good = ["良い点は特にありません。"]
+        good = ["基本的な上半身の柔軟性は備わっており、スイングの土台はできています。"]
 
-    # 改善点
-    if sh["mean"] < 85:
-        bad.append(f"肩回転は mean {sh['mean']}°で不足です。")
-    if sh["mean"] > 105:
-        bad.append(f"肩回転は mean {sh['mean']}°で過多です。")
-    if xf["mean"] < 35:
-        bad.append(f"捻転差は mean {xf['mean']}°で不足です。")
+    # 改善点（max値を使って具体的に指摘）
+    if sh["max"] < 85:
+        bad.append(f"最大肩回転は {sh['max']:.1f}° で、捻転が浅い状態です。")
+    if sh["max"] > 115:
+        bad.append(f"肩回転が {sh['max']:.1f}° に達しており、オーバースイングの傾向があります。")
+    if xf["max"] < 35:
+        bad.append(f"最大捻転差は {xf['max']:.1f}° で、パワーが溜まりきっていません。")
     if sh["std"] > 15:
-        bad.append(f"肩回転のばらつき（σ {sh['std']}°）が大きく、回旋量が揃っていません。")
+        bad.append(f"肩回転のばらつき（σ {sh['std']:.1f}°）が大きく、トップの位置が揃っていません。")
+    
     if not bad:
         bad = ["改善点は特にありません。"]
 
     # プロ目線（言語化）
     pro_lines: List[str] = []
     pro_lines.append("上半身は回り幅そのものより、回した量を同じ幅で再現できているかが評価軸です。")
+    
     if sh["std"] <= 10:
         pro_lines.append("本動画では肩の回旋は同じ幅で安定して再現できています。")
     else:
         pro_lines.append("本動画では肩の回旋幅が一定せず、トップの再現性が取れていません。")
 
-    if xf["mean"] < 35:
+    if xf["max"] < 35:
         pro_lines.append("捻転差が不足しているため、切り返しでエネルギーが溜まらない状態です。")
     else:
         pro_lines.append("捻転差は確保されており、切り返しに必要な準備はできています。")
@@ -805,6 +814,7 @@ def build_paid_02_shoulder(raw: Dict[str, Any], seed: str) -> Dict[str, Any]:
 
     return {
         "title": "02. Shoulder Rotation（肩回転）",
+        # 【整合性】_value_line の形式を維持しつつ、数値を3D実数に更新
         "value": _value_line(sh["max"], sh["mean"], sh["std"], conf),
         "tags": j["tags"],
         "good": good[:3],
@@ -812,21 +822,24 @@ def build_paid_02_shoulder(raw: Dict[str, Any], seed: str) -> Dict[str, Any]:
         "pro_comment": pro_comment,
     }
 
-
 def judge_hip(raw: Dict[str, Any]) -> Dict[str, Any]:
     hip = raw["hip"]
     xf = raw["x_factor"]
 
+    # 【整合性】3D解析に合わせ、スイング中の最大回旋量（max）で評価します
+    hip_val = hip["max"]
+    xf_val = xf["max"]
+
     main = "mid"
-    if hip["mean"] < 36:
+    if hip_val < 35:
         main = "low"
-    elif hip["mean"] > 50:
+    elif hip_val > 55:
         main = "high"
 
     rel = "mid"
-    if xf["mean"] < 35:
+    if xf_val < 35:
         rel = "low"
-    elif xf["mean"] > 55:
+    elif xf_val > 60:
         rel = "high"
 
     tags: List[str] = []
@@ -850,48 +863,50 @@ def build_paid_03_hip(raw: Dict[str, Any], seed: str) -> Dict[str, Any]:
     good: List[str] = []
     bad: List[str] = []
 
-    # 良い点（最低1行） --- ポジティブバッファ拡充 ---
+    # 良い点（最低1行） --- 3D解析の最大値（max）に基づき判定 ---
     if hip["std"] <= 10:
         good.append("腰の回し幅は揃っており、下半身の再現性は確保されています。")
-    if 36 <= hip["mean"] <= 50:
-        good.append("腰の回旋量は基準レンジに収まっており、土台として機能しています。")
+    if 35 <= hip["max"] <= 55:
+        good.append("腰の回旋量は基準レンジに収まっており、安定した土台として機能しています。")
     
     # バッファ：安定性
     if hip["std"] <= 5:
-        good.append("下半身の動きが非常に安定しており、ミート率を高める基礎ができています。")
-    # バッファ：捻転の深さ
-    if hip["mean"] < 36 and xf["mean"] >= 40:
-        good.append("腰の回転は控えめですが、その分肩との捻転差をしっかり作れています。")
+        good.append("下半身の動きが非常に一定しており、ミート率を高める基礎ができています。")
+    # バッファ：捻転の深さ（腰が止まっている分、肩が回っている場合）
+    if hip["max"] < 35 and xf["max"] >= 40:
+        good.append("腰の回転は控えめですが、その分肩との捻転差を効率的に作れています。")
 
     if not good:
-        good = ["良い点は特にありません。"]
+        good = ["基本的な下半身の可動域は確保されており、スイングの土台はできています。"]
 
-    # 改善点
-    if hip["mean"] > 50:
-        bad.append(f"腰回転は mean {hip['mean']}°で過多です。")
-    if hip["mean"] < 36:
-        bad.append(f"腰回転は mean {hip['mean']}°で不足です。")
-    if xf["mean"] < 35:
-        bad.append(f"捻転差は mean {xf['mean']}°で不足です。")
+    # 改善点（max値を使って具体的に指摘）
+    if hip["max"] > 55:
+        bad.append(f"最大腰回転は {hip['max']:.1f}° で、回りすぎによりパワーが逃げています。")
+    if hip["max"] < 35:
+        bad.append(f"最大腰回転は {hip['max']:.1f}° で、下半身のリードが不足しています。")
+    if xf["max"] < 35:
+        bad.append(f"最大捻転差は {xf['max']:.1f}° で、上半身との連動が不十分です。")
     if hip["std"] > 15:
-        bad.append(f"腰回転のばらつき（σ {hip['std']}°）が大きく、回旋量が揃っていません。")
+        bad.append(f"腰の回転幅のばらつき（σ {hip['std']:.1f}°）が大きく、インパクトが安定しません。")
+        
     if not bad:
         bad = ["改善点は特にありません。"]
 
     # プロ目線（言語化）
     pro_lines: List[str] = []
     pro_lines.append("腰は「回す量」ではなく、「肩との順序」と「回し幅の揃い方」で質が決まります。")
-    if hip["mean"] > 50:
-        pro_lines.append("本動画では腰が先に回る動きが強く出ています。")
-    elif hip["mean"] < 36:
-        pro_lines.append("本動画では下半身の回旋量が不足しています。")
+    
+    if hip["max"] > 55:
+        pro_lines.append("本動画では腰が回りすぎる傾向があり、軸が揺らぎやすくなっています。")
+    elif hip["max"] < 35:
+        pro_lines.append("本動画では下半身の回旋量が不足し、手打ちになりやすい状態です。")
     else:
-        pro_lines.append("本動画では腰の回旋量は適正範囲に収まっています。")
+        pro_lines.append("本動画では腰の回旋量は適正範囲で、安定した軸回転ができています。")
 
-    if hip["std"] > 15:
-        pro_lines.append("腰の回転が一定せず、下半身主導の再現性が取れていません。")
+    if hip["std"] > 12:
+        pro_lines.append("腰の回転角度が一定せず、下半身主導の再現性が課題となります。")
     else:
-        pro_lines.append("下半身の回転は安定しており、土台として機能しています。")
+        pro_lines.append("下半身の回転は安定しており、スイングの再現性を支える土台となっています。")
 
     pro_lines.append("このスイングでは、主因は下半身主導のタイミングです。")
 
@@ -906,17 +921,17 @@ def build_paid_03_hip(raw: Dict[str, Any], seed: str) -> Dict[str, Any]:
         "pro_comment": pro_comment,
     }
 
-
 def judge_wrist(raw: Dict[str, Any]) -> Dict[str, Any]:
-    # --- 【重要】180度からの引き算で「コック角」に変換 ---
-    # raw["wrist"]["mean"] が 159.0 の場合、w_mean は 21.0 になります
-    w_mean = 180.0 - float(raw["wrist"]["mean"])
+    # --- 【重要】バックエンドで反転済みのため、そのままの数値を使用 ---
+    # raw["wrist"]["mean"] が既に 21.0 などの「コック角」になっています
+    w_mean = float(raw["wrist"]["mean"])
     xf_mean = float(raw["x_factor"]["mean"])
 
     main = "mid"
-    if w_mean < 70:      # 70度より曲がっていない（タメが浅い）
+    # 3D計測基準：45度未満を不足（浅い）、75度超を過多（深い）と判定
+    if w_mean < 45:      
         main = "low"
-    elif w_mean > 90:    # 90度より深く曲がっている（タメが深い）
+    elif w_mean > 75:    
         main = "high"
 
     rel = "mid"
@@ -935,9 +950,11 @@ def judge_wrist(raw: Dict[str, Any]) -> Dict[str, Any]:
 
 def build_paid_04_wrist(raw: Dict[str, Any], seed: str) -> Dict[str, Any]:
     w_raw = raw["wrist"]
-    # 数値変換：180 - 内角 = コック角
-    w_mean = 180.0 - float(w_raw["mean"])
-    w_max  = 180.0 - float(w_raw["min"]) if "min" in w_raw else (180.0 - w_mean)
+    
+    # 【修正】解析側で反転済み（180.0 - angle_3d）のため、ここではそのまま代入
+    w_mean = float(w_raw["mean"])
+    # 反転済みデータでは w_raw["max"] が「最も深く曲がった角度」を示します
+    w_max  = float(w_raw["max"]) 
     w_std  = float(w_raw["std"])
     
     j = judge_wrist(raw)
@@ -946,34 +963,36 @@ def build_paid_04_wrist(raw: Dict[str, Any], seed: str) -> Dict[str, Any]:
     good: List[str] = []
     bad: List[str] = []
 
-    # --- 良い点（プロの視点） ---
+    # --- 良い点（プロの視点）：既存ロジックを省略せず維持 ---
     if w_std <= 8:
         good.append("手首の角度変化が非常に一定しており、インパクトでのフェース管理能力が極めて高いです。")
-    if 70 <= w_mean <= 90:
+    if 45 <= w_mean <= 75:
         good.append("理想的なタメ（L字）が形成されており、効率的にヘッドを加速させる準備ができています。")
-    if w_max > 100:
-        good.append("トップでの深いコックを許容する柔軟性があり、爆発的な飛距離を生み出す潜在能力があります。")
+    if w_max > 80:
+        good.append("トップでの深いコックを許容する柔軟性があり、爆発的な飛距離を生む潜在能力があります。")
     
-    if not good: good = ["基本的な手首の可動域は確保されており、スイングの土台はできています。"]
+    if not good: 
+        good = ["基本的な手首の可動域は確保されており、スイングの土台はできています。"]
 
-    # --- 改善点（プロの指摘） ---
-    if w_mean < 70:
+    # --- 改善点（プロの指摘）：既存ロジックを省略せず維持 ---
+    if w_mean < 45:
         bad.append(f"平均コック角 {w_mean:.1f}° は浅く、アーリーリリースの傾向があります。")
     if w_std > 15:
         bad.append(f"手首の挙動（σ {w_std:.1f}）が不安定で、インパクトの打点がバラつきやすい状態です。")
-    if w_max < 60:
+    if w_max < 40:
         bad.append("バックスイングでのコックが完了する前に切り返しており、パワーロスが生じています。")
 
-    if not bad: bad = ["現在、手首の使い方において大きな修正ポイントは見当たりません。"]
+    if not bad: 
+        bad = ["現在、手首の使い方において大きな修正ポイントは見当たりません。"]
 
-    # --- プロ目線の詳細な言語化（ここを大幅に強化） ---
+    # --- プロ目線の詳細な言語化：既存の分岐構造をすべて維持 ---
     pro_lines: List[str] = []
     
     # 状態別の深い解説
-    if w_mean < 70:
+    if w_mean < 45:
         pro_lines.append(f"本動画では手首の角度が {w_mean:.1f}° と浅いため、ヘッドを“運ぶ”動きが強く、飛距離がロスしやすい傾向です。")
         pro_lines.append("本来あるべき『タメ』が解けるのが早いため、インパクトで合わせる動きが必要になっています。")
-    elif w_mean > 100:
+    elif w_mean > 80:
         pro_lines.append(f"最大 {w_max:.1f}° という非常に深いタメを作れていますが、その分、リリースのタイミングがシビアです。")
         pro_lines.append("手元の操作に頼りすぎると、急激なフックやプッシュアウトの原因となります。")
     else:
@@ -989,6 +1008,7 @@ def build_paid_04_wrist(raw: Dict[str, Any], seed: str) -> Dict[str, Any]:
 
     return {
         "title": "04. Wrist Cock（手首コック）",
+        # 数値表記（value）の構造も維持
         "value": f"Max Cock {w_max:.1f}° / Mean {w_mean:.1f}° (σ {w_std:.1f})",
         "tags": j["tags"],
         "good": good[:3],
@@ -996,17 +1016,17 @@ def build_paid_04_wrist(raw: Dict[str, Any], seed: str) -> Dict[str, Any]:
         "pro_comment": pro_comment,
     }
 
-
 def judge_head(raw: Dict[str, Any]) -> Dict[str, Any]:
     h = raw["head"]
     k = raw["knee"]
 
     tags: List[str] = []
-    if h["mean"] > 0.15:
+    # 【整合性】数値が 0.15（座標）から 5.0（％）に変わったため、しきい値を調整
+    if h["mean"] > 5.0:
         tags.append("頭部ブレ大")
-    if k["mean"] > 0.20:
+    if k["mean"] > 8.0:
         tags.append("膝ブレ大")
-    if k["mean"] > 0.20:
+    if k["mean"] > 8.0:
         tags.append("下半身不安定")
     return {"tags": tags}
 
@@ -1020,41 +1040,43 @@ def build_paid_05_head(raw: Dict[str, Any], seed: str) -> Dict[str, Any]:
     good: List[str] = []
     bad: List[str] = []
 
-    # 良い点（最低1行） --- ポジティブバッファ拡充 ---
-    if h["std"] <= 0.03:
+    # --- 良い点（最低1行） --- ％基準に数値を書き換え ---
+    if h["std"] <= 1.5:  # 0.03相当
         good.append("頭の位置は非常に揃っており、スイング軸の再現性は極めて高いです。")
-    if h["mean"] <= 0.10:
+    if h["mean"] <= 3.5:  # 0.10相当
         good.append("頭の左右ブレは最小限に抑えられており、理想的な軸の安定感があります。")
     
     # バッファ：許容範囲内の動き
-    if 0.10 < h["mean"] <= 0.15:
+    if 3.5 < h["mean"] <= 5.0:  # 0.10〜0.15相当
         good.append("多少の左右移動はありますが、許容範囲内でダイナミックな動きができています。")
     # バッファ：下半身との連動
-    if h["mean"] <= 0.12 and k["mean"] <= 0.15:
+    if h["mean"] <= 4.0 and k["mean"] <= 5.0:  # 0.12 / 0.15相当
         good.append("上下の軸が連動して安定しており、ミート率を支える良い土台があります。")
 
     if not good:
         good = ["良い点は特にありません。"]
 
-    # 改善点
-    if h["mean"] > 0.15:
-        bad.append(f"頭部ブレは mean {h['mean']}で大きく、軸が崩れています。")
-    if h["std"] > 0.05:
-        bad.append(f"頭部ブレのばらつき（σ {h['std']}）が大きく、位置が揃っていません。")
-    if k["mean"] > 0.20:
-        bad.append(f"膝ブレは mean {k['mean']}で大きく、頭部ブレを増幅させています。")
+    # --- 改善点 --- ％基準に数値を書き換え ---
+    if h["mean"] > 5.0:  # 0.15相当
+        bad.append(f"頭部ブレは mean {h['mean']:.1f}% で大きく、軸が崩れています。")
+    if h["std"] > 2.5:  # 0.05相当
+        bad.append(f"頭部ブレのばらつき（σ {h['std']:.1f}）が大きく、位置が揃っていません。")
+    if k["mean"] > 8.0:  # 0.20相当
+        bad.append(f"膝ブレは mean {k['mean']:.1f}% で大きく、頭部ブレを増幅させています。")
+    
     if not bad:
         bad = ["改善点は特にありません。"]
 
-    # プロ目線（言語化）
+    # --- プロ目線（言語化）：既存の構成を維持 ---
     pro_lines: List[str] = []
     pro_lines.append("頭部は「動いたかどうか」より、動いても同じ場所に戻れるか（軸の再現性）が評価軸です。")
-    if h["mean"] > 0.15:
+    
+    if h["mean"] > 5.0:
         pro_lines.append("本動画では頭部の左右移動が大きく出ています。")
     else:
         pro_lines.append("本動画では頭部の位置は比較的安定しています。")
 
-    if h["std"] > 0.05:
+    if h["std"] > 2.5:
         pro_lines.append("頭の位置が一定せず、スイング軸が安定していません。")
     else:
         pro_lines.append("頭の位置は揃っており、軸は一定です。")
@@ -1065,22 +1087,23 @@ def build_paid_05_head(raw: Dict[str, Any], seed: str) -> Dict[str, Any]:
 
     return {
         "title": "05. Head Stability（頭部）",
-        "value": _value_line(h["max"], h["mean"], h["std"], conf),
+        # 【整合性】単位に % を追加
+        "value": f'max {h["max"]:.1f} / mean {h["mean"]:.1f} / σ {h["std"]:.1f} (%) （conf {conf:.3f}）',
         "tags": j["tags"],
         "good": good[:3],
         "bad": bad[:3],
         "pro_comment": pro_comment,
     }
 
-
 def judge_knee(raw: Dict[str, Any]) -> Dict[str, Any]:
     k = raw["knee"]
     h = raw["head"]
 
     tags: List[str] = []
-    if k["mean"] > 0.20:
+    # 【整合性】数値が 0.20（座標）から 8.0（％）に変わったため、しきい値を調整
+    if k["mean"] > 8.0:
         tags.append("膝ブレ大")
-    if h["mean"] > 0.15:
+    if h["mean"] > 5.0:
         tags.append("上半身不安定")
     return {"tags": tags}
 
@@ -1094,41 +1117,43 @@ def build_paid_06_knee(raw: Dict[str, Any], seed: str) -> Dict[str, Any]:
     good: List[str] = []
     bad: List[str] = []
 
-    # 良い点（最低1行） --- ポジティブバッファ拡充 ---
-    if k["std"] <= 0.04:
+    # --- 良い点（最低1行） --- ％基準に数値を書き換え ---
+    if k["std"] <= 1.5:  # 0.04相当
         good.append("膝の位置は揃っており、下半身の再現性がインパクトの安定感を生んでいます。")
-    if k["mean"] <= 0.12:
+    if k["mean"] <= 4.5:  # 0.12相当
         good.append("膝の左右ブレが抑えられており、エネルギーを逃がさない強い土台があります。")
     
     # バッファ：粘りのある下半身
-    if 0.12 < k["mean"] <= 0.18:
+    if 4.5 < k["mean"] <= 7.0:  # 0.12〜0.18相当
         good.append("下半身に粘りがあり、スイング中のパワーをしっかり受け止めています。")
     # バッファ：再現性重視
-    if k["std"] <= 0.05 and k["mean"] > 0.20:
+    if k["std"] <= 2.0 and k["mean"] > 8.0:  # 0.05 / 0.20相当
         good.append("ブレ自体はありますが、毎回同じ場所で踏み込めている点は安定への足がかりになります。")
 
     if not good:
         good = ["良い点は特にありません。"]
 
-    # 改善点
-    if k["mean"] > 0.20:
-        bad.append(f"膝ブレは mean {k['mean']}で大きく、土台が崩れています。")
-    if k["std"] > 0.06:
-        bad.append(f"膝ブレのばらつき（σ {k['std']}）が大きく、位置が揃っていません。")
-    if h["mean"] > 0.15:
-        bad.append(f"頭部ブレは mean {h['mean']}で大きく、膝ブレと同時に軸が崩れています。")
+    # --- 改善点 --- ％基準に数値を書き換え ---
+    if k["mean"] > 8.0:  # 0.20相当
+        bad.append(f"膝ブレは mean {k['mean']:.1f}% で大きく、土台が崩れています。")
+    if k["std"] > 2.5:  # 0.06相当
+        bad.append(f"膝ブレのばらつき（σ {k['std']:.1f}）が大きく、位置が揃っていません。")
+    if h["mean"] > 5.0:  # 0.15相当
+        bad.append(f"頭部ブレは mean {h['mean']:.1f}% で大きく、膝ブレと同時に軸が崩れています。")
+    
     if not bad:
         bad = ["改善点は特にありません。"]
 
-    # プロ目線（言語化）
+    # --- プロ目線（言語化）：既存の構成を維持 ---
     pro_lines: List[str] = []
     pro_lines.append("下半身は「踏めているか」より、回転中も土台が横に流れないかが評価軸です。")
-    if k["mean"] > 0.20:
+    
+    if k["mean"] > 8.0:
         pro_lines.append("本動画では下半身の横方向の動きが大きく出ています。")
     else:
         pro_lines.append("本動画では下半身の動きは抑えられています。")
 
-    if k["std"] > 0.06:
+    if k["std"] > 2.5:
         pro_lines.append("膝の位置が一定せず、インパクト時の土台が不安定です。")
     else:
         pro_lines.append("膝の位置は安定しており、下半身は土台として機能しています。")
@@ -1139,13 +1164,14 @@ def build_paid_06_knee(raw: Dict[str, Any], seed: str) -> Dict[str, Any]:
 
     return {
         "title": "06. Knee Stability（膝）",
-        "value": _value_line(k["max"], k["mean"], k["std"], conf),
+        # 【整合性】単位に % を追加
+        "value": f'max {k["max"]:.1f} / mean {k["mean"]:.1f} / σ {k["std"]:.1f} (%) （conf {conf:.3f}）',
         "tags": j["tags"],
         "good": good[:3],
         "bad": bad[:3],
         "pro_comment": pro_comment,
     }
-
+    
 # ==================================================
 # 07：プロ要約（パターンを1〜2増やす／初回ユーザー向けの一文を入れる）
 # ==================================================
