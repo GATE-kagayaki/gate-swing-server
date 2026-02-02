@@ -1778,7 +1778,10 @@ def build_paid_09(raw: Dict[str, Any], user_inputs: Dict[str, Any]) -> Dict[str,
     # --- 1. 重量（HS × 性別 × 3D安定性解析） ---
     # 事前に計算しておく：頭部と膝の3D移動量の平均（%）
     # ※理想は 5.0% 以下。数値が大きいほど「不安定」と判定。
-    stability_val = (sum(heads)/len(heads) + sum(knees)/len(knees)) / 2 if (heads and knees) else 10.0
+    stability_val = (
+        (sum(heads)/len(heads) + sum(knees)/len(knees)) / 2 
+        if (heads and knees) else 10.0
+    )
 
     if hs is not None:
         # 基本重量の決定（性別を考慮して分岐）
