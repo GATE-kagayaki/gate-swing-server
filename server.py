@@ -614,29 +614,39 @@ def analyze_swing_with_mediapipe(video_path: str) -> Dict[str, Any]:
                 if has_reached_top and curr_lwrist[1] > (nose_y + 0.1):
                     swing_ended = True
 
-            # --- C. データ収集（すべて IF の中に入れて保護する） ---
+            # --- C. データ収集（すべて IF の中に入っていることを確認） ---
             if is_analyzing and not swing_ended:
                 valid_frames += 1 
 
-                # 以前の xyz ではなく定義した xyz_stable を使う
+                # 1. インデックス定義（これらが無いと別の NameError になります）
+                LS = mp_pose.PoseLandmark.LEFT_SHOULDER.value
+                RS = mp_pose.PoseLandmark.RIGHT_SHOULDER.value
+                LH = mp_pose.PoseLandmark.LEFT_HIP.value
+                RH = mp_pose.PoseLandmark.RIGHT_HIP.value
+                LE = mp_pose.PoseLandmark.LEFT_ELBOW.value
+                LW = mp_pose.PoseLandmark.LEFT_WRIST.value
+                LI = mp_pose.PoseLandmark.LEFT_INDEX.value
+                LK = mp_pose.PoseLandmark.LEFT_KNEE.value
+
+                # 2. 関数名を xyz_stable に統一して修正
                 sh = angle_3d(xyz_stable(LS), xyz_stable(RS), xyz_stable(RH))
                 hip = angle_3d(xyz_stable(LH), xyz_stable(RH), xyz_stable(LK))
                 wr = 180.0 - angle_3d(xyz_stable(LE), xyz_stable(LW), xyz_stable(LI))
 
+                # 3. 距離計算（ここも base_nose が確定しているこの場所なら安全です）
                 def dist_3d(p, base):
-                    # 3次元距離公式: $$d = \sqrt{(x-x_0)^2 + (y-y_0)^2 + (z-z_0)^2}$$
                     return math.sqrt(sum((a - b)**2 for a, b in zip(p, base)))
 
                 hd = dist_3d(curr_nose, base_nose) * 100
                 kn = dist_3d(curr_lknee, base_lknee) * 100
 
+                # 4. リストへの保存
                 shoulders.append(float(sh))
                 hips.append(float(hip))
                 wrists.append(float(wr))
                 heads.append(float(hd))
                 knees.append(float(kn))
                 x_factors.append(float(sh - abs(hip)))
-
     cap.release()
 
 
