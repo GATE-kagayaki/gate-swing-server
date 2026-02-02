@@ -553,6 +553,10 @@ def analyze_swing_with_mediapipe(video_path: str) -> Dict[str, Any]:
     ) as pose:
         base_nose = None
         base_lknee = None
+        pos_history = []      # アドレス静止判定用
+        is_analyzing = False  # アドレス検知で True になる
+        swing_ended = False   # フィニッシュ検知で True になる
+        has_reached_top = False # クラブが上がったかの判定
         while cap.isOpened():
             ok, frame = cap.read()
             if not ok:
@@ -568,8 +572,8 @@ def analyze_swing_with_mediapipe(video_path: str) -> Dict[str, Any]:
             lm = res.pose_landmarks.landmark
             valid_frames += 1
 
-            def xyz(i):
-                return (lm[i].x, lm[i].y, lm[i].z)
+            def xyz_stable(i):
+                return (lm[i].x, lm[i].y, lm[i].z * 0.5)
 
                            
             LS = mp_pose.PoseLandmark.LEFT_SHOULDER.value
@@ -583,30 +587,57 @@ def analyze_swing_with_mediapipe(video_path: str) -> Dict[str, Any]:
             LK = mp_pose.PoseLandmark.LEFT_KNEE.value
 
               
-            curr_nose = xyz(NO)
-            curr_lknee = xyz(LK)
+            curr_nose = xyz_stable(NO)
+            curr_lknee = xyz_stable(LK)
+            curr_lwrist = xyz_stable(LW)
+            nose_y = lm[NO].y
 
-            if base_nose is None:
-                base_nose = curr_nose
-                base_lknee = curr_lknee
+            # --- A. 打ち始め（アドレス）判定 ---
+            if not is_analyzing:
+                pos_history.append(curr_nose)
+                if len(pos_history) > 15: # 約0.5秒の静止を監視
+                    pos_history.pop(0)
+                    dx = max(p[0] for p in pos_history) - min(p[0] for p in pos_history)
+                    dy = max(p[1] for p in pos_history) - min(p[1] for p in pos_history)
+                    
+                    # 鼻の位置が安定したらアドレス（打ち始め）とみなす
+                    if dx < 0.01 and dy < 0.01:
+                        base_nose = curr_nose
+                        base_lknee = curr_lknee
+                        is_analyzing = True
+                continue # 基準が決まるまでは以下の蓄積をスキップ
 
-            sh = angle_3d(xyz(LS), xyz(RS), xyz(RH))
-            hip = angle_3d(xyz(LH), xyz(RH), xyz(LK))
-            wr = 180.0 - angle_3d(xyz(LE), xyz(LW), xyz(LI))
-            # 頭部・膝：アドレス基準の「3次元移動距離」を計算
-            # 3次元距離公式: $$d = \sqrt{(x-x_0)^2 + (y-y_0)^2 + (z-z_0)^2}$$
-            def dist_3d(p, base):
-                return math.sqrt(sum((a - b)**2 for a, b in zip(p, base)))
+            # --- B. 打ち終わり（フィニッシュ）判定 ---
+            if is_analyzing and not swing_ended:
+                # 手が頭より高い位置（yが小さい）に来たら、スイング中盤〜フィニッシュ
+                if curr_lwrist[1] < nose_y:
+                    has_reached_top = True
+                
+                # 一度上がった手が、再び頭より低い位置（鼻の高さ + 10%）まで降りてきたら終了
+                if has_reached_top and curr_lwrist[1] > (nose_y + 0.1):
+                    swing_ended = True
 
-            hd = dist_3d(curr_nose, base_nose) * 100  # 画面幅に対する%に変換
-            kn = dist_3d(curr_lknee, base_lknee) * 100
+            # --- C. データ収集（スイング区間中のみ実行） ---
+            if is_analyzing and not swing_ended:
+                valid_frames += 1 # ここでカウントすることで「スイング中のみ」の統計にする
 
-            shoulders.append(float(sh))
-            hips.append(float(hip))
-            wrists.append(float(wr))
-            heads.append(float(hd))
-            knees.append(float(kn))
-            x_factors.append(float(sh - abs(hip)))
+                sh = angle_3d(xyz(LS), xyz(RS), xyz(RH))
+                hip = angle_3d(xyz(LH), xyz(RH), xyz(LK))
+                wr = 180.0 - angle_3d(xyz(LE), xyz(LW), xyz(LI))
+                # 頭部・膝：アドレス基準の「3次元移動距離」を計算
+                # 3次元距離公式: $$d = \sqrt{(x-x_0)^2 + (y-y_0)^2 + (z-z_0)^2}$$
+                def dist_3d(p, base):
+                    return math.sqrt(sum((a - b)**2 for a, b in zip(p, base)))
+
+                hd = dist_3d(curr_nose, base_nose) * 100  # 画面幅に対する%に変換
+                kn = dist_3d(curr_lknee, base_lknee) * 100
+
+                shoulders.append(float(sh))
+                hips.append(float(hip))
+                wrists.append(float(wr))
+                heads.append(float(hd))
+                knees.append(float(kn))
+                x_factors.append(float(sh - abs(hip)))
 
     cap.release()
 
