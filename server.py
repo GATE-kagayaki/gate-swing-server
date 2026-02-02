@@ -1708,13 +1708,13 @@ def build_paid_09(raw: Dict[str, Any], user_inputs: Dict[str, Any]) -> Dict[str,
     else:
         kp, base_reason = "中", "● ニュートラルな挙動の中調子を基準"
 
-    # 【AI逆転判定：数値スケール修正版】
-    # 右ミスだが、タメ（wrist_cock）が 80度を超えるほど強い場合
-    if miss == "right" and wrist_cock > 80:
+    # build_paid_09 内のキックポイント判定箇所
+    # 右ミス ＋ タメが浅い（30度未満 ＝ 内角150度以上）場合に逆転発想を発動
+    if miss == "right" and wrist_cock < 30:
         kp = "元"
-        reason = (f"● 右ミス傾向だが、手首のタメ（{wrist_cock:.1f}°）が非常に強い\n"
-                  "● 振り遅れがスライスの主因と判定\n"
-                  "● 先調子ではヘッドが暴れるため、手元がしなる『元調子』でタイミングを安定化")
+        reason = (f"● 右ミス傾向かつ、手首のタメ（{wrist_cock:.1f}°）が非常に浅い状態です\n"
+                  "● アーリーリリースによる振り遅れがスライスの主因と判定\n"
+                  "● あえて手元がしなる『元調子』を使用し、強制的にタメを維持させインパクトの厚みを作ります")
     elif miss == "right" and stability_idx < 35:
         kp = "中"
         reason = f"● 右ミスがあるが、安定性指数（{stability_idx}）が低く軸が不安定\n● 先端を走らせるより、挙動が安定する『中調子』で打点を整えるのが優先"
