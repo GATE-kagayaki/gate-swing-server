@@ -28,9 +28,8 @@
     .list li { margin: 6px 0; }
 
     /* ==================================================
-       【追加】08, 09 セクション用：カード型レイアウト
+       【修正】08, 09 セクション用：カード型レイアウト
        ================================================== */
-    /* カードを縦に並べるコンテナ */
     .gate-card-list {
         display: flex;
         flex-direction: column;
@@ -38,31 +37,28 @@
         margin-top: 1rem;
     }
 
-    /* 個別のカード（09：フィッティング / 08：ドリル用） */
     .gate-spec-card {
         background: #ffffff;
-        border: 1px solid #e5e7eb; /* 既存の .card と統一感を持たせる */
+        border: 1px solid #e5e7eb;
         border-radius: 1rem;
         padding: 1.25rem;
         box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
-        border-left: 6px solid #28a745; /* GATEカラーのアクセント */
+        border-left: 6px solid #28a745;
     }
 
-    /* 項目名などのラベル */
     .card-label {
         font-size: 0.75rem;
         font-weight: bold;
         color: #9ca3af;
         text-transform: uppercase;
-        margin-bottom: 0.25rem;
+        margin-bottom: 0.15rem; /* 0.25remから短縮：タイトルと値の距離を詰める */
     }
 
-    /* 推奨スペック（元調子、50gなど）の強調表示 */
     .card-value {
         font-size: 1.25rem;
         font-weight: 800;
         color: #111827;
-        margin-bottom: 0.75rem;
+        margin-bottom: 0.5rem; /* 0.75remから短縮：Section 08の余白をタイトに */
         display: block;
     }
 
@@ -74,7 +70,18 @@
         background-color: #f9fafb;
         padding: 1rem;
         border-radius: 0.75rem;
-        white-space: pre-wrap; /* Pythonの \n を改行として表示するために必須 */
+        /* 改行は維持しつつ、リストアイテムのスタイルを許容 */
+    }
+
+    /* 【新規追加】Section 09：箇条書きのぶら下げインデント解決 */
+    .card-reason-box p {
+        margin-bottom: 0.5rem;
+        padding-left: 1.2em;   /* 全体を右へ */
+        text-indent: -1.2em;  /* 1行目（●）だけ左へ戻す */
+        text-align: left;
+    }
+    .card-reason-box p:last-child {
+        margin-bottom: 0;
     }
 </style>
 </head>
