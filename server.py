@@ -1656,156 +1656,104 @@ def build_paid_09(raw: Dict[str, Any], user_inputs: Dict[str, Any]) -> Dict[str,
     import logging
     logging.warning("[DEBUG] build_paid_09 user_inputs=%r", user_inputs)
 
+    # --- 数値の取得と変換 ---
     power_idx = calc_power_idx(raw)
     stability_idx = calc_stability_idx(raw)
-
     hs = _to_float_or_none(user_inputs.get("head_speed"))
     miss = _norm_miss(user_inputs.get("miss_tendency"))
     gender = _norm_gender(user_inputs.get("gender"))
 
-    # 解析数値の抽出
-    wrist_mean = float(raw["wrist"]["mean"])
+    # 【重要】手首の数値をコック角（180 - 内角）に変換
+    wrist_cock = 180.0 - float(raw["wrist"]["mean"])
     sh_mean = float(raw["shoulder"]["mean"])
 
     rows: List[Dict[str, str]] = []
 
-    # --- 1. 重量（HS × 安定性解析による補正） ---
+    # --- 1. 重量（HS × 安定性解析） ---
     if hs is not None:
-        if hs < 35:
-            weight = "40〜50g"
-            reason = f"ヘッドスピード{hs:.1f}m/sでは、軽めが振り切りに直結します。"
-        elif hs < 40:
-            weight = "50g前後"
-            reason = f"ヘッドスピード{hs:.1f}m/sでは、50g前後が基準です。"
-        elif hs < 45:
-            weight = "50〜60g"
-            reason = f"ヘッドスピード{hs:.1f}m/sでは、50〜60gが最も安定します。"
-        else:
-            weight = "60〜70g"
-            reason = f"ヘッドスピード{hs:.1f}m/sでは、60g以上が当たり負けを抑えます。"
-        
-        # 【AI上書き：HSが速くても軸が不安定なら重量で補正】
+        if hs < 35: weight = "40〜50g"
+        elif hs < 40: weight = "50g前後"
+        elif hs < 45: weight = "50〜60g"
+        else: weight = "60〜70g"
+        reason = f"● ヘッドスピード {hs:.1f}m/s の基準重量\n"
         if hs >= 40 and stability_idx < 45:
             weight = "60g前後"
-            reason += f" ただし、安定性指数（{stability_idx}）が低いため、あえて重量を重くして軌道のブレを物理的に抑えます。"
+            reason += f"● 安定性指数（{stability_idx}）が低いため、重量を増やして軌道を物理的に安定化"
     else:
         band = infer_hs_band(power_idx)
-        if band == "low":
-            weight = "40〜50g"
-            reason = f"入力が無いため指数で判定します。パワー指数{power_idx}では軽めが最適です。"
-        elif band == "mid":
-            weight = "50〜60g"
-            reason = f"入力が無いため指数で判定します。パワー指数{power_idx}では標準帯が最適です。"
-        else:
-            weight = "60〜70g"
-            reason = f"入力が無いため指数で判定します。パワー指数{power_idx}では重めが安定します。"
-
-    # 【AI上書き：パワー指数が極端に高い場合は重量を確保】
-    if power_idx > 80 and "g前後" in weight and "60〜70g" not in weight:
-        weight = "60g前後"
-        reason += f" また、パワー指数（{power_idx}）が非常に高く全身の出力が強いため、重めのスペックも十分に振り切れます。"
+        weight = {"low": "40〜50g", "mid": "50〜60g", "high": "60〜70g"}[band]
+        reason = f"● パワー指数（{power_idx}）に基づく推奨重量"
 
     rows.append({"item": "重量", "guide": weight, "reason": reason})
 
-    # --- 2. フレックス（HS × 捻転パワー解析による補正） ---
+    # --- 2. フレックス（HS × 捻転パワー） ---
     if hs is not None:
-        if hs < 33:
-            flex = "L〜A"
-        elif hs < 38:
-            flex = "A〜R"
-        elif hs < 42:
-            flex = "R〜SR"
-        elif hs < 46:
-            flex = "SR〜S"
-        elif hs < 50:
-            flex = "S〜X"
-        else:
-            flex = "X"
-        reason = f"ヘッドスピード{hs:.1f}m/sに対して、しなり戻りが遅れない範囲で設定します。"
-
-        # 【AI上書き：HSの割に捻転パワーが強すぎる場合】
+        flex_map = [(33, "L〜A"), (38, "A〜R"), (42, "R〜SR"), (46, "SR〜S"), (50, "S〜X")]
+        flex = next((f for h, f in flex_map if hs < h), "X")
+        reason = f"● HS {hs:.1f}m/s に対してしなり戻りが適正な硬さ\n"
         if power_idx > 75:
-            flex_map = {"L〜A": "A", "A〜R": "R", "R〜SR": "SR", "SR〜S": "S", "S〜X": "X", "X": "TX"}
-            flex = flex_map.get(flex, flex)
-            reason += f" 解析によるパワー指数（{power_idx}）が高く、シャフトへの負荷が強いため、一ランク硬めを推奨します。"
+            flex = "一ランク硬め"
+            reason += f"● パワー指数（{power_idx}）が高く、シャフトへの負荷が強いため"
     else:
-        band = infer_hs_band(power_idx)
-        if band == "low":
-            flex = "A〜R"
-        elif band == "mid":
-            flex = "R〜SR"
-        else:
-            flex = "SR〜S"
-        reason = f"入力が無いため指数で判定します。パワー指数{power_idx}に対して適正帯です。"
-
-    if gender == "female" and flex in ["SR〜S", "S〜X", "S", "X"]:
-        flex = "R〜SR"
-        reason += " 性別入力に基づき、振りやすさと再現性を優先して1段柔らかめに寄せます。"
+        flex = {"low": "A〜R", "mid": "R〜SR", "high": "SR〜S"}[infer_hs_band(power_idx)]
+        reason = f"● パワー指数（{power_idx}）に対する適正剛性"
 
     rows.append({"item": "フレックス", "guide": flex, "reason": reason})
 
-    # --- 3. キックポイント（ミスの傾向 × 解析数値による逆転判定） ---
+    # --- 3. キックポイント（ミス傾向 × 手首タメ解析：逆転ロジック） ---
     if miss == "right":
-        kp = "先〜中"
-        base_reason = "右へのミス傾向に対し、つかまりを助けるスペックを基準にしました。"
+        kp, base_reason = "先〜中", "● 右ミスに対し、つかまりを助ける先調子系を基準"
     elif miss == "left":
-        kp = "中〜元"
-        base_reason = "左へのミスに対し、先端の動きを抑えたスペックを基準にしました。"
+        kp, base_reason = "中〜元", "● 左ミスに対し、先端の動きを抑えた元調子系を基準"
     else:
-        kp = "中"
-        base_reason = "ニュートラルな中調子を基準に選定しました。"
+        kp, base_reason = "中", "● ニュートラルな挙動の中調子を基準"
 
-    # 【AI逆転判定：スライス悩みだが、タメが強すぎる場合】
-    if miss == "right" and wrist_mean > 95:
+    # 【AI逆転判定：数値スケール修正版】
+    # 右ミスだが、タメ（wrist_cock）が 80度を超えるほど強い場合
+    if miss == "right" and wrist_cock > 80:
         kp = "元"
-        reason = f"右ミス傾向ですが、解析の結果、手首のタメ（mean {wrist_mean:.1f}°）が非常に強く、振り遅れがスライスの主因です。先調子ではヘッドが戻りきらず暴れるため、手元がしなる『元調子』でタイミングを整えます。"
-    
-    # 【AI逆転判定：スライス悩みだが、軸が極端に不安定な場合】
+        reason = (f"● 右ミス傾向だが、手首のタメ（{wrist_cock:.1f}°）が非常に強い\n"
+                  "● 振り遅れがスライスの主因と判定\n"
+                  "● 先調子ではヘッドが暴れるため、手元がしなる『元調子』でタイミングを安定化")
     elif miss == "right" and stability_idx < 35:
         kp = "中"
-        reason = f"右へのミスが見られますが、安定性指数（{stability_idx}）が低く、軸のブレが打点を乱しています。先調子で走らせるよりも、挙動が安定する『中調子』でスイング軸を整えることを優先します。"
-
-    # 【AI逆転判定：フック悩みだが、肩の回転が浅い場合】
-    elif miss == "left" and sh_mean < 80:
-        kp = "中"
-        reason = f"左ミス傾向ですが、肩の回転（mean {sh_mean:.1f}°）が浅く、手打ちによる引っ掛けが原因です。元調子で抑え込むより、中調子でオートマチックに振り抜く方が、スイング全体の質を整えやすくなります。"
+        reason = f"● 右ミスがあるが、安定性指数（{stability_idx}）が低く軸が不安定\n● 先端を走らせるより、挙動が安定する『中調子』で打点を整えるのが優先"
     else:
         reason = base_reason
 
     rows.append({"item": "キックポイント", "guide": kp, "reason": reason})
 
-    # --- 4. トルク（安定性解析ベース） ---
+    # --- 4. トルク（安定性解析 × ミス補正：矛盾解消版） ---
     if stability_idx <= 40:
-        tq = "3.0〜4.0"
-        reason = f"安定性指数{stability_idx}のため、低トルクでフェース挙動を抑えます。"
+        tq, base_reason = "3.0〜4.0", f"● 安定性指数（{stability_idx}）が低いため、低トルクでねじれを抑制"
     elif stability_idx <= 70:
-        tq = "3.5〜5.0"
-        reason = f"安定性指数{stability_idx}のため、標準帯でバランスを取ります。"
+        tq, base_reason = "3.5〜5.0", f"● 安定性指数（{stability_idx}）に基づき、標準帯のねじれ量でバランスを確保"
     else:
-        tq = "4.0〜6.0"
-        reason = f"安定性指数{stability_idx}のため、高めのトルクでも再現性が崩れません。"
+        tq, base_reason = "4.5〜6.0", f"● 安定性指数（{stability_idx}）が高く、高トルクでも再現性が維持可能"
 
-    if miss == "left" and tq == "4.0〜6.0":
-        tq = "3.0〜4.5"
-        reason += " 左ミス補正としてトルクを下げ、つかまり過ぎを抑えます。"
-    if miss == "right" and tq == "3.0〜4.0":
-        tq = "4.0〜5.5"
-        reason += " 右ミス補正としてトルクを上げ、つかまりを補います。"
+    # ミス傾向による微調整
+    if miss == "right":
+        # 右ミスにはトルクを「増やす（大きい数値にする）」ことでつかまりを良くする
+        tq = "4.5〜5.5" if stability_idx <= 70 else "5.5以上"
+        reason = base_reason + "\n● 右ミス補正：トルクを増やしてフェースの返り（つかまり）をサポート"
+    elif miss == "left":
+        # 左ミスにはトルクを「減らす」ことでつかまりを抑える
+        tq = "2.5〜3.5"
+        reason = base_reason + "\n● 左ミス補正：トルクを絞り、つかまり過ぎ（引っ掛け）を抑制"
+    else:
+        reason = base_reason
 
     rows.append({"item": "トルク", "guide": tq, "reason": reason})
 
     return {
         "title": "09. Shaft Fitting Guide（推奨）",
         "table": rows,
-        "note": "本結果は指標のため、購入時は試打を推奨します。",
+        "note": "※本結果は解析数値に基づく指標です。購入時は試打での最終確認を推奨します。",
         "meta": {
             "power_idx": power_idx,
             "stability_idx": stability_idx,
-            "head_speed": hs,
-            "miss_tendency": user_inputs.get("miss_tendency"),
-            "gender": user_inputs.get("gender"),
-            "final_kp": kp,
-            "final_kp_reason": reason
+            "wrist_cock": wrist_cock,
+            "head_speed": hs
         },
     }
 
