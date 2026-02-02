@@ -2443,8 +2443,8 @@ def handle_text_message(event):
 
     import logging
     from google.cloud import firestore
-    # 1. まずメッセージの内容を取得
-    text = event.message.text
+    # 1. まずメッセージの内容を取得（空白を削除して判定を正確にする）
+    text = event.message.text.strip()
 
     # 2. 解約・キャンセル判定（最優先）
     if text in ["解約", "キャンセル", "サブスク解除"]:
@@ -2473,7 +2473,18 @@ def handle_text_message(event):
 
         # LINEへ返信して処理を終了
         line_bot_api.reply_message(event.reply_token, TextSendMessage(text=reply))
-        return  # これより下の解析ロジックなどは一切実行させない
+        return  # ここで処理を完全に終了させる
+
+    # 3. お問い合わせ判定
+    if "お問い合わせ" in text:
+        reply = (
+            "お問い合わせありがとうございます！ GATE サポート担当です。\n\n"
+            "ゴルフスイング分析のご依頼や、サービスに関するご質問はこのままメッセージをお送りください。 "
+            "順次スタッフが確認し、回答させていただきます。\n\n"
+            "しばらくお待ちくださいませ。"
+        )
+        line_bot_api.reply_message(event.reply_token, TextSendMessage(text=reply))
+        return # ここで処理を完全に終了させる
 
     # ===== 正規化（全角スペース & 全角数字）=====
     raw_text = event.message.text or ""
