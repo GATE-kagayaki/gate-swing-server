@@ -879,20 +879,20 @@ def build_paid_03_hip(raw: Dict[str, Any], seed: str) -> Dict[str, Any]:
 
 
 def judge_wrist(raw: Dict[str, Any]) -> Dict[str, Any]:
-    w = raw["wrist"]
-    xf = raw["x_factor"]
+    # --- 【重要】180度からの引き算で「コック角」に変換 ---
+    # raw["wrist"]["mean"] が 159.0 の場合、w_mean は 21.0 になります
+    w_mean = 180.0 - float(raw["wrist"]["mean"])
+    xf_mean = float(raw["x_factor"]["mean"])
 
     main = "mid"
-    if w["mean"] < 70:
+    if w_mean < 70:      # 70度より曲がっていない（タメが浅い）
         main = "low"
-    elif w["mean"] > 90:
+    elif w_mean > 90:    # 90度より深く曲がっている（タメが深い）
         main = "high"
 
     rel = "mid"
-    if xf["mean"] < 35:
+    if xf_mean < 35:
         rel = "low"
-    elif xf["mean"] > 55:
-        rel = "high"
 
     tags: List[str] = []
     if main == "low":
@@ -905,64 +905,62 @@ def judge_wrist(raw: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def build_paid_04_wrist(raw: Dict[str, Any], seed: str) -> Dict[str, Any]:
+    w_raw = raw["wrist"]
+    # 数値変換：180 - 内角 = コック角
+    w_mean = 180.0 - float(w_raw["mean"])
+    w_max  = 180.0 - float(w_raw["min"]) if "min" in w_raw else (180.0 - w_mean)
+    w_std  = float(w_raw["std"])
+    
     j = judge_wrist(raw)
-    w = raw["wrist"]
-    xf = raw["x_factor"]
     conf = _conf(raw)
 
     good: List[str] = []
     bad: List[str] = []
 
-    # 良い点（最低1行） --- ポジティブバッファ拡充 ---
-    if w["std"] <= 10:
-        good.append("手元の角度変化は揃っており、インパクト条件の再現性は確保されています。")
-    if 70 <= w["mean"] <= 90:
-        good.append("手首コック量は基準レンジに収まっており、効率的にパワーを伝えられています。")
+    # --- 良い点（プロの視点） ---
+    if w_std <= 8:
+        good.append("手首の角度変化が非常に一定しており、インパクトでのフェース管理能力が極めて高いです。")
+    if 70 <= w_mean <= 90:
+        good.append("理想的なタメ（L字）が形成されており、効率的にヘッドを加速させる準備ができています。")
+    if w_max > 100:
+        good.append("トップでの深いコックを許容する柔軟性があり、爆発的な飛距離を生み出す潜在能力があります。")
     
-    # バッファ：タメの強さ
-    if w["mean"] > 90:
-        good.append("手首のタメを深く使える能力があり、インパクトでの爆発力を秘めています。")
-    # バッファ：シンプルさ
-    if w["mean"] < 70 and w["std"] <= 8:
-        good.append("手首の余計な介入が少なく、シンプルに体を回して打てる特性を持っています。")
+    if not good: good = ["基本的な手首の可動域は確保されており、スイングの土台はできています。"]
 
-    if not good:
-        good = ["良い点は特にありません。"]
+    # --- 改善点（プロの指摘） ---
+    if w_mean < 70:
+        bad.append(f"平均コック角 {w_mean:.1f}° は浅く、アーリーリリースの傾向があります。")
+    if w_std > 15:
+        bad.append(f"手首の挙動（σ {w_std:.1f}）が不安定で、インパクトの打点がバラつきやすい状態です。")
+    if w_max < 60:
+        bad.append("バックスイングでのコックが完了する前に切り返しており、パワーロスが生じています。")
 
-    # 改善点
-    if w["mean"] < 70:
-        bad.append(f"手首コックは mean {w['mean']}°で不足です。")
-    if w["mean"] > 90:
-        bad.append(f"手首コックは mean {w['mean']}°で過多です。")
-    if w["std"] > 15:
-        bad.append(f"手首コックのばらつき（σ {w['std']}°）が大きく、動きが揃っていません。")
-    if xf["mean"] < 35:
-        bad.append(f"捻転差は mean {xf['mean']}°で不足です。")
-    if not bad:
-        bad = ["改善点は特にありません。"]
+    if not bad: bad = ["現在、手首の使い方において大きな修正ポイントは見当たりません。"]
 
-    # プロ目線（言語化）
+    # --- プロ目線の詳細な言語化（ここを大幅に強化） ---
     pro_lines: List[str] = []
-    pro_lines.append("手元は「コック量の大小」より、体の回転に対して手元が介入し過ぎていないかが評価軸です。")
-    if w["mean"] > 90:
-        pro_lines.append("本動画では手首の動きが主導になっています。")
-    elif w["mean"] < 70:
-        pro_lines.append("本動画では手首のコック量が不足しています。")
+    
+    # 状態別の深い解説
+    if w_mean < 70:
+        pro_lines.append(f"本動画では手首の角度が {w_mean:.1f}° と浅いため、ヘッドを“運ぶ”動きが強く、飛距離がロスしやすい傾向です。")
+        pro_lines.append("本来あるべき『タメ』が解けるのが早いため、インパクトで合わせる動きが必要になっています。")
+    elif w_mean > 100:
+        pro_lines.append(f"最大 {w_max:.1f}° という非常に深いタメを作れていますが、その分、リリースのタイミングがシビアです。")
+        pro_lines.append("手元の操作に頼りすぎると、急激なフックやプッシュアウトの原因となります。")
     else:
-        pro_lines.append("本動画では手首のコック量は適正です。")
+        pro_lines.append(f"手首のコック角（{w_mean:.1f}°）はプロの基準値に近く、効率的なパワー伝達が行われています。")
 
-    if w["std"] > 15:
-        pro_lines.append("リリースのタイミングが一定せず、インパクト効率が安定していません。")
+    # 安定性に関する洞察
+    if w_std > 12:
+        pro_lines.append("特に気になるのは再現性です。手首の動きが一定でないため、フェース向きの管理が困難になっています。")
     else:
-        pro_lines.append("手首の使い方は安定しており、動きは揃っています。")
+        pro_lines.append("手首の挙動が安定しているため、シャフトのしなりを一定に使いこなせる状態です。")
 
-    pro_lines.append("このスイングでは、主因はリリースのタイミングです。")
-
-    pro_comment = " ".join(pro_lines[:3])
+    pro_comment = " ".join(pro_lines)
 
     return {
         "title": "04. Wrist Cock（手首コック）",
-        "value": _value_line(w["max"], w["mean"], w["std"], conf),
+        "value": f"Max Cock {w_max:.1f}° / Mean {w_mean:.1f}° (σ {w_std:.1f})",
         "tags": j["tags"],
         "good": good[:3],
         "bad": bad[:3],
