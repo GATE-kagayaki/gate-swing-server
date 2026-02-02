@@ -500,10 +500,13 @@ def create_cloud_task(report_id: str, user_id: str, message_id: str) -> str:
 # MediaPipe analysis（max/mean/std/conf）
 # ==================================================
 def analyze_swing_with_mediapipe(video_path: str) -> Dict[str, Any]:
+    import os
+    # ★必ず mediapipe import より前
+    os.environ["MEDIAPIPE_DISABLE_GPU"] = "1"
+
     import cv2
     import mediapipe as mp
     import math
-    import os  # 環境変数設定用に追加
     from typing import List, Dict, Any
 
     # Cloud Run 等のGPU非搭載環境でEGLエラー(0x3008)が出るのを防ぐため、CPUを強制指定します。
