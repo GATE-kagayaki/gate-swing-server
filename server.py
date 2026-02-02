@@ -524,14 +524,22 @@ def analyze_swing_with_mediapipe(video_path: str) -> Dict[str, Any]:
     knees: List[float] = []
     x_factors: List[float] = []
 
-    def angle(p1, p2, p3):
-        ax, ay = p1[0] - p2[0], p1[1] - p2[1]
-        bx, by = p3[0] - p2[0], p3[1] - p2[1]
-        dot = ax * bx + ay * by
-        na = math.hypot(ax, ay)
-        nb = math.hypot(bx, by)
+    def angle_3d(p1, p2, p3):
+        # ベクトル BA (p1-p2) と BC (p3-p2) を計算
+        ax, ay, az = p1[0] - p2[0], p1[1] - p2[1], p1[2] - p2[2]
+        bx, by, bz = p3[0] - p2[0], p3[1] - p2[1], p3[2] - p2[2]
+        
+        # 3次元の内積: A・B = AxBx + AyBy + AzBz
+        dot = ax * bx + ay * by + az * bz
+        
+        # 3次元のベクトル長（ノルム）: |A| = sqrt(Ax^2 + Ay^2 + Az^2)
+        na = math.sqrt(ax**2 + ay**2 + az**2)
+        nb = math.sqrt(bx**2 + by**2 + bz**2)
+        
         if na * nb == 0:
             return 0.0
+        
+        # 角度計算: cos(theta) = (A・B) / (|A|*|B|)
         c = max(-1.0, min(1.0, dot / (na * nb)))
         return math.degrees(math.acos(c))
 
@@ -543,6 +551,8 @@ def analyze_swing_with_mediapipe(video_path: str) -> Dict[str, Any]:
         min_detection_confidence=0.5,
         min_tracking_confidence=0.5,
     ) as pose:
+        base_nose = None
+        base_lknee = None
         while cap.isOpened():
             ok, frame = cap.read()
             if not ok:
@@ -558,9 +568,10 @@ def analyze_swing_with_mediapipe(video_path: str) -> Dict[str, Any]:
             lm = res.pose_landmarks.landmark
             valid_frames += 1
 
-            def xy(i):
-                return (lm[i].x, lm[i].y)
+            def xyz(i):
+                return (lm[i].x, lm[i].y, lm[i].z)
 
+                           
             LS = mp_pose.PoseLandmark.LEFT_SHOULDER.value
             RS = mp_pose.PoseLandmark.RIGHT_SHOULDER.value
             LH = mp_pose.PoseLandmark.LEFT_HIP.value
@@ -571,11 +582,24 @@ def analyze_swing_with_mediapipe(video_path: str) -> Dict[str, Any]:
             NO = mp_pose.PoseLandmark.NOSE.value
             LK = mp_pose.PoseLandmark.LEFT_KNEE.value
 
-            sh = angle(xy(LS), xy(RS), xy(RH))
-            hip = angle(xy(LH), xy(RH), xy(LK))
-            wr = 180.0 - angle(xy(LE), xy(LW), xy(LI))
-            hd = abs(xy(NO)[0] - 0.5)
-            kn = abs(xy(LK)[0] - 0.5)
+              
+            curr_nose = xyz(NO)
+            curr_lknee = xyz(LK)
+
+            if base_nose is None:
+                base_nose = curr_nose
+                base_lknee = curr_lknee
+
+            sh = angle_3d(xyz(LS), xyz(RS), xyz(RH))
+            hip = angle_3d(xyz(LH), xyz(RH), xyz(LK))
+            wr = 180.0 - angle_3d(xyz(LE), xyz(LW), xyz(LI))
+            # 頭部・膝：アドレス基準の「3次元移動距離」を計算
+            # 3次元距離公式: $$d = \sqrt{(x-x_0)^2 + (y-y_0)^2 + (z-z_0)^2}$$
+            def dist_3d(p, base):
+                return math.sqrt(sum((a - b)**2 for a, b in zip(p, base)))
+
+            hd = dist_3d(curr_nose, base_nose) * 100  # 画面幅に対する%に変換
+            kn = dist_3d(curr_lknee, base_lknee) * 100
 
             shoulders.append(float(sh))
             hips.append(float(hip))
@@ -586,6 +610,8 @@ def analyze_swing_with_mediapipe(video_path: str) -> Dict[str, Any]:
 
     cap.release()
 
+
+            
     if total_frames < 10 or valid_frames < 5:
         raise RuntimeError("解析に必要なフレーム数が不足しています。")
 
