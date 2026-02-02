@@ -1798,7 +1798,40 @@ def build_paid_09(raw: Dict[str, Any], user_inputs: Dict[str, Any]) -> Dict[str,
     wrist_cock = _f(["wrist", "mean"], 0.0)
     max_wrist = _f(["wrist", "max"], wrist_cock)
 
+    # --- 解析結果のラベル化（判断用） ---
+    def _band_stability(stability_val: float) -> str:
+        if stability_val < 5.0: return "stable"
+        if stability_val < 7.0: return "normal"
+        return "unstable"
+
+    def _band_xfactor(avg_xfactor: float) -> str:
+        if avg_xfactor < 40.0: return "low"
+        if avg_xfactor < 45.0: return "mid"
+        return "high"
+
+    def _band_tame(max_wrist: float) -> str:
+        if max_wrist < 30.0: return "shallow"
+        if max_wrist < 45.0: return "normal"
+        return "deep"
+
+    stab_band = _band_stability(stability_val)
+    xf_band = _band_xfactor(avg_xfactor)
+    tame_band = _band_tame(max_wrist)
+
+    # --- ここで rows を作る ---
     rows: List[Dict[str, str]] = []
+
+    # ★ 診断サマリは rows 作成直後 ★
+    rows.append({
+        "item": "診断サマリ",
+        "guide": "今回の分析根拠",
+        "reason": "\n".join([
+            f"● 軸ブレ：{stability_val:.1f}%（{stab_band}）",
+            f"● 捻転差：{avg_xfactor:.1f}°（{xf_band}）",
+            f"● タメ最大：{max_wrist:.1f}°（{tame_band}）",
+        ])
+    })
+
 
     # --- 3. 重量（HS × 性別 × 安定性） ---
     if hs is not None:
