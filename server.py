@@ -30,6 +30,23 @@ from google.cloud import tasks_v2
 from google.api_core.exceptions import NotFound, PermissionDenied
 
 import stripe
+# --- Stripe設定 ---
+# 本番環境では環境変数から取得することを推奨します
+stripe.api_key = os.getenv("STRIPE_API_KEY", "sk_live_...") 
+
+def get_cancel_portal_url(customer_id: str):
+    """
+    ユーザー専用の解約・管理ポータルURLを生成
+    """
+    try:
+        session = stripe.billing_portal.Session.create(
+            customer=customer_id,
+            return_url="https://gate-golf.com/mypage" 
+        )
+        return session.url
+    except Exception as e:
+        logging.error(f"Portal Error: {e}")
+        return None
 
 app = Flask(__name__, template_folder="templates")
 app.config["JSON_AS_ASCII"] = False
