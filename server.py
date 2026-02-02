@@ -1747,53 +1747,91 @@ def infer_hs_band(power_idx: int) -> str:
 
 def build_paid_09(raw: Dict[str, Any], user_inputs: Dict[str, Any]) -> Dict[str, Any]:
     import logging
+    import math
     logging.warning("[DEBUG] build_paid_09 user_inputs=%r", user_inputs)
 
-    # --- 数値の取得と変換 ---
-    power_idx = calc_power_idx(raw)
-    stability_idx = calc_stability_idx(raw)
+    # --- 1. 基礎データの取得と正規化 ---
     hs = _to_float_or_none(user_inputs.get("head_speed"))
     miss = _norm_miss(user_inputs.get("miss_tendency"))
     gender = _norm_gender(user_inputs.get("gender"))
+    power_idx = calc_power_idx(raw)
 
-    # 【重要】手首の数値をコック角（180 - 内角）に変換
-    wrist_cock = 180.0 - float(raw["wrist"]["mean"])
-    sh_mean = float(raw["shoulder"]["mean"])
+    # 3D解析の生データ（リスト）を取得
+    # ※各リストが空の場合のゼロ除算・エラーを回避
+    heads_list = raw.get("heads", [])
+    knees_list = raw.get("knees", [])
+    xf_list = raw.get("x_factors", [])
+    wr_list = raw.get("wrists", [])
+
+    # --- 2. 判定用統計値の算出 ---
+    # 軸の安定性（頭部と膝の平均移動距離 %）
+    stability_val = (sum(heads_list)/len(heads_list) + sum(knees_list)/len(knees_list)) / 2 if (heads_list and knees_list) else 10.0
+    # 最大捻転差（X-Factor）
+    avg_xfactor = sum(xf_list) / len(xf_list) if xf_list else 0
+    # 手首の最大タメ角（180 - 内角）
+    max_wrist = max(wr_list) if wr_list else 0
 
     rows: List[Dict[str, str]] = []
 
-    # --- 1. 重量（HS × 安定性解析） ---
+    # --- 1. 重量（HS × 3D安定性解析） ---
+    # 事前に計算しておく：頭部と膝の3D移動量の平均（%）
+    # ※理想は 5.0% 以下。数値が大きいほど「不安定」と判定。
+    stability_val = (sum(heads)/len(heads) + sum(knees)/len(knees)) / 2 if (heads and knees) else 10.0
+
     if hs is not None:
+        # 基本重量の決定
         if hs < 35: weight = "40〜50g"
         elif hs < 40: weight = "50g前後"
         elif hs < 45: weight = "50〜60g"
         else: weight = "60〜70g"
+        
         reason = f"● ヘッドスピード {hs:.1f}m/s の基準重量\n"
-        if hs >= 40 and stability_idx < 45:
-            weight = "60g前後"
-            reason += f"● 安定性指数（{stability_idx}）が低いため、重量を増やして軌道を物理的に安定化"
+        
+        # 【プロ仕様の修正点】
+        # 従来の「指数（idx）」ではなく、実際の「3D移動量（%）」で判定。
+        # 目安として 7.0% 以上のブレがある場合、重量を増やして物理的に挙動を安定させる。
+        if hs >= 40 and stability_val > 7.0:
+            weight = "60g前後" # もしくは既存重量のワンランク上
+            reason += f"● 3D解析による軸ブレ（{stability_val:.1f}%）が大きいため、重量を増やして軌道を物理的に安定化"
     else:
+        # HSが取得できない場合のフォールバック（既存ロジックを維持）
         band = infer_hs_band(power_idx)
         weight = {"low": "40〜50g", "mid": "50〜60g", "high": "60〜70g"}[band]
         reason = f"● パワー指数（{power_idx}）に基づく推奨重量"
 
     rows.append({"item": "重量", "guide": weight, "reason": reason})
 
-    # --- 2. フレックス（HS × 捻転パワー） ---
+   # --- 2. フレックス（HS × 3D捻転差解析） ---
     if hs is not None:
+        # 既存のHS基準マップ（維持）
         flex_map = [(33, "L〜A"), (38, "A〜R"), (42, "R〜SR"), (46, "SR〜S"), (50, "S〜X")]
         flex = next((f for h, f in flex_map if hs < h), "X")
         reason = f"● HS {hs:.1f}m/s に対してしなり戻りが適正な硬さ\n"
-        if power_idx > 75:
-            flex = "一ランク硬め"
-            reason += f"● パワー指数（{power_idx}）が高く、シャフトへの負荷が強いため"
+
+        # 【プロ仕様の修正点】
+        # パワー指数（推測値）ではなく、3D解析で算出した「平均捻転差（X-Factor）」で判定。
+        # $X\text{-}Factor = 肩回転角 - 腰回転角$
+        # 一般的に $45^\circ$ を超える捻転差は非常に高い負荷をシャフトに与えます。
+        avg_xfactor = sum(x_factors) / len(x_factors) if x_factors else 0
+        
+        if avg_xfactor > 45.0:
+            # 既存の「一ランク硬め」ロジックを維持。
+            # 必要であれば、ここで flex = "SR" などの具体的な書き換え処理も可能ですが、
+            # 現在の運用に合わせて「一ランク硬め」という表記を継続します。
+            flex = "一ランク硬め" 
+            reason += f"● 平均捻転差（{avg_xfactor:.1f}°）が大きく、シャフトへの負荷が強いため"
     else:
+        # HSが取得できない場合のフォールバック（既存ロジックを維持）
         flex = {"low": "A〜R", "mid": "R〜SR", "high": "SR〜S"}[infer_hs_band(power_idx)]
         reason = f"● パワー指数（{power_idx}）に対する適正剛性"
 
     rows.append({"item": "フレックス", "guide": flex, "reason": reason})
 
-    # --- 3. キックポイント（ミス傾向 × 手首タメ解析：逆転ロジック） ---
+    # --- 3. キックポイント（ミス傾向 × 3D解析：逆転ロジック） ---
+    # 事前定義（前段で計算済みのものを参照）
+    # max_wrist: 3D解析による手首の最大タメ角（度）
+    # stability_val: 頭部・膝の平均移動量（%） 
+    
     if miss == "right":
         kp, base_reason = "先〜中", "● 右ミスに対し、つかまりを助ける先調子系を基準"
     elif miss == "left":
@@ -1801,33 +1839,43 @@ def build_paid_09(raw: Dict[str, Any], user_inputs: Dict[str, Any]) -> Dict[str,
     else:
         kp, base_reason = "中", "● ニュートラルな挙動の中調子を基準"
 
-    # build_paid_09 内のキックポイント判定箇所
-    # 右ミス ＋ タメが浅い（30度未満 ＝ 内角150度以上）場合に逆転発想を発動
-    if miss == "right" and wrist_cock < 30:
+    # 【プロ仕様の修正点：3D実測値による判定】
+    # 右ミス ＋ 3Dタメ角が浅い（30度未満）場合に逆転発想を発動
+    if miss == "right" and max_wrist < 30.0:
         kp = "元"
-        reason = (f"● 右ミス傾向かつ、手首のタメ（{wrist_cock:.1f}°）が非常に浅い状態です\n"
+        reason = (f"● 右ミス傾向かつ、3D解析による手首のタメ（{max_wrist:.1f}°）が非常に浅い状態です\n"
                   "● アーリーリリースによる振り遅れがスライスの主因と判定\n"
                   "● あえて手元がしなる『元調子』を使用し、強制的にタメを維持させインパクトの厚みを作ります")
-    elif miss == "right" and stability_idx < 35:
+    
+    # 右ミス ＋ 3D安定性（移動量）が 7.0% を超えて軸が不安定な場合
+    elif miss == "right" and stability_val > 7.0:
         kp = "中"
-        reason = f"● 右ミスがあるが、安定性指数（{stability_idx}）が低く軸が不安定\n● 先端を走らせるより、挙動が安定する『中調子』で打点を整えるのが優先"
+        reason = (f"● 右ミスがあるが、3D解析による軸ブレ（{stability_val:.1f}%）が大きく体幹が不安定\n"
+                  "● 先端を走らせるより、挙動が安定する『中調子』で打点を整えるのが優先")
     else:
         reason = base_reason
 
     rows.append({"item": "キックポイント", "guide": kp, "reason": reason})
 
-    # --- 4. トルク（安定性解析 × ミス補正：矛盾解消版） ---
-    if stability_idx <= 40:
-        tq, base_reason = "3.0〜4.0", f"● 安定性指数（{stability_idx}）が低いため、低トルクでねじれを抑制"
-    elif stability_idx <= 70:
-        tq, base_reason = "3.5〜5.0", f"● 安定性指数（{stability_idx}）に基づき、標準帯のねじれ量でバランスを確保"
+    # --- 4. トルク（3D安定性解析 × ミス補正：矛盾解消版） ---
+    # stability_val: 頭部・膝の平均移動量（%）
+    # ※ 5.0%以下がプロレベルの安定、10.0%以上は挙動の乱れが大きいと判定
+
+    if stability_val >= 9.0:
+        # ブレが大きい（旧 stability_idx <= 40 相当）
+        tq, base_reason = "3.0〜4.0", f"● 3D解析による軸ブレ（{stability_val:.1f}%）が大きいため、低トルクでねじれを抑制"
+    elif stability_val >= 5.0:
+        # 標準的なブレ（旧 stability_idx <= 70 相当）
+        tq, base_reason = "3.5〜5.0", f"● 3D解析による軸ブレ（{stability_val:.1f}%）に基づき、標準帯のねじれ量でバランスを確保"
     else:
-        tq, base_reason = "4.5〜6.0", f"● 安定性指数（{stability_idx}）が高く、高トルクでも再現性が維持可能"
+        # 極めて安定（旧 stability_idx > 70 相当）
+        tq, base_reason = "4.5〜6.0", f"● 3D解析による軸ブレ（{stability_val:.1f}%）が非常に小さく、高トルクでも再現性が維持可能"
 
     # ミス傾向による微調整
     if miss == "right":
-        # 右ミスにはトルクを「増やす（大きい数値にする）」ことでつかまりを良くする
-        tq = "4.5〜5.5" if stability_idx <= 70 else "5.5以上"
+        # 右ミスにはトルクを「増やす」ことでフェースターンを助ける
+        # 安定性が低い（5.0%以上）か、高い（5.0%未満）かで分岐
+        tq = "4.5〜5.5" if stability_val >= 5.0 else "5.5以上"
         reason = base_reason + "\n● 右ミス補正：トルクを増やしてフェースの返り（つかまり）をサポート"
     elif miss == "left":
         # 左ミスにはトルクを「減らす」ことでつかまりを抑える
