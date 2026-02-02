@@ -573,7 +573,7 @@ def analyze_swing_with_mediapipe(video_path: str) -> Dict[str, Any]:
 
             sh = angle(xy(LS), xy(RS), xy(RH))
             hip = angle(xy(LH), xy(RH), xy(LK))
-            wr = angle(xy(LE), xy(LW), xy(LI))
+            wr = 180.0 - angle(xy(LE), xy(LW), xy(LI))
             hd = abs(xy(NO)[0] - 0.5)
             kn = abs(xy(LK)[0] - 0.5)
 
@@ -601,9 +601,10 @@ def analyze_swing_with_mediapipe(video_path: str) -> Dict[str, Any]:
 
     def pack(xs: List[float], nd: int = 2) -> Dict[str, float]:
         if not xs:
-            return {"max": 0.0, "mean": 0.0, "std": 0.0}
+            return {"max": 0.0, "min": 0.0, "mean": 0.0, "std": 0.0}
         return {
             "max": round(float(max(xs)), nd),
+            "min": round(float(min(xs)), nd), # 最小値を追加
             "mean": round(float(_safe_mean(xs)), nd),
             "std": round(float(_safe_std(xs)), nd),
         }
