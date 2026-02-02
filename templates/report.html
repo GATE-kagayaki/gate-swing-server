@@ -8,13 +8,17 @@
   <script src="https://cdn.tailwindcss.com"></script>
   <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+JP:wght@600;700&family=Noto+Sans+JP:wght@400;700&display=swap" rel="stylesheet">
 
-  <style>
+ <style>
+    /* 既存のベーススタイルを維持 */
     body { font-family: 'Noto Sans JP', sans-serif; background:#f3f4f6; }
     .paper { background:#fff; max-width:980px; margin:20px auto; padding:28px; box-shadow: 0 10px 20px rgba(0,0,0,0.06); border-radius: 16px; }
     h2 { border-left:4px solid #111827; padding-left:12px; margin-top:28px; font-weight:700; font-family: 'Noto Serif JP', serif; }
+    
+    /* 既存のテーブルスタイル（01〜06などで使用される可能性があるため保持） */
     table { width:100%; border-collapse:collapse; margin-top:12px; }
     th,td { border:1px solid #e5e7eb; padding:10px; font-size: 0.95rem; vertical-align: top; }
     th { background:#f9fafb; font-weight: 700; width: 34%; }
+    
     .loading { text-align: center; padding: 90px 0; }
     .card { border: 1px solid #e5e7eb; border-radius: 14px; padding: 14px; background: #fff; }
     .muted { color:#6b7280; font-size: 0.88rem; line-height: 1.6; }
@@ -22,7 +26,57 @@
     .badge { display:inline-block; padding:4px 10px; border-radius: 999px; background:#111827; color:#fff; font-size: 12px; }
     .sp { margin-top: 10px; }
     .list li { margin: 6px 0; }
-  </style>
+
+    /* ==================================================
+       【追加】08, 09 セクション用：カード型レイアウト
+       ================================================== */
+    /* カードを縦に並べるコンテナ */
+    .gate-card-list {
+        display: flex;
+        flex-direction: column;
+        gap: 1.25rem;
+        margin-top: 1rem;
+    }
+
+    /* 個別のカード（09：フィッティング / 08：ドリル用） */
+    .gate-spec-card {
+        background: #ffffff;
+        border: 1px solid #e5e7eb; /* 既存の .card と統一感を持たせる */
+        border-radius: 1rem;
+        padding: 1.25rem;
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
+        border-left: 6px solid #28a745; /* GATEカラーのアクセント */
+    }
+
+    /* 項目名などのラベル */
+    .card-label {
+        font-size: 0.75rem;
+        font-weight: bold;
+        color: #9ca3af;
+        text-transform: uppercase;
+        margin-bottom: 0.25rem;
+    }
+
+    /* 推奨スペック（元調子、50gなど）の強調表示 */
+    .card-value {
+        font-size: 1.25rem;
+        font-weight: 800;
+        color: #111827;
+        margin-bottom: 0.75rem;
+        display: block;
+    }
+
+    /* 理由・手順などの解説ボックス */
+    .card-reason-box {
+        font-size: 0.95rem;
+        line-height: 1.7;
+        color: #4b5563;
+        background-color: #f9fafb;
+        padding: 1rem;
+        border-radius: 0.75rem;
+        white-space: pre-wrap; /* Pythonの \n を改行として表示するために必須 */
+    }
+</style>
 </head>
 
 <body>
@@ -140,31 +194,32 @@
     reportContent.appendChild(sec);
   }
 
-  function render08(secData) {
-    const sec = sectionWrap(secData.title);
-    const table = document.createElement("table");
-    table.innerHTML = `
-      <thead>
-        <tr>
-          <th>ドリル名</th>
-          <th>目的</th>
-          <th>やり方</th>
-        </tr>
-      </thead>
-      <tbody>
-        ${(secData.drills||[]).map(d=>`
-          <tr>
-            <td class="font-semibold">${d.name}</td>
-            <td>${d.purpose}</td>
-            <td class="whitespace-pre-line">${d.how}</td>
-          </tr>
-        `).join("")}
-      </tbody>`;
-    sec.appendChild(table);
-    reportContent.appendChild(sec);
-  }
+function render08(secData) {
+  const sec = sectionWrap(secData.title);
 
-  function render09(secData) {
+  // ✅ 通常の08（カード型レイアウト）
+  const drillList = document.createElement("div");
+  drillList.className = "gate-card-list";
+  drillList.innerHTML = (secData.drills || []).map(d => `
+    <div class="gate-spec-card" style="border-left-color: #007bff;">
+      <div>
+        <div class="card-label">RECOMMENDED DRILL</div>
+        <span class="card-value">${d.name}</span>
+      </div>
+      <div class="card-reason-box">
+        <div class="font-bold text-xs text-gray-400 mb-1">【目的】</div>
+        <div class="mb-3">${d.purpose}</div>
+        <div class="font-bold text-xs text-gray-400 mb-1">【手順】</div>
+        <div>${d.how}</div>
+      </div>
+    </div>
+  `).join("");
+  
+  sec.appendChild(drillList);
+  reportContent.appendChild(sec);
+}
+
+function render09(secData) {
   const sec = sectionWrap(secData.title);
 
   // ✅ 入力が無い場合（空の09）
@@ -177,27 +232,23 @@
     return;
   }
 
-  // ✅ 通常の09（テーブル）
-  const table = document.createElement("table");
-  table.innerHTML = `
-    <thead>
-      <tr>
-        <th>項目</th>
-        <th>推奨</th>
-        <th>理由</th>
-      </tr>
-    </thead>
-    <tbody>
-      ${(secData.table||[]).map(r=>`
-        <tr>
-          <td class="font-semibold">${r.item}</td>
-          <td>${r.guide}</td>
-          <td>${r.reason}</td>
-        </tr>
-      `).join("")}
-    </tbody>`;
-  sec.appendChild(table);
+  // ✅ 通常の09（カード型レイアウト）
+  const cardList = document.createElement("div");
+  cardList.className = "gate-card-list";
+  cardList.innerHTML = (secData.table || []).map(r => `
+    <div class="gate-spec-card">
+      <div>
+        <div class="card-label">項目: ${r.item}</div>
+        <span class="card-value">${r.guide}</span>
+      </div>
+      <div class="card-reason-box">
+        ${r.reason}
+      </div>
+    </div>
+  `).join("");
+  sec.appendChild(cardList);
 
+  // ✅ 既存の注釈表示ロジックを維持
   if (secData.note) {
     const note = document.createElement("div");
     note.className = "muted mt-2";
