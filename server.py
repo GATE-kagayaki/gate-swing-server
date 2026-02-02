@@ -1756,36 +1756,48 @@ def build_paid_09(raw: Dict[str, Any], user_inputs: Dict[str, Any]) -> Dict[str,
     gender = _norm_gender(user_inputs.get("gender"))
     power_idx = calc_power_idx(raw)
 
-    # 3D解析の生データ（リスト）を取得
-    # ※各リストが空の場合のゼロ除算・エラーを回避
-    heads_list = raw.get("heads", [])
-    knees_list = raw.get("knees", [])
-    xf_list = raw.get("x_factors", [])
-    wr_list = raw.get("wrists", [])
+    # --- 2. 3D解析データの取得（変数名を heads, knees 等に統一） ---
+    # ここで「heads」という箱を確実に作ることで、後の計算での NameError を防ぎます
+    heads = raw.get("heads") if isinstance(raw.get("heads"), list) else []
+    knees = raw.get("knees") if isinstance(raw.get("knees"), list) else []
+    x_factors = raw.get("x_factors") if isinstance(raw.get("x_factors"), list) else []
+    wrists = raw.get("wrists") if isinstance(raw.get("wrists"), list) else []
 
-    # --- 2. 判定用統計値の算出 ---
-    # 軸の安定性（頭部と膝の平均移動距離 %）
-    stability_val = (sum(heads_list)/len(heads_list) + sum(knees_list)/len(knees_list)) / 2 if (heads_list and knees_list) else 10.0
+    # --- 3. 判定用統計値の算出（定義したばかりの heads 等をそのまま使う） ---
+    # 軸の安定性（%）
+    stability_val = (sum(heads)/len(heads) + sum(knees)/len(knees)) / 2 if (heads and knees) else 10.0
+    
     # 最大捻転差（X-Factor）
-    avg_xfactor = sum(xf_list) / len(xf_list) if xf_list else 0
-    # 手首の最大タメ角（180 - 内角）
-    max_wrist = max(wr_list) if wr_list else 0
+    avg_xfactor = sum(x_factors) / len(x_factors) if x_factors else 0
+    
+    # 手首の最大タメ角
+    max_wrist = max(wrists) if wrists else 0
 
     rows: List[Dict[str, str]] = []
-
-    # --- 1. 重量（HS × 3D安定性解析） ---
+    
+    # --- 1. 重量（HS × 性別 × 3D安定性解析） ---
     # 事前に計算しておく：頭部と膝の3D移動量の平均（%）
     # ※理想は 5.0% 以下。数値が大きいほど「不安定」と判定。
     stability_val = (sum(heads)/len(heads) + sum(knees)/len(knees)) / 2 if (heads and knees) else 10.0
 
     if hs is not None:
-        # 基本重量の決定
-        if hs < 35: weight = "40〜50g"
-        elif hs < 40: weight = "50g前後"
-        elif hs < 45: weight = "50〜60g"
-        else: weight = "60〜70g"
+        # 基本重量の決定（性別を考慮して分岐）
+        if gender == "female":
+            # 女性モデルの基準：男性より約10g程度軽量な設定を基準とする
+            if hs < 35: weight = "30〜40g"
+            elif hs < 40: weight = "40〜50g"
+            elif hs < 45: weight = "50g前後"
+            else: weight = "60g前後"
+        else:
+            # 男性モデルの基準（既存ロジック）
+            if hs < 35: weight = "40〜50g"
+            elif hs < 40: weight = "50g前後"
+            elif hs < 45: weight = "50〜60g"
+            else: weight = "60〜70g"
         
         reason = f"● ヘッドスピード {hs:.1f}m/s の基準重量\n"
+        if gender == "female":
+            reason += "● 女性の身体特性（平均的な握力・腕力）を考慮し、振り抜きやすさを優先\n"
         
         # 【プロ仕様の修正点】
         # 従来の「指数（idx）」ではなく、実際の「3D移動量（%）」で判定。
