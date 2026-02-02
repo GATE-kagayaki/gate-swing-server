@@ -74,10 +74,6 @@ def callback():
         return 'Internal Error', 500 # 400から500に変えて、サーバー側のミスだと明示します
     return 'OK'
 
-@handler.add(MessageEvent, message=TextMessage)
-def handle_message(event):
-    # LINEからメッセージが来たら、下の handle_text_message を実行する
-    handle_text_message(event)
 
 db = firestore.Client()
 users_ref = db.collection("users")
@@ -2440,6 +2436,7 @@ def handle_video(event: MessageEvent):
 @handler.add(MessageEvent, message=TextMessage)
 def handle_text_message(event):
     user_id = event.source.user_id
+    text = event.message.text.strip()
 
     import logging
     from google.cloud import firestore
