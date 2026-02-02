@@ -2443,6 +2443,37 @@ def handle_text_message(event):
 
     import logging
     from google.cloud import firestore
+    # 1. まずメッセージの内容を取得
+    text = event.message.text
+
+    # 2. 解約・キャンセル判定（最優先）
+    if text in ["解約", "キャンセル", "サブスク解除"]:
+        db = firestore.Client()
+        # Firestoreからユーザー情報を取得
+        user_doc = db.collection("users").document(user_id).get()
+        
+        stripe_id = None
+        if user_doc.exists:
+            stripe_id = user_doc.to_dict().get("stripe_customer_id")
+
+        if stripe_id:
+            # 外部で定義した get_cancel_portal_url を呼び出し
+            url = get_cancel_portal_url(stripe_id)
+            if url:
+                reply = (
+                    "解約・プラン管理のお手続きですね。\n"
+                    "以下の専用ページからお手続きいただけます。\n\n"
+                    f"{url}\n\n"
+                    "※有効期限があるため、お早めにアクセスしてください。"
+                )
+            else:
+                reply = "URLの発行に失敗しました。お手数ですが事務局までご連絡ください。"
+        else:
+            reply = "決済情報が見つかりませんでした。お手数ですが事務局までご連絡ください。"
+
+        # LINEへ返信して処理を終了
+        line_bot_api.reply_message(event.reply_token, TextSendMessage(text=reply))
+        return  # これより下の解析ロジックなどは一切実行させない
 
     # ===== 正規化（全角スペース & 全角数字）=====
     raw_text = event.message.text or ""
