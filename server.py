@@ -514,16 +514,15 @@ def create_cloud_task(report_id: str, user_id: str, message_id: str) -> str:
 # ==================================================
 def analyze_swing_with_mediapipe(video_path: str) -> Dict[str, Any]:
     import os
-    # ★必ず mediapipe import より前
+    os.environ["MP_DEVICE"] = "cpu"
     os.environ["MEDIAPIPE_DISABLE_GPU"] = "1"
+    os.environ["EGL_PLATFORM"] = "surfaceless"
 
     import cv2
     import mediapipe as mp
     import math
     from typing import List, Dict, Any
 
-    # Cloud Run 等のGPU非搭載環境でEGLエラー(0x3008)が出るのを防ぐため、CPUを強制指定します。
-    os.environ['MP_DEVICE'] = 'cpu'
 
     mp_pose = mp.solutions.pose
     cap = cv2.VideoCapture(video_path)
@@ -566,7 +565,7 @@ def analyze_swing_with_mediapipe(video_path: str) -> Dict[str, Any]:
     # model_complexity=1 はCPU環境で速度と精度のバランスが最も良い設定です。
     with mp_pose.Pose(
         static_image_mode=False,
-        model_complexity=1,
+        model_complexity=0,
         enable_segmentation=False,
         min_detection_confidence=0.5,
         min_tracking_confidence=0.5,
