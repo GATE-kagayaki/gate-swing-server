@@ -2355,9 +2355,38 @@ def stripe_webhook():
         print(f"⚠️ Stripe webhook error: {e}")
         return "Error", 400
 
-    # 2) 必要なイベント以外は即OK
-    if event.get("type") != "checkout.session.completed":
-        return "OK", 200
+    # 2) イベント種別の取得（既存の22行目付近を書き換え）
+    event_type = event.get("type")
+
+    # --- 既存の購入完了ロジック ---
+    if event_type == "checkout.session.completed":
+        # ...（ここにお手元の既存コード 3)〜5) が入ります）...
+        # 最後に print("✅ duplicate event ignored") などがある箇所です
+
+    # --- ここからが「解約処理」の追加分です ---
+    elif event_type == "customer.subscription.deleted":
+        try:
+            subscription = event["data"]["object"]
+            customer_id = subscription.get("customer")
+            
+            # stripe_customer_id をキーにユーザーを特定して free に更新
+            users_ref = db.collection("users")
+            docs = users_ref.where("stripe_customer_id", "==", customer_id).limit(1).get()
+            
+            for doc in docs:
+                doc.reference.update({
+                    "status": "free",
+                    "updated_at": firestore.SERVER_TIMESTAMP
+                })
+                print(f"✅ Subscription cancelled for customer: {customer_id}")
+
+        except Exception as e:
+            print(f"❌ Deletion Error: {e}")
+            logging.error(traceback.format_exc())
+            return "Internal Error", 500
+    # --- 追加分ここまで ---
+
+    return "OK", 200
 
     session = event["data"]["object"]
     event_id = event.get("id")
