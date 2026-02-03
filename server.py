@@ -527,27 +527,26 @@ def analyze_swing_with_mediapipe(video_path: str) -> Dict[str, Any]:
     from typing import List, Dict, Any
 
 
-   mp_pose = mp.solutions.pose
+  # 530行目付近：ここから入れ替え
+    mp_pose = mp.solutions.pose
 
-    # --- ここから修正・上書き ---
-    # model_complexity=1 にすることで GPU への依存を切り離します
-    with mp_pose.Pose(
+    # model_complexity=1 に設定（CPUでの動作を安定させ、GPUエラーを防ぎます）
+    pose = mp_pose.Pose(
         static_image_mode=False,
-        model_complexity=1,       # 2はGPUが必須になるため、必ず 1 か 0 にします
+        model_complexity=1,
         min_detection_confidence=0.5,
         min_tracking_confidence=0.5
-    ) as pose:
-        
-        cap = cv2.VideoCapture(video_path)
-        if not cap.isOpened():
-            raise RuntimeError("OpenCVがビデオを読み込めませんでした。")
+    )
 
-        # --- ここからループ処理（既存のコードをこの中にインデントして入れる） ---
-        while cap.isOpened():
-            ret, frame = cap.read()
-            if not ret: break
-            
-            # 処理を続ける...
+    cap = cv2.VideoCapture(video_path)
+    if not cap.isOpened():
+        raise RuntimeError("OpenCVがビデオを読み込めませんでした。")
+
+    total_frames = 0
+    valid_frames = 0
+    start_frame = None
+    end_frame = None
+    # ここから下の「while cap.isOpened():」などは、以前のインデントのまま動くはずです
 
      
 
