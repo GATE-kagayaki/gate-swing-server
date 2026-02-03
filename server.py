@@ -527,21 +527,27 @@ def analyze_swing_with_mediapipe(video_path: str) -> Dict[str, Any]:
     from typing import List, Dict, Any
 
 
-    mp_pose = mp.solutions.pose
+   mp_pose = mp.solutions.pose
 
-    # --- ここを確実に追加・修正 ---
-    # model_complexity=1 にすることで、CPUでの負荷を抑え、エラーを防ぎます
-    pose = mp_pose.Pose(
+    # --- ここから修正・上書き ---
+    # model_complexity=1 にすることで GPU への依存を切り離します
+    with mp_pose.Pose(
         static_image_mode=False,
-        model_complexity=1,        # 2にすると重すぎてクラッシュします
+        model_complexity=1,       # 2はGPUが必須になるため、必ず 1 か 0 にします
         min_detection_confidence=0.5,
         min_tracking_confidence=0.5
-    )
-    # --------------------------
+    ) as pose:
+        
+        cap = cv2.VideoCapture(video_path)
+        if not cap.isOpened():
+            raise RuntimeError("OpenCVがビデオを読み込めませんでした。")
 
-    cap = cv2.VideoCapture(video_path)
-    if not cap.isOpened():
-        raise RuntimeError("OpenCVがビデオを読み込めませんでした。")
+        # --- ここからループ処理（既存のコードをこの中にインデントして入れる） ---
+        while cap.isOpened():
+            ret, frame = cap.read()
+            if not ret: break
+            
+            # 処理を続ける...
 
      
 
