@@ -872,12 +872,20 @@ def build_paid_02_shoulder(raw: Dict[str, Any], seed: str) -> Dict[str, Any]:
     pro_lines.append("このスイングでは、主因は肩と腰の役割分担です。")
 
     pro_comment = " ".join(pro_lines[:3])
+   
+    bench = [
+        _bench_line("肩回転(°)", "°", "max", _range_ideal(85, 110, "°"), current=float(sh["max"])),
+        _bench_line("肩回転の安定(°)", "°", "σ", _le_ideal(10.0, "°"), current=float(sh["std"])),
+        _bench_line("捻転差(°)", "°", "max", _ge_ideal(35.0, "°"), current=float(xf["max"])),
+    ]
+
 
     return {
         "title": "02. Shoulder Rotation（肩回転）",
         # 【整合性】_value_line の形式を維持しつつ、数値を3D実数に更新
         "value": _value_line(sh["max"], sh["mean"], sh["std"], conf),
         "tags": j["tags"],
+        "bench": bench,
         "good": good[:3],
         "bad": bad[:3],
         "pro_comment": pro_comment,
@@ -972,11 +980,18 @@ def build_paid_03_hip(raw: Dict[str, Any], seed: str) -> Dict[str, Any]:
     pro_lines.append("このスイングでは、主因は下半身主導のタイミングです。")
 
     pro_comment = " ".join(pro_lines[:3])
+    
+    bench = [
+        _bench_line("腰回転(°)", "°", "max", _range_ideal(35, 55, "°"), current=float(hip["max"])),
+        _bench_line("腰回転の安定(°)", "°", "σ", _le_ideal(10.0, "°"), current=float(hip["std"])),
+        _bench_line("捻転差(°)", "°", "max", _ge_ideal(35.0, "°"), current=float(xf["max"])),
+    ]
 
     return {
         "title": "03. Hip Rotation（腰回転）",
         "value": _value_line(hip["max"], hip["mean"], hip["std"], conf),
         "tags": j["tags"],
+        "bench": bench,
         "good": good[:3],
         "bad": bad[:3],
         "pro_comment": pro_comment,
@@ -1066,12 +1081,19 @@ def build_paid_04_wrist(raw: Dict[str, Any], seed: str) -> Dict[str, Any]:
         pro_lines.append("手首の挙動が安定しているため、シャフトのしなりを一定に使いこなせる状態です。")
 
     pro_comment = " ".join(pro_lines)
+    bench = [
+        _bench_line("手首コック(°)", "°", "mean", _range_ideal(45, 75, "°"), current=float(w_mean)),
+        _bench_line("手首コックの上限(°)", "°", "max", _ge_ideal(80.0, "°"), current=float(w_max)),
+        _bench_line("手首の再現性(°)", "°", "σ", _le_ideal(12.0, "°"), current=float(w_std)),
+    ]
+
 
     return {
         "title": "04. Wrist Cock（手首コック）",
         # 数値表記（value）の構造も維持
         "value": f"Max Cock {w_max:.1f}° / Mean {w_mean:.1f}° (σ {w_std:.1f})",
         "tags": j["tags"],
+        "bench": bench,
         "good": good[:3],
         "bad": bad[:3],
         "pro_comment": pro_comment,
@@ -1145,12 +1167,20 @@ def build_paid_05_head(raw: Dict[str, Any], seed: str) -> Dict[str, Any]:
     pro_lines.append("このスイングでは、主因は上半身の軸管理です。")
 
     pro_comment = " ".join(pro_lines[:3])
+       
+    bench = [
+        _bench_line("頭部ブレ(%)", "%", "mean", _le_ideal(5.0, "%"), current=float(h["mean"])),
+        _bench_line("頭部ブレの再現性(%)", "%", "σ", _le_ideal(1.5, "%"), current=float(h["std"])),
+        _bench_line("頭部ブレの許容(%)", "%", "mean", _le_ideal(3.5, "%"), current=float(h["mean"])),
+    ]
+
 
     return {
         "title": "05. Head Stability（頭部）",
         # 【整合性】単位に % を追加
         "value": f'max {h["max"]:.1f} / mean {h["mean"]:.1f} / σ {h["std"]:.1f} (%) （conf {conf:.3f}）',
         "tags": j["tags"],
+        "bench": bench,
         "good": good[:3],
         "bad": bad[:3],
         "pro_comment": pro_comment,
@@ -1222,12 +1252,18 @@ def build_paid_06_knee(raw: Dict[str, Any], seed: str) -> Dict[str, Any]:
     pro_lines.append("このスイングでは、主因は下半身の安定性です。")
 
     pro_comment = " ".join(pro_lines[:3])
+    bench = [
+        _bench_line("膝ブレ(%)", "%", "mean", _le_ideal(8.0, "%"), current=float(k["mean"])),
+        _bench_line("膝ブレの再現性(%)", "%", "σ", _le_ideal(1.5, "%"), current=float(k["std"])),
+        _bench_line("膝ブレの理想(%)", "%", "mean", _le_ideal(4.5, "%"), current=float(k["mean"])),
+    ]
 
     return {
         "title": "06. Knee Stability（膝）",
         # 【整合性】単位に % を追加
         "value": f'max {k["max"]:.1f} / mean {k["mean"]:.1f} / σ {k["std"]:.1f} (%) （conf {conf:.3f}）',
         "tags": j["tags"],
+        "bench": bench,
         "good": good[:3],
         "bad": bad[:3],
         "pro_comment": pro_comment,
