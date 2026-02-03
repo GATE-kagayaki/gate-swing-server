@@ -731,33 +731,33 @@ def build_section_01(raw: Dict[str, Any]) -> Dict[str, Any]:
                 # 【修正】3D角度なので小数点第1位まで表示
                 "value": f'max {raw["shoulder"]["max"]:.1f} / mean {raw["shoulder"]["mean"]:.1f} / σ {raw["shoulder"]["std"]:.1f}',
                 "description": "3D空間での上半身の回旋量です。",
-                "guide": "目安: 85°〜105°",
+                "guide": "maxで85°〜105°",
             },
             {
                 "name": "腰回転（°）",
                 "value": f'max {raw["hip"]["max"]:.1f} / mean {raw["hip"]["mean"]:.1f} / σ {raw["hip"]["std"]:.1f}',
                 "description": "3D空間での下半身の回旋量です。",
-                "guide": "目安: 35°〜50°",
+                "guide": "maxで35°〜50°",
             },
             {
                 "name": "手首コック（°）",
                 # 【重要】バックエンドで反転済みなので、そのまま表示
                 "value": f'max {raw["wrist"]["max"]:.1f} / mean {raw["wrist"]["mean"]:.1f} / σ {raw["wrist"]["std"]:.1f}',
                 "description": "手首のタメの角度（3D）です。",
-                "guide": "目安: 45°〜75°",
+                "guide": "maxで45°〜75°",
             },
             {
                 "name": "頭部ブレ（%）",
                 # 【重要】アドレス位置からの移動距離（％）
                 "value": f'max {raw["head"]["max"]:.1f} / mean {raw["head"]["mean"]:.1f} / σ {raw["head"]["std"]:.1f}',
                 "description": "アドレス時からの頭部の移動量です（画面幅比）。",
-                "guide": "5.0%以下が理想",
+                "guide": "meanで5.0%以下",
             },
             {
                 "name": "膝ブレ（%）",
                 "value": f'max {raw["knee"]["max"]:.1f} / mean {raw["knee"]["mean"]:.1f} / σ {raw["knee"]["std"]:.1f}',
                 "description": "アドレス時からの膝の移動量です（画面幅比）。",
-                "guide": "8.0%以下が理想",
+                "guide": "meanで8.0%以下",
             },
         ],
     }
