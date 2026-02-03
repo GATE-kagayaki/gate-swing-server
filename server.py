@@ -2540,6 +2540,13 @@ def handle_text_message(event):
         line_bot_api.reply_message(event.reply_token, TextSendMessage(text=reply))
         return  # ここで処理を完全に終了させる
 
+    # 二重処理防止（最優先）
+    event_id = f"{event.source.user_id}:{event.reply_token}"
+    ref = db.collection("processed_events").document(event_id)
+    if ref.get().exists:
+        return
+    ref.set({"ts": datetime.now(timezone.utc).isoformat()})
+
     # 3. お問い合わせ判定
     if "お問い合わせ" in text:
         reply = (
@@ -2549,7 +2556,8 @@ def handle_text_message(event):
             "しばらくお待ちくださいませ。"
         )
         line_bot_api.reply_message(event.reply_token, TextSendMessage(text=reply))
-        return # ここで処理を完全に終了させる
+        return
+
 
     # ===== 正規化（全角スペース & 全角数字）=====
     raw_text = event.message.text or ""
