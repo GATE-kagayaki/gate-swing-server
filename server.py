@@ -532,6 +532,10 @@ def analyze_swing_with_mediapipe(video_path: str) -> Dict[str, Any]:
 
     total_frames = 0
     valid_frames = 0
+    start_frame = None
+    end_frame = None
+
+     
 
     shoulders: List[float] = []
     hips: List[float] = []
@@ -619,6 +623,8 @@ def analyze_swing_with_mediapipe(video_path: str) -> Dict[str, Any]:
                     if dx < 0.01 and dy < 0.01:
                         base_nose = curr_nose
                         base_lknee = curr_lknee
+                        start_frame = total_frames
+                        logging.warning("[DEBUG] START analyzing at frame=%d", start_frame)
                         is_analyzing = True
                 continue # ◀ 基準が決まるまで、これ以降の計算を絶対にさせない（重要！）
 
