@@ -1897,25 +1897,27 @@ def build_paid_09(raw: Dict[str, Any], user_inputs: Dict[str, Any]) -> Dict[str,
     else:
         kp, base_reason = "中", "● ニュートラルな挙動の中調子を基準"
 
-    # max_wrist（wrの最大）を「タメ角」として扱う前提。
-    # もし wr が「コック角」なら値域は 0〜180 になり得るので、閾値30°は妥当。
-    if miss == "right" and max_wrist < 30.0:
+    reason_lines = [
+        base_reason,
+        f"● タメ最大 {max_wrist:.1f}° / 平均 {wrist_cock:.1f}° / σ {wrist_std:.1f}"
+    ]
+
+    # 右ミス ×（タメ浅い or 深いが維持できない）→ 元へ逆転
+    if miss == "right" and tame_band in ("shallow", "unstable_deep"):
         kp = "元"
-        reason = (
-            f"● 右ミス傾向かつ、手首のタメ実測（{max_wrist:.1f}°）が浅い状態\n"
-            "● アーリーリリースによる振り遅れが主因と判定\n"
-            "● 手元がしなる『元調子』でタメ維持を補助"
-        )
+        reason_lines += [
+            "● 一瞬はタメを作れるが、平均が低くブレも大きい＝維持が不安定",
+            "● アーリーリリース寄りになりやすく、右回転が残りやすい",
+            "● 元調子でタメ維持を補助し、インパクトでフェースが戻る時間を作る",
+        ]
     elif miss == "right" and stability_val > 7.0:
         kp = "中"
-        reason = (
-            f"● 右ミスがあるが、軸ブレ実測（{stability_val:.1f}%）が大きく体幹が不安定\n"
-            "● 先端を走らせるより、挙動が安定する『中調子』で打点を整えるのが優先"
-        )
-    else:
-        reason = base_reason
+        reason_lines += [
+            f"● 軸ブレ {stability_val:.1f}% が大きく、先端を走らせると打点が散りやすい",
+            "● まず中調子で打点とフェース向きを安定させる",
+        ]
 
-    rows.append({"item": "キックポイント", "guide": kp, "reason": reason})
+    rows.append({"item": "キックポイント", "guide": kp, "reason": "\n".join(reason_lines)})
 
     # --- 6. トルク（安定性 × ミス補正） ---
     if stability_val >= 9.0:
