@@ -869,8 +869,30 @@ def judge_shoulder(raw: Dict[str, Any]) -> Dict[str, Any]:
         tags.append("捻転差過多")
     
     return {"main": main, "related": rel, "tags": tags}
-    
 
+def _range_ideal(lo: float, hi: float, unit: str) -> dict:
+    return {
+        "type": "range",
+        "min": float(lo),
+        "max": float(hi),
+        "unit": unit,
+    }
+
+def _le_ideal(th: float, unit: str) -> dict:
+    return {
+        "type": "le",
+        "value": float(th),
+        "unit": unit,
+    }
+
+def _ge_ideal(th: float, unit: str) -> dict:
+    return {
+        "type": "ge",
+        "value": float(th),
+        "unit": unit,
+    }
+
+    
 def _bench_line(label: str, unit: str, stat: str, ideal: dict, *, current) -> dict:
     try:
         cur = float(current)
