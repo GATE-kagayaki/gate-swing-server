@@ -2712,8 +2712,13 @@ def handle_text_message(event):
             "順次スタッフが確認し、回答させていただきます。\n\n"
             "しばらくお待ちくださいませ。"
         )
-         safe_line_reply(event.reply_token, reply, user_id=user_id, msgid=str(event.message.id))
-         return
+        safe_line_reply(
+            event.reply_token,
+            reply,
+            user_id=user_id,
+            msgid=str(event.message.id)
+        )
+        return
 
 
     # ===== 正規化（全角スペース & 全角数字）=====
