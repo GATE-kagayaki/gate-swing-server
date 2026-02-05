@@ -539,14 +539,6 @@ def analyze_swing_with_mediapipe(video_path: str) -> Dict[str, Any]:
   # 530行目付近：ここから入れ替え
     mp_pose = mp.solutions.pose
 
-    # model_complexity=1 に設定（CPUでの動作を安定させ、GPUエラーを防ぎます）
-    pose = mp_pose.Pose(
-        static_image_mode=False,
-        model_complexity=1,
-        min_detection_confidence=0.5,
-        min_tracking_confidence=0.5
-    )
-
     cap = cv2.VideoCapture(video_path)
     if not cap.isOpened():
         raise RuntimeError("OpenCVがビデオを読み込めませんでした。")
