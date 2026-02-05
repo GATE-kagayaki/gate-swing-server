@@ -652,8 +652,7 @@ def analyze_swing_with_mediapipe(video_path: str) -> Dict[str, Any]:
 
             # --- C. データ収集（すべて IF の中に入っていることを確認） ---
             if is_analyzing and not swing_ended:
-                valid_frames += 1 
-
+           
                 # 1. インデックス定義（これらが無いと別の NameError になります）
                 LS = mp_pose.PoseLandmark.LEFT_SHOULDER.value
                 RS = mp_pose.PoseLandmark.RIGHT_SHOULDER.value
