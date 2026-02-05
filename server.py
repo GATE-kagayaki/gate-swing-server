@@ -2702,8 +2702,11 @@ def handle_text_message(event):
         return
     ref.set({"ts": datetime.now(timezone.utc).isoformat()})
 
+    
     # 3. お問い合わせ判定
     if "お問い合わせ" in text:
+        print(f"[SEND] inquiry msgid={event.message.id} reply={event.reply_token}", flush=True)
+        
         reply = (
             "お問い合わせありがとうございます！ GATE サポート担当です。\n\n"
             "ゴルフスイング分析のご依頼や、サービスに関するご質問はこのままメッセージをお送りください。 "
