@@ -66,15 +66,25 @@ def get_stripe_secrets():
 def callback():
     signature = request.headers.get('X-Line-Signature')
     body = request.get_data(as_text=True)
+
+    # ★ここから追加（events が何個入ってるか確認）
+    import json
+    payload = json.loads(body)
+    logging.info("LINE events count=%d types=%s",
+                 len(payload.get("events", [])),
+                 [e.get("type") for e in payload.get("events", [])])
+    logging.info("LINE event ids=%s",
+                 [e.get("webhookEventId") or e.get("message", {}).get("id") for e in payload.get("events", [])])
+    # ★ここまで追加
+
     try:
-        # ここで処理を実行します
         handler.handle(body, signature)
     except Exception as e:
-        # エラーが起きたら、ログに詳しく書き出すようにします！
         print(f"!!! Webhook Error !!!: {e}")
         logging.error(traceback.format_exc())
-        return 'Internal Error', 500 # 400から500に変えて、サーバー側のミスだと明示します
+        return 'Internal Error', 500
     return 'OK'
+
 
 
 db = firestore.Client()
