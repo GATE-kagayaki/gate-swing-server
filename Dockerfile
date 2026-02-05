@@ -1,6 +1,8 @@
 FROM python:3.10-slim-bookworm
 
 ENV DEBIAN_FRONTEND=noninteractive
+ENV MEDIAPIPE_DISABLE_GPU=1
+
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
     ffmpeg \
