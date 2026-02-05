@@ -2489,6 +2489,9 @@ def stripe_webhook():
 @handler.add(MessageEvent, message=VideoMessage)
 def handle_video(event: MessageEvent):
     user_id = event.source.user_id
+    # ここに追加
+    db = firestore.Client()
+    users_ref = db.collection("users")
     msg = event.message
     report_id = f"{user_id}_{msg.id}"
 
@@ -2567,6 +2570,10 @@ def handle_text_message(event):
     from google.cloud import firestore
     # 1. まずメッセージの内容を取得（空白を削除して判定を正確にする）
     text = event.message.text.strip()
+
+    # ここに追加
+    db = firestore.Client()
+    users_ref = db.collection("users")
 
     # 2. 解約・キャンセル判定（最優先）
     if text in ["解約", "キャンセル", "サブスク解除"]:
