@@ -824,6 +824,21 @@ def judge_shoulder(raw: Dict[str, Any]) -> Dict[str, Any]:
         tags.append("捻転差過多")
     
     return {"main": main, "related": rel, "tags": tags}
+    
+
+def _bench_line(label: str, unit: str, stat: str, ideal: dict, *, current) -> dict:
+    try:
+        cur = float(current)
+    except Exception:
+        cur = None
+
+    return {
+        "label": label,
+        "unit": unit,
+        "stat": stat,
+        "ideal": ideal,
+        "current": cur,
+    }
 
 
 def build_paid_02_shoulder(raw: Dict[str, Any], seed: str) -> Dict[str, Any]:
