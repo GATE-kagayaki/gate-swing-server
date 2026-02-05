@@ -681,12 +681,55 @@ def analyze_swing_with_mediapipe(video_path: str) -> Dict[str, Any]:
                 knees.append(float(kn))
                 x_factors.append(float(sh - abs(hip)))
     cap.release()
+    
+    # --- ヘルパー関数の定義 ---
+    def _safe_mean(xs):
+        return sum(xs) / len(xs) if xs else 0.0
 
+    def _safe_std(xs):
+        if not xs: return 0.0
+        m = _safe_mean(xs)
+        return math.sqrt(sum((x - m)**2 for x in xs) / len(xs))
 
-            
+    def _bench_line(val, base_val):
+        return float(val - base_val)
+
+    def dist_3d(p, base):
+        return math.sqrt(sum((a - b)**2 for a, b in zip(p, base)))
+
+    def pack(xs: List[float], nd: int = 2) -> Dict[str, float]:
+        if not xs:
+            return {"max": 0.0, "min": 0.0, "mean": 0.0, "std": 0.0}
+        return {
+            "max": round(float(max(xs)), nd),
+            "min": round(float(min(xs)), nd),
+            "mean": round(float(_safe_mean(xs)), nd),
+            "std": round(float(_safe_std(xs)), nd),
+        }
+
+    # --- 解析結果のバリデーション ---
     if total_frames < 10 or valid_frames < 5:
         raise RuntimeError("解析に必要なフレーム数が不足しています。")
 
+    # --- データの集計・計算 ---
+    conf = float(valid_frames) / float(total_frames)
+
+    # (ここに必要な計算ロジックが入ります)
+
+    return {
+        "frame_count": int(total_frames),
+        "valid_frames": int(valid_frames),
+        "confidence": round(conf, 3),
+        "shoulder": pack(shoulders, 2),
+        "hip": pack(hips, 2),
+        "wrist": pack(wrists, 2),
+        "head": pack(heads, 4),
+        "knee": pack(knees, 4),
+        "x_factor": pack(x_factors, 2),
+        "snaps": snaps
+    }
+
+            
     conf = float(valid_frames) / float(total_frames)
 
     def _safe_mean(xs):
