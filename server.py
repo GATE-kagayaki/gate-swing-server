@@ -2573,11 +2573,9 @@ def handle_text_message(event):
 
     # ここに追加
     db = firestore.Client()
-    users_ref = db.collection("users")
-
+    
     # 2. 解約・キャンセル判定（最優先）
     if text in ["解約", "キャンセル", "サブスク解除"]:
-        db = firestore.Client()
         # Firestoreからユーザー情報を取得
         user_doc = db.collection("users").document(user_id).get()
         
