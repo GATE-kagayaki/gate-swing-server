@@ -691,8 +691,9 @@ def analyze_swing_with_mediapipe(video_path: str) -> Dict[str, Any]:
         m = _safe_mean(xs)
         return math.sqrt(sum((x - m)**2 for x in xs) / len(xs))
 
-    def _bench_line(val, base_val):
+    def _bench_delta(val, base_val):
         return float(val - base_val)
+
 
     def dist_3d(p, base):
         return math.sqrt(sum((a - b)**2 for a, b in zip(p, base)))
@@ -729,8 +730,6 @@ def analyze_swing_with_mediapipe(video_path: str) -> Dict[str, Any]:
         "snaps": snaps
     }
 
-            
-    conf = float(valid_frames) / float(total_frames)
 
     def _safe_mean(xs):
         return sum(xs) / len(xs) if xs else 0.0
