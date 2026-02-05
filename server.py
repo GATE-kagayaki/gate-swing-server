@@ -1,7 +1,6 @@
 import os
 os.environ["MP_DEVICE"] = "cpu"
 os.environ["MEDIAPIPE_DISABLE_GPU"] = "1"
-os.environ["EGL_PLATFORM"] = "surfaceless"
 import json
 import math
 import shutil
@@ -519,7 +518,6 @@ def analyze_swing_with_mediapipe(video_path: str) -> Dict[str, Any]:
     import os
     os.environ["MP_DEVICE"] = "cpu"
     os.environ["MEDIAPIPE_DISABLE_GPU"] = "1"
-    os.environ["EGL_PLATFORM"] = "surfaceless"
 
     import cv2
     import mediapipe as mp
