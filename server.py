@@ -64,26 +64,30 @@ def get_stripe_secrets():
 
 @app.route("/webhook", methods=['POST'])
 def callback():
+    import json, traceback
+    from flask import request
+
     signature = request.headers.get('X-Line-Signature')
     body = request.get_data(as_text=True)
 
-    # ★ここから追加（events が何個入ってるか確認）
-    import json
-    payload = json.loads(body)
-    logging.info("LINE events count=%d types=%s",
-                 len(payload.get("events", [])),
-                 [e.get("type") for e in payload.get("events", [])])
-    logging.info("LINE event ids=%s",
-                 [e.get("webhookEventId") or e.get("message", {}).get("id") for e in payload.get("events", [])])
-    # ★ここまで追加
+    # ★ここ：printで必ず出す
+    try:
+        payload = json.loads(body)
+        events = payload.get("events", [])
+        print(f"[LINE] events_count={len(events)} types={[e.get('type') for e in events]}", flush=True)
+        print(f"[LINE] event_ids={[e.get('webhookEventId') or (e.get('message') or {}).get('id') for e in events]}", flush=True)
+    except Exception as e:
+        print(f"[LINE] payload parse error: {e}", flush=True)
 
     try:
         handler.handle(body, signature)
     except Exception as e:
-        print(f"!!! Webhook Error !!!: {e}")
-        logging.error(traceback.format_exc())
+        print(f"!!! Webhook Error !!!: {e}", flush=True)
+        print(traceback.format_exc(), flush=True)
         return 'Internal Error', 500
+
     return 'OK'
+
 
 
 
