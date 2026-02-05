@@ -265,29 +265,28 @@ def firestore_safe_update(report_id: str, patch: Dict[str, Any]) -> None:
         print(traceback.format_exc())
 
 
-def safe_line_reply(reply_token: str, text: str, user_id: str = None) -> None:
+def safe_line_reply(reply_token: str, text: str, user_id: str = None, msgid: str = None) -> None:
     try:
-        # まずは通常の「返信（無料）」を試みる
+        print(f"[SEND] reply msgid={msgid} reply={reply_token} text_head={text[:12]!r}", flush=True)
         line_bot_api.reply_message(reply_token, TextSendMessage(text=text))
     except LineBotApiError as e:
-        # 返信期限(Invalid reply token)が切れた場合、user_idがあればプッシュ送信で救済
-        if e.status_code == 400 and user_id:
-            print(f"[INFO] ReplyToken切れのため、PushMessageで代替送信します: {user_id}")
+        print(f"[ERR ] reply failed msgid={msgid} status={getattr(e,'status_code',None)} text_head={text[:12]!r}", flush=True)
+
+        # Invalid reply token のときだけ push で救済
+        if getattr(e, "status_code", None) == 400 and user_id:
+            print(f"[SEND] fallback-push msgid={msgid} user={user_id} text_head={text[:12]!r}", flush=True)
             safe_line_push(user_id, text, force=True)
-        else:
-            print(f"[ERROR] LINE返信エラー: {traceback.format_exc()}")
+
 
 def safe_line_push(user_id: str, text: str, force: bool = False) -> None:
-    # force=True でない限り、上限対策として送信をスキップ（今まで通り）
     if not force:
-        print("[INFO] LINE push skipped (上限対策):", user_id, text[:50])
+        print(f"[INFO] push skipped user={user_id} text_head={text[:12]!r}", flush=True)
         return
-
     try:
+        print(f"[SEND] push user={user_id} text_head={text[:12]!r}", flush=True)
         line_bot_api.push_message(user_id, TextSendMessage(text=text))
-        print(f"[LOG] Push送信成功: {user_id}")
     except Exception:
-        print(f"[ERROR] Push送信失敗: {traceback.format_exc()}")
+        print(f"[ERROR] push failed: {traceback.format_exc()}", flush=True)
 
 
 
@@ -2713,8 +2712,8 @@ def handle_text_message(event):
             "順次スタッフが確認し、回答させていただきます。\n\n"
             "しばらくお待ちくださいませ。"
         )
-        line_bot_api.reply_message(event.reply_token, TextSendMessage(text=reply))
-        return
+         safe_line_reply(event.reply_token, reply, user_id=user_id, msgid=str(event.message.id))
+         return
 
 
     # ===== 正規化（全角スペース & 全角数字）=====
