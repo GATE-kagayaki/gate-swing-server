@@ -2131,8 +2131,8 @@ def build_paid_09(raw: Dict[str, Any], user_inputs: Dict[str, Any]) -> Dict[str,
         final_desc = "手元側のしなりにより『タメの間』を自動生成し、アーリーリリースを物理的に防いで飛距離を伸ばすセッティングです。"
 
     rows.append({
-        "item": "最適シャフト特性",
-        "guide": "解析に基づく推奨解", # 固定ラベルにして矛盾を回避
+        "item": "総評",
+        "guide": "最適シャフトスペック",
         "reason": f"● {final_desc}\n● 推奨詳細：【 重量{weight} / {flex} / {kp}調子 / トルク{tq} 】"
     })
 
