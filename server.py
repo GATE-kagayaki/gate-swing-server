@@ -2702,23 +2702,11 @@ def handle_text_message(event):
     ref.set({"ts": datetime.now(timezone.utc).isoformat()})
 
     
-    # 3. お問い合わせ判定
-    if "お問い合わせ" in text:
-        print(f"[SEND] inquiry msgid={event.message.id} reply={event.reply_token}", flush=True)
-        
-        reply = (
-            "お問い合わせありがとうございます！ GATE サポート担当です。\n\n"
-            "ゴルフスイング分析のご依頼や、サービスに関するご質問はこのままメッセージをお送りください。 "
-            "順次スタッフが確認し、回答させていただきます。\n\n"
-            "しばらくお待ちくださいませ。"
-        )
-        safe_line_reply(
-            event.reply_token,
-            reply,
-            user_id=user_id,
-            msgid=str(event.message.id)
-        )
+    # 3. お問い合わせ判定（切り分け：サーバー返信を止める）
+    if text == "お問い合わせ":
+        print(f"[CUT] inquiry server reply suppressed msgid={event.message.id}", flush=True)
         return
+
 
 
     # ===== 正規化（全角スペース & 全角数字）=====
