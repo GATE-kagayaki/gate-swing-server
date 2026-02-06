@@ -2118,6 +2118,39 @@ def build_paid_09(raw: Dict[str, Any], user_inputs: Dict[str, Any]) -> Dict[str,
         reason = base_reason
 
     rows.append({"item": "トルク", "guide": tq, "reason": reason})
+    
+    # --- 7. 【新規追加】HS × 手首コック（mean）の2軸分析による最適スペック提案 ---
+    
+    # A. HSバンドの特定
+    if hs is not None:
+        hs_level = "low" if hs < 40 else ("mid" if hs <= 45 else "high")
+    else:
+        hs_level = infer_hs_band(power_idx) # パワー指数からの推論を流用
+
+    # B. コック（mean）バンドの特定
+    cock_level = "shallow" if wrist_cock < 75.0 else ("deep" if wrist_cock > 85.0 else "normal")
+
+    # C. 2軸マトリクスによる最適プロファイル判定
+    matrix_map = {
+        ("low", "shallow"):   ("先端加速・高弾道型", "少ないタメをシャフトの走りで補い、最大飛距離を引き出すスペック"),
+        ("low", "normal"):    ("全体しなり・軽量型", "振り抜きを邪魔せず、スムーズな加速を促すバランススペック"),
+        ("low", "deep"):      ("手元粘り・操作重視型", "深いタメを維持しつつ、インパクトで一気に解き放つ効率特化スペック"),
+        ("mid", "shallow"):   ("中先調子・高ミート型", "ヘッドが遅れずに戻り、打点のバラつきを最小限に抑えるスペック"),
+        ("mid", "normal"):    ("中調子・オールラウンド", "スイングのクセを消し、実戦での安定性を追求する王道スペック"),
+        ("mid", "deep"):      ("手元〜中・強弾道型", "タメによるエネルギーを逃さず、分厚いインパクトを実現するスペック"),
+        ("high", "shallow"):  ("全体高剛性・低スピン型", "自力の叩きに対してヘッドが暴れず、強い直進性を維持するスペック"),
+        ("high", "normal"):   ("元〜中調子・アスリート型", "コントロール性とパワーを両立した、叩ける信頼のスペック"),
+        ("high", "deep"):     ("低トルク・超安定型", "強烈なタメ（ラグ）による捻れを抑え込み、正確に叩き切るハイスペック"),
+    }
+
+    opt_name, opt_desc = matrix_map.get((hs_level, cock_level), ("要相談", "解析数値に基づき、個別フィッティングを推奨"))
+
+    # 最下行に2軸の結論を追加
+    rows.append({
+        "item": "最適シャフト特性",
+        "guide": opt_name,
+        "reason": f"● 解析数値（HS {hs if hs else '推測':.1f} / タメ {wrist_cock:.1f}°）に基づく結論\n● {opt_desc}"
+    })
 
     return {
         "title": "09. Shaft Fitting Guide（推奨）",
