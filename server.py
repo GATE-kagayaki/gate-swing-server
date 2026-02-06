@@ -1937,11 +1937,12 @@ def build_paid_09(raw: Dict[str, Any], user_inputs: Dict[str, Any]) -> Dict[str,
 
     logging.warning("[DEBUG] build_paid_09 START (Using aggregate raw data)")
 
-    # --- 1. 基礎データの取得と正規化（元のコードを完全維持） ---
+    # --- 1. 基礎データの取得と正規化（完全維持） ---
     hs = _to_float_or_none(user_inputs.get("head_speed"))
     miss = _norm_miss(user_inputs.get("miss_tendency"))
     gender = _norm_gender(user_inputs.get("gender"))
 
+    # 外部関数（KeyErrorガード）
     try:
         power_idx = int(calc_power_idx(raw))
     except Exception:
@@ -1954,8 +1955,9 @@ def build_paid_09(raw: Dict[str, Any], user_inputs: Dict[str, Any]) -> Dict[str,
         logging.warning("[DEBUG] calc_stability_idx failed; fallback")
         stability_idx = 10
 
-    # --- 2. 実測値の抽出（元のコードを完全維持） ---
+    # --- 2. 実測値（単数形キー）の抽出（完全維持） ---
     def _f(path: List[str], default: float) -> float:
+        """raw のネスト辞書から float を安全に取り出す"""
         cur: Any = raw
         try:
             for k in path:
@@ -1966,18 +1968,30 @@ def build_paid_09(raw: Dict[str, Any], user_inputs: Dict[str, Any]) -> Dict[str,
         except Exception:
             return default
 
+    # head/knee の %相当値
     h_mean = _f(["head", "mean"], 10.0)
     k_mean = _f(["knee", "mean"], 10.0)
     stability_val = (h_mean + k_mean) / 2.0  # %相当
+
     avg_xfactor = _f(["x_factor", "mean"], 0.0)
+
+    # wrist 実測値
     wrist_cock = _f(["wrist", "mean"], 0.0)
     max_wrist = _f(["wrist", "max"], wrist_cock)
     wrist_std = _f(["wrist", "std"], 0.0)
 
-    # --- 3. 判定バンド（元のロジック + 2軸用の判定を追加） ---
-    stab_band = "stable" if stability_val < 5.0 else ("normal" if stability_val < 7.0 else "unstable")
-    xf_band = "low" if avg_xfactor < 40.0 else ("mid" if avg_xfactor < 45.0 else "high")
-    
+    # --- 3. 判定バンド（元のロジック + 2軸用の判定を完全復旧） ---
+    def _band_stability(stability_val: float) -> str:
+        if stability_val < 5.0: return "stable"
+        if stability_val < 7.0: return "normal"
+        return "unstable"
+
+    def _band_xfactor(avg_xfactor: float) -> str:
+        if avg_xfactor < 40.0: return "low"
+        if avg_xfactor < 45.0: return "mid"
+        return "high"
+
+    # ユーザーコードの v2 判定ロジックを維持
     def _band_tame(max_wrist: float, mean_wrist: float, std_wrist: float) -> str:
         if max_wrist < 30.0:
             return "shallow"
@@ -1987,69 +2001,82 @@ def build_paid_09(raw: Dict[str, Any], user_inputs: Dict[str, Any]) -> Dict[str,
             return "unstable_deep"
         return "deep"
 
+    # バンド割り当て
+    stab_band = _band_stability(stability_val)
+    xf_band = _band_xfactor(avg_xfactor)
     tame_band = _band_tame(max_wrist, wrist_cock, wrist_std)
 
-    # 【追加】2軸分析用のレベル分け
+    # 【2軸分析用レベル判定】
     if hs is not None:
         hs_level = "low" if hs < 38 else ("mid" if hs <= 45 else "high")
     else:
         hs_level = "low" if power_idx < 12 else ("mid" if power_idx <= 18 else "high")
     
-    # 手首コック(mean)による分類
     cock_level = "shallow" if wrist_cock < 75.0 else ("deep" if wrist_cock > 85.0 else "normal")
+    cock_label = "浅め" if cock_level == "shallow" else ("深め" if cock_level == "deep" else "標準")
 
-    # --- 4. rows の作成（元のコードを維持しつつ、理由を強化） ---
+    # --- 4. rows の作成 ---
     rows: List[Dict[str, str]] = []
 
+    # 診断サマリ
     rows.append({
         "item": "診断サマリ",
         "guide": "今回の分析根拠",
         "reason": "\n".join([
             f"● 軸ブレ：{stability_val:.1f}%（{stab_band}）",
             f"● 捻転差：{avg_xfactor:.1f}°（{xf_band}）",
-            f"● タメ平均：{wrist_cock:.1f}°（{cock_level}）",
+            f"● タメ平均：{wrist_cock:.1f}°（{cock_label}）",
         ])
     })
 
-    # --- 重量 ---
+    # --- 4. 重量（指示通り2軸評価ロジックを実装） ---
     if hs is not None:
         if gender == "female":
             if hs < 35: weight = "30〜40g"
             elif hs < 40: weight = "40〜50g"
             elif hs < 45: weight = "50g前後"
             else: weight = "60g前後"
+            reason = f"● 2軸評価：HS {hs:.1f}m/s × タメ{cock_label} に対する適正重量を選定\n● 女性の身体特性を考慮し、振り抜きやすさを最優先"
         else:
             if hs < 35: weight = "40〜50g"
             elif hs < 40: weight = "50g前後"
             elif hs < 45: weight = "50〜60g"
             else: weight = "60〜70g"
+            reason = f"● 2軸評価：HS {hs:.1f}m/s × タメ{cock_label} の負荷に耐えうる基準重量"
 
-        reason = f"● HS {hs:.1f}m/s の基準重量\n"
-        if hs >= 40 and stability_val > 7.0:
-            weight = "60g前後"
-            reason += f"● 3D解析による軸ブレ実測（{stability_val:.1f}%）が大きいため、重量を増やして軌道を安定化"
+        # 【追加補正】タメが深く(deep)、かつ軸ブレがある場合はさらに重量で安定させる
+        if (hs >= 40 and stability_val > 7.0) or (cock_level == "deep" and stability_val > 5.0):
+            if "60g" not in weight: # 重複防止
+                weight = "60g前後"
+                reason += f"\n● 【補正】タメの深さ（{wrist_cock:.1f}°）と軸ブレ実測（{stability_val:.1f}%）を考慮し、重量を上げて挙動を安定化"
     else:
-        band = "low" if power_idx < 12 else ("mid" if power_idx <= 18 else "high")
-        weight = {"low": "40〜50g", "mid": "50〜60g", "high": "60〜70g"}[band]
-        reason = f"● パワー指数（{power_idx}）に基づく推奨重量"
+        weight = {"low": "40〜50g", "mid": "50〜60g", "high": "60〜70g"}[hs_level]
+        reason = f"● 2軸評価：パワー指数に基づく推奨重量（タメ{cock_label}を考慮）"
 
     rows.append({"item": "重量", "guide": weight, "reason": reason})
 
-    # --- フレックス ---
+    # --- 5. フレックス（指示通り2軸評価ロジックを実装） ---
     if hs is not None:
         flex_map = [(33, "L〜A"), (38, "A〜R"), (42, "R〜SR"), (46, "SR〜S"), (50, "S〜X")]
         flex = next((f for h, f in flex_map if hs < h), "X")
-        reason = f"● HS {hs:.1f}m/s に対してしなり戻りが適正な硬さ\n"
+        
+        # 理由付けに2軸を明記
+        reason = f"● 2軸評価：HS {hs:.1f}m/s × タメ{cock_label}({wrist_cock:.1f}°) に対する適正剛性"
+        
+        # 【2軸による補正】タメが深い(deep)場合は、HSが低くてもフレックスを硬くしてしなりすぎを防ぐ
         if avg_xfactor > 45.0 or cock_level == "deep":
-            flex = "一ランク硬め"
-            reason += f"● 平均捻転差（{avg_xfactor:.1f}°）や深いタメによる負荷を考慮"
+            if flex in ["L〜A", "A〜R", "R〜SR"]:
+                flex = "SR〜S"
+            else:
+                flex = "一ランク硬め"
+            reason += f"\n● 【補正】強い捻転差（{avg_xfactor:.1f}°）と深いタメによるシャフトへの高負荷を考慮"
     else:
-        flex = "R〜SR"
-        reason = f"● パワー指数（{power_idx}）に対する適正剛性"
+        flex = {"low": "A〜R", "mid": "R〜SR", "high": "SR〜S"}[hs_level]
+        reason = f"● 2軸評価：パワー指数に対する適正剛性（タメ{cock_label}を考慮）"
 
     rows.append({"item": "フレックス", "guide": flex, "reason": reason})
 
-    # --- キックポイント（逆転ロジック維持） ---
+    # --- 6. キックポイント（完全維持 + 詳細化） ---
     if miss == "right":
         kp, base_reason = "先〜中", "● 右ミスに対し、つかまりを助ける先調子系を基準"
     elif miss == "left":
@@ -2057,8 +2084,11 @@ def build_paid_09(raw: Dict[str, Any], user_inputs: Dict[str, Any]) -> Dict[str,
     else:
         kp, base_reason = "中", "● ニュートラルな挙動の中調子を基準"
 
-    reason_lines = [base_reason, f"● タメ最大 {max_wrist:.1f}° / 平均 {wrist_cock:.1f}°"]
-    
+    reason_lines = [
+        base_reason,
+        f"● タメ最大 {max_wrist:.1f}° / 平均 {wrist_cock:.1f}°"
+    ]
+
     if miss == "right" and (tame_band in ("shallow", "unstable_deep") or cock_level == "shallow"):
         kp = "元"
         reason_lines += [
@@ -2067,21 +2097,24 @@ def build_paid_09(raw: Dict[str, Any], user_inputs: Dict[str, Any]) -> Dict[str,
         ]
     elif miss == "right" and stability_val > 7.0:
         kp = "中"
-        reason_lines += [f"● 軸ブレ {stability_val:.1f}% が大きく、中調子で安定を優先"]
+        reason_lines += [
+            f"● 軸ブレ {stability_val:.1f}% が大きく、先端を走らせると打点が散りやすい",
+            "● まず中調子で打点とフェース向きを安定させる",
+        ]
 
     rows.append({"item": "キックポイント", "guide": kp, "reason": "\n".join(reason_lines)})
 
-    # --- トルク ---
+    # --- 7. トルク（完全維持） ---
     if stability_val >= 9.0:
-        tq, base_reason = "3.0〜4.0", f"● 軸ブレ実測（{stability_val:.1f}%）が大きいため低トルクで抑制"
+        tq, base_reason = "3.0〜4.0", f"● 軸ブレ実測（{stability_val:.1f}%）が大きいため、低トルクでねじれを抑制"
     elif stability_val >= 5.0:
         tq, base_reason = "3.5〜5.0", f"● 軸ブレ実測（{stability_val:.1f}%）に基づき標準帯を選択"
     else:
-        tq, base_reason = "4.5〜6.0", f"● 軸ブレ実測（{stability_val:.1f}%）が小さく、高トルクでも安定"
+        tq, base_reason = "4.5〜6.0", f"● 軸ブレ実測（{stability_val:.1f}%）が小さく、再現性を維持しやすい"
 
     if miss == "right":
         tq = "4.5〜5.5" if stability_val >= 5.0 else "5.5以上"
-        reason = base_reason + "\n● 右ミス補正：トルクを増やしてターンをサポート"
+        reason = base_reason + "\n● 右ミス補正：トルクを増やしてフェースターンをサポート"
     elif miss == "left":
         tq = "2.5〜3.5"
         reason = base_reason + "\n● 左ミス補正：トルクを絞り、つかまり過ぎを抑制"
@@ -2090,7 +2123,7 @@ def build_paid_09(raw: Dict[str, Any], user_inputs: Dict[str, Any]) -> Dict[str,
 
     rows.append({"item": "トルク", "guide": tq, "reason": reason})
 
-    # --- 5. 【追加】最適シャフト特性（2軸分析の集大成） ---
+    # --- 8. 【総括：2軸分析】最適シャフト特性 ---
     matrix_map = {
         ("low", "shallow"): ("先端加速・高弾道型", "少ないタメをシャフトの走りで補い、最大飛距離を引き出すスペック"),
         ("low", "normal"):  ("全体しなり・バランス型", "振り抜きを邪魔せず、リズムを安定させるスペック"),
@@ -2098,11 +2131,11 @@ def build_paid_09(raw: Dict[str, Any], user_inputs: Dict[str, Any]) -> Dict[str,
         ("mid", "shallow"): ("中先調子・弾き系", "ヘッドの戻りを助け、ミート率を安定させるスペック"),
         ("mid", "normal"):  ("中調子・オールラウンド", "スイングのクセを消し、実戦での安定性を追求するスペック"),
         ("mid", "deep"):    ("手元〜中・強弾道型", "強いタメを受け止め、分厚いインパクトを実現するスペック"),
-        ("high", "shallow"):("全体高剛性・低スピン型", "自力の叩きに対してヘッドが暴れず、直進性を維持するスペック"),
+        ("high", "shallow"):("全体高剛性・低スピン型", "強い叩きに対してヘッドが暴れず、直進性を維持するスペック"),
         ("high", "normal"): ("元〜中・パワー伝達型", "しっかりとした手元剛性で、パワーをダイレクトに伝えるスペック"),
         ("high", "deep"):   ("低トルク・元調子特化型", "強烈なラグ（タメ）を抑制し、ピンをデッドに狙うスペック"),
     }
-    opt_name, opt_desc = matrix_map.get((hs_level, cock_level), ("要相談", "解析数値に基づき個別提案"))
+    opt_name, opt_desc = matrix_map.get((hs_level, cock_level), ("要相談", "個別フィッティング推奨"))
 
     rows.append({
         "item": "最適シャフト特性",
