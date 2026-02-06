@@ -362,17 +362,16 @@ def _safe_std(xs: List[float]) -> float:
 # Premium判定（本番は決済と連携）
 # ==================================================
 import os
+import logging
 
 def is_premium_user(user_id: str) -> bool:
-    """
-    Firestore の users/{user_id} を参照して premium 判定を行う
-    ※ 強制プレミアムIDは通常 True、envスイッチで無効化可能
-    """
+    disable = os.environ.get("DISABLE_FORCE_PREMIUM")
+    in_force = user_id in FORCE_PREMIUM_USER_IDS
+    logging.warning("[PREMIUM] disable=%r in_force=%s user_id=%s", disable, in_force, user_id)
 
-    # ★ envスイッチ：1のときは強制プレミアムを無効化
-    if os.environ.get("DISABLE_FORCE_PREMIUM") != "1":
-        if user_id in FORCE_PREMIUM_USER_IDS:
-            return True
+    if disable != "1":
+        if in_force:
+            return Tru
 
     doc_ref = users_ref.document(user_id)
     doc = doc_ref.get()
