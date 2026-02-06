@@ -2632,6 +2632,28 @@ def handle_video(event: MessageEvent):
     msg = event.message
     report_id = f"{user_id}_{msg.id}"
 
+    # ===== users 取得 =====
+    user_ref = users_ref.document(user_id)
+    user_doc = user_ref.get()
+    user_data = user_doc.to_dict() if user_doc.exists else {}
+
+    # ===== 無料（月1回）チェック =====
+    is_premium = is_premium_user(user_id)
+    tickets = int(user_data.get("ticket_remaining", 0))
+
+    if (not is_premium) and tickets <= 0:
+        ok = reserve_free_monthly_if_available(user_id)
+        if not ok:
+            safe_line_reply(
+                event.reply_token,
+                "今月の無料解析（1回）はすでにご利用済みです。\n\n"
+                "引き続き解析をご希望の場合は、単発プランまたは回数券をご利用ください。",
+                user_id=user_id
+            )
+            return
+
+
+
     import logging
     logging.warning(
         "[DEBUG] handle_video HIT user_id=%s message_id=%s",
