@@ -363,15 +363,18 @@ def _safe_std(xs: List[float]) -> float:
 # ==================================================
 import os
 import logging
+from datetime import datetime, timezone
+from google.cloud import firestore
 
 def is_premium_user(user_id: str) -> bool:
     disable = os.environ.get("DISABLE_FORCE_PREMIUM")
     in_force = user_id in FORCE_PREMIUM_USER_IDS
     logging.warning("[PREMIUM] disable=%r in_force=%s user_id=%s", disable, in_force, user_id)
 
-    if disable != "1":
-        if in_force:
-            return Tru
+    # 強制プレミアム（ただし env=1 のときは無効化）
+    if disable != "1" and in_force:
+        logging.warning("[PREMIUM] FORCE premium applied (disable=%r)", disable)
+        return True
 
     doc_ref = users_ref.document(user_id)
     doc = doc_ref.get()
@@ -385,9 +388,17 @@ def is_premium_user(user_id: str) -> bool:
             "created_at": firestore.SERVER_TIMESTAMP,
             "updated_at": firestore.SERVER_TIMESTAMP,
         })
+        logging.warning("[PREMIUM] user not found -> created as free")
         return False
 
     data = doc.to_dict() or {}
+    logging.warning(
+        "[PREMIUM] plan=%r ticket_remaining=%r plan_expire_at=%r",
+        data.get("plan"),
+        data.get("ticket_remaining"),
+        data.get("plan_expire_at"),
+    )
+
     plan = data.get("plan", "free")
 
     # 単発/回数券
