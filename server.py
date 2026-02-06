@@ -1942,7 +1942,6 @@ def build_paid_09(raw: Dict[str, Any], user_inputs: Dict[str, Any]) -> Dict[str,
     miss = _norm_miss(user_inputs.get("miss_tendency"))
     gender = _norm_gender(user_inputs.get("gender"))
 
-    # 外部関数（KeyErrorガード）
     try:
         power_idx = int(calc_power_idx(raw))
     except Exception:
@@ -1980,7 +1979,7 @@ def build_paid_09(raw: Dict[str, Any], user_inputs: Dict[str, Any]) -> Dict[str,
     max_wrist = _f(["wrist", "max"], wrist_cock)
     wrist_std = _f(["wrist", "std"], 0.0)
 
-    # --- 3. 判定バンド（元のロジック + 2軸用の判定を完全復旧） ---
+    # --- 3. 判定バンド（元の全ロジックを完全復旧） ---
     def _band_stability(stability_val: float) -> str:
         if stability_val < 5.0: return "stable"
         if stability_val < 7.0: return "normal"
@@ -1991,7 +1990,6 @@ def build_paid_09(raw: Dict[str, Any], user_inputs: Dict[str, Any]) -> Dict[str,
         if avg_xfactor < 45.0: return "mid"
         return "high"
 
-    # ユーザーコードの v2 判定ロジックを維持
     def _band_tame(max_wrist: float, mean_wrist: float, std_wrist: float) -> str:
         if max_wrist < 30.0:
             return "shallow"
@@ -2001,7 +1999,7 @@ def build_paid_09(raw: Dict[str, Any], user_inputs: Dict[str, Any]) -> Dict[str,
             return "unstable_deep"
         return "deep"
 
-    # バンド割り当て
+    # 全てのバンドを同期
     stab_band = _band_stability(stability_val)
     xf_band = _band_xfactor(avg_xfactor)
     tame_band = _band_tame(max_wrist, wrist_cock, wrist_std)
@@ -2029,7 +2027,7 @@ def build_paid_09(raw: Dict[str, Any], user_inputs: Dict[str, Any]) -> Dict[str,
         ])
     })
 
-    # --- 4. 重量（指示通り2軸評価ロジックを実装） ---
+    # --- 重量（HS × 性別 × 安定性 × タメ反映） ---
     if hs is not None:
         if gender == "female":
             if hs < 35: weight = "30〜40g"
@@ -2044,39 +2042,34 @@ def build_paid_09(raw: Dict[str, Any], user_inputs: Dict[str, Any]) -> Dict[str,
             else: weight = "60〜70g"
             reason = f"● 2軸評価：HS {hs:.1f}m/s × タメ{cock_label} の負荷に耐えうる基準重量"
 
-        # 【追加補正】タメが深く(deep)、かつ軸ブレがある場合はさらに重量で安定させる
         if (hs >= 40 and stability_val > 7.0) or (cock_level == "deep" and stability_val > 5.0):
-            if "60g" not in weight: # 重複防止
+            if "60g" not in weight:
                 weight = "60g前後"
-                reason += f"\n● 【補正】タメの深さ（{wrist_cock:.1f}°）と軸ブレ実測（{stability_val:.1f}%）を考慮し、重量を上げて挙動を安定化"
+                reason += f"\n● 【追加補正】タメの深さ（{wrist_cock:.1f}°）と軸ブレ実測（{stability_val:.1f}%）を考慮し、重量を上げて挙動を安定化"
     else:
         weight = {"low": "40〜50g", "mid": "50〜60g", "high": "60〜70g"}[hs_level]
         reason = f"● 2軸評価：パワー指数に基づく推奨重量（タメ{cock_label}を考慮）"
 
     rows.append({"item": "重量", "guide": weight, "reason": reason})
 
-    # --- 5. フレックス（指示通り2軸評価ロジックを実装） ---
+    # --- フレックス（HS × 捻転差 × タメ反映） ---
     if hs is not None:
         flex_map = [(33, "L〜A"), (38, "A〜R"), (42, "R〜SR"), (46, "SR〜S"), (50, "S〜X")]
         flex = next((f for h, f in flex_map if hs < h), "X")
-        
-        # 理由付けに2軸を明記
         reason = f"● 2軸評価：HS {hs:.1f}m/s × タメ{cock_label}({wrist_cock:.1f}°) に対する適正剛性"
-        
-        # 【2軸による補正】タメが深い(deep)場合は、HSが低くてもフレックスを硬くしてしなりすぎを防ぐ
         if avg_xfactor > 45.0 or cock_level == "deep":
             if flex in ["L〜A", "A〜R", "R〜SR"]:
                 flex = "SR〜S"
             else:
                 flex = "一ランク硬め"
-            reason += f"\n● 【補正】強い捻転差（{avg_xfactor:.1f}°）と深いタメによるシャフトへの高負荷を考慮"
+            reason += f"\n● 【追加補正】強い捻転差（{avg_xfactor:.1f}°）と深いタメによるシャフトへの高負荷を考慮"
     else:
         flex = {"low": "A〜R", "mid": "R〜SR", "high": "SR〜S"}[hs_level]
-        reason = f"● 2軸評価：パワー指数に対する適正剛性（タメ{cock_label}を考慮）"
+        reason = "● 2軸評価：パワー指数に対する適正剛性"
 
     rows.append({"item": "フレックス", "guide": flex, "reason": reason})
 
-    # --- 6. キックポイント（完全維持 + 詳細化） ---
+    # --- キックポイント（ミス傾向 × タメ角：逆転ロジックを指示通り詳細化） ---
     if miss == "right":
         kp, base_reason = "先〜中", "● 右ミスに対し、つかまりを助ける先調子系を基準"
     elif miss == "left":
@@ -2086,62 +2079,74 @@ def build_paid_09(raw: Dict[str, Any], user_inputs: Dict[str, Any]) -> Dict[str,
 
     reason_lines = [
         base_reason,
-        f"● タメ最大 {max_wrist:.1f}° / 平均 {wrist_cock:.1f}°"
+        f"● 実測タメ最大 {max_wrist:.1f}° / 平均 {wrist_cock:.1f}°"
     ]
 
+    # 右ミス ×（タメ浅い ＝ 元へ逆転）
     if miss == "right" and (tame_band in ("shallow", "unstable_deep") or cock_level == "shallow"):
         kp = "元"
         reason_lines += [
-            "● タメが浅い、または維持が不安定なため元調子を推奨",
-            "● シャフトのタメを意図的に作り、右ミスを抑制する"
+            "● 【重要】タメが浅いため、走り系（先調子）ではリリースが早まり逆効果と診断",
+            "● あえて粘り系（元調子）で『しなりの間』を作り、右ミスを抑制する"
         ]
     elif miss == "right" and stability_val > 7.0:
         kp = "中"
-        reason_lines += [
-            f"● 軸ブレ {stability_val:.1f}% が大きく、先端を走らせると打点が散りやすい",
-            "● まず中調子で打点とフェース向きを安定させる",
-        ]
+        reason_lines += [f"● 【重要】軸ブレ {stability_val:.1f}% が大きいため、中調子で安定を優先"]
 
     rows.append({"item": "キックポイント", "guide": kp, "reason": "\n".join(reason_lines)})
 
-    # --- 7. トルク（完全維持） ---
+    # --- トルク（安定性 × ミス補正） ---
     if stability_val >= 9.0:
-        tq, base_reason = "3.0〜4.0", f"● 軸ブレ実測（{stability_val:.1f}%）が大きいため、低トルクでねじれを抑制"
+        tq, base_reason = "3.0〜4.0", f"● 軸ブレ実測（{stability_val:.1f}%）が大きいため低トルクで抑制"
     elif stability_val >= 5.0:
         tq, base_reason = "3.5〜5.0", f"● 軸ブレ実測（{stability_val:.1f}%）に基づき標準帯を選択"
     else:
-        tq, base_reason = "4.5〜6.0", f"● 軸ブレ実測（{stability_val:.1f}%）が小さく、再現性を維持しやすい"
+        tq, base_reason = "4.5〜6.0", f"● 軸ブレ実測（{stability_val:.1f}%）が小さく、操作性を重視"
 
     if miss == "right":
         tq = "4.5〜5.5" if stability_val >= 5.0 else "5.5以上"
         reason = base_reason + "\n● 右ミス補正：トルクを増やしてフェースターンをサポート"
-    elif miss == "left":
-        tq = "2.5〜3.5"
-        reason = base_reason + "\n● 左ミス補正：トルクを絞り、つかまり過ぎを抑制"
     else:
         reason = base_reason
 
     rows.append({"item": "トルク", "guide": tq, "reason": reason})
 
-    # --- 8. 【総括：2軸分析】最適シャフト特性 ---
-    matrix_map = {
-        ("low", "shallow"): ("先端加速・高弾道型", "少ないタメをシャフトの走りで補い、最大飛距離を引き出すスペック"),
-        ("low", "normal"):  ("全体しなり・バランス型", "振り抜きを邪魔せず、リズムを安定させるスペック"),
-        ("low", "deep"):    ("手元粘り・効率重視型", "深いタメを維持し、インパクトで一気に解き放つスペック"),
-        ("mid", "shallow"): ("中先調子・弾き系", "ヘッドの戻りを助け、ミート率を安定させるスペック"),
-        ("mid", "normal"):  ("中調子・オールラウンド", "スイングのクセを消し、実戦での安定性を追求するスペック"),
-        ("mid", "deep"):    ("手元〜中・強弾道型", "強いタメを受け止め、分厚いインパクトを実現するスペック"),
-        ("high", "shallow"):("全体高剛性・低スピン型", "強い叩きに対してヘッドが暴れず、直進性を維持するスペック"),
-        ("high", "normal"): ("元〜中・パワー伝達型", "しっかりとした手元剛性で、パワーをダイレクトに伝えるスペック"),
-        ("high", "deep"):   ("低トルク・元調子特化型", "強烈なラグ（タメ）を抑制し、ピンをデッドに狙うスペック"),
+    # --- 8. 【総括：最適シャフト特性】文章のみの総括に変更 ---
+    # 2軸分析に基づいた「説明文」の生成（マトリクスを文章化）
+    matrix_desc = {
+        ("low", "shallow"): "自力でのタメが浅い分をシャフト全体のしなり戻りで補い、最大飛距離を引き出すセッティングです。",
+        ("low", "normal"):  "振り抜きやすさを最優先し、スイング中のリズムと打点の安定を第一に考えたセッティングです。",
+        ("low", "deep"):    ("深いタメによるエネルギーを逃さず、インパクトで効率よくボールに伝えるセッティングです。"),
+        ("mid", "shallow"): "切り返しでの打ち急ぎをシャフトの粘りで抑え、インパクトの厚みと正確性を高めるセッティングです。",
+        ("mid", "normal"):  "スイングのクセを消し、コースマネジメントに集中できる高い操作性と安定性を両立したセッティングです。",
+        ("mid", "deep"):    "強烈なタメを受け止める剛性を持ち、分厚いインパクトで飛距離を稼ぐアスリート向けセッティングです。",
+        ("high", "shallow"):("自力の叩きに対してヘッドが暴れず、左へのミスを気にせず振り抜ける強靭なセッティングです。"),
+        ("high", "normal"): "パワーをダイレクトに球に伝える手元剛性を備え、弾道を自在にコントロールできるセッティングです。",
+        ("high", "deep"):   "強烈なラグ（タメ）による捻れをねじ伏せ、最高速でピンをデッドに狙うための競技者向けセッティングです。",
     }
-    opt_name, opt_desc = matrix_map.get((hs_level, cock_level), ("要相談", "個別フィッティング推奨"))
+    
+    # 補正後のキックポイントが「元」で、説明文が矛盾しないように調整
+    final_desc = matrix_desc.get((hs_level, cock_level), "解析数値に基づき、個別フィッティングでの最終調整を推奨します。")
+    if kp == "元" and cock_level == "shallow":
+        final_desc = "手元側のしなりにより『タメの間』を自動生成し、アーリーリリースを物理的に防いで飛距離を伸ばすセッティングです。"
 
     rows.append({
         "item": "最適シャフト特性",
-        "guide": opt_name,
-        "reason": f"● {opt_desc}\n● 推奨詳細：【 重量{weight} / {flex} / {kp}調子 / トルク{tq} 】"
+        "guide": "解析に基づく推奨解", # 固定ラベルにして矛盾を回避
+        "reason": f"● {final_desc}\n● 推奨詳細：【 重量{weight} / {flex} / {kp}調子 / トルク{tq} 】"
     })
+
+    return {
+        "title": "09. Shaft Fitting Guide（推奨）",
+        "table": rows,
+        "note": "※本結果は解析数値に基づく指標です。購入時は試打での最終確認を推奨します。",
+        "meta": {
+            "power_idx": power_idx,
+            "wrist_cock": wrist_cock,
+            "head_speed": hs,
+            "stability_val": stability_val,
+        },
+    }
 
     return {
         "title": "09. Shaft Fitting Guide（推奨）",
