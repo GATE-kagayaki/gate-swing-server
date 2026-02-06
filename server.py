@@ -2639,26 +2639,58 @@ def stripe_webhook():
 
 
 
+from datetime import datetime, timezone
+import logging
+import traceback
+from google.cloud import firestore
+
 @handler.add(MessageEvent, message=VideoMessage)
 def handle_video(event: MessageEvent):
     user_id = event.source.user_id
-    # ここに追加
-    db = firestore.Client()
-    users_ref = db.collection("users")
     msg = event.message
     report_id = f"{user_id}_{msg.id}"
 
-    # ===== users 取得 =====
+    db = firestore.Client()
+    users_ref = db.collection("users")
     user_ref = users_ref.document(user_id)
+
+    # ===== users 取得（ここで1回だけ）=====
     user_doc = user_ref.get()
     user_data = user_doc.to_dict() if user_doc.exists else {}
 
-    # ===== 無料（月1回）チェック =====
-    is_premium = is_premium_user(user_id)
+    plan = (user_data.get("plan") or "free").lower()
     tickets = int(user_data.get("ticket_remaining", 0))
 
-    if (not is_premium) and tickets <= 0:
-        ok = reserve_free_monthly_if_available(user_id)
+    # freeなら ticket_remaining は 0 に正規化（不整合対策）
+    if plan == "free" and tickets != 0:
+        try:
+            user_ref.set({"ticket_remaining": 0}, merge=True)
+        except Exception:
+            logging.exception("[WARN] failed to normalize ticket_remaining for free user")
+
+        tickets = 0
+
+    # ===== 無料（月1回）チェック（必須：plan==free のときだけ）=====
+    if plan == "free":
+        now_yyyy_mm = datetime.now(timezone.utc).strftime("%Y-%m")
+
+        @firestore.transactional
+        def reserve_free_monthly(txn: firestore.Transaction) -> bool:
+            snap = user_ref.get(transaction=txn)
+            data = snap.to_dict() if snap.exists else {}
+            used = data.get("free_used_month")
+            if used == now_yyyy_mm:
+                return False
+            txn.set(user_ref, {"free_used_month": now_yyyy_mm}, merge=True)
+            return True
+
+        try:
+            txn = db.transaction()
+            ok = reserve_free_monthly(txn)
+        except Exception:
+            logging.exception("[ERROR] free monthly transaction failed")
+            ok = False
+
         if not ok:
             safe_line_reply(
                 event.reply_token,
@@ -2668,22 +2700,10 @@ def handle_video(event: MessageEvent):
             )
             return
 
+    logging.warning("[DEBUG] handle_video HIT user_id=%s message_id=%s plan=%s free_used_month=%s tickets=%s",
+                    user_id, msg.id, plan, user_data.get("free_used_month"), tickets)
 
-
-    import logging
-    logging.warning(
-        "[DEBUG] handle_video HIT user_id=%s message_id=%s",
-        user_id,
-        msg.id
-    )
-
-    # ===== users 取得 =====
-    user_ref = db.collection('users').document(user_id)
-    user_doc = user_ref.get()
-    user_data = user_doc.to_dict() if user_doc.exists else {}
-    tickets = user_data.get('ticket_remaining', 0)
-
-    # ===== prefill → user_inputs に確定コピー =====
+    # ===== prefill → user_inputs =====
     prefill = user_data.get("prefill") or {}
     user_inputs = {
         "head_speed": prefill.get("head_speed"),
@@ -2692,33 +2712,29 @@ def handle_video(event: MessageEvent):
     }
     user_inputs = {k: v for k, v in user_inputs.items() if v is not None}
 
-    logging.warning("[DEBUG] user_inputs=%r", user_inputs)
+    # ===== 有料判定（ここは既存ロジックを尊重）=====
+    is_premium = is_premium_user(user_id)
+    force_paid_report = is_premium or tickets > 0
 
-    # ===== 有料判定 =====
-    force_paid_report = is_premium_user(user_id) or tickets > 0
-
-    # ===== report 作成 =====
     firestore_safe_set(report_id, {
         "user_id": user_id,
         "status": "PROCESSING",
         "is_premium": force_paid_report,
         "created_at": datetime.now(timezone.utc).isoformat(),
-        "user_inputs": user_inputs,  # ★ ここが唯一の入力ソース
+        "user_inputs": user_inputs,
     })
 
     try:
-        # ===== 解析タスク作成 =====
         task_name = create_cloud_task(report_id, user_id, msg.id)
         firestore_safe_update(report_id, {"task_name": task_name})
 
-        # ===== チケット / 無料回数消費 =====
-        if not is_premium_user(user_id) and tickets > 0:
+        # ===== チケット消費（premiumでない & tickets>0 のときだけ）=====
+        if (not is_premium) and tickets > 0:
             user_ref.update({'ticket_remaining': firestore.Increment(-1)})
 
-        if not force_paid_report:
-            increment_free_usage(user_id)
+        # free月1は “予約＝消費” 済みなので、ここで increment_free_usage は基本不要
+        # （残すなら increment_free_usage の中身と二重計上しないよう要確認）
 
-        # ===== 初期返信（URLのみ）=====
         reply_text = make_initial_reply(report_id)
         safe_line_reply(event.reply_token, reply_text, user_id=user_id)
 
