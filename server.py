@@ -79,7 +79,7 @@ def callback():
     except Exception as e:
         print(f"[LINE] payload parse error: {e}", flush=True)
 
-     try:
+    try:
         db_test = firestore.Client()
         doc = db_test.collection("_debug").document("ping")
         doc.set({
@@ -100,7 +100,6 @@ def callback():
         return 'Internal Error', 500
 
     return 'OK'
-
 
 
 
