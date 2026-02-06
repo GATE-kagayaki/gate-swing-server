@@ -79,19 +79,7 @@ def callback():
     except Exception as e:
         print(f"[LINE] payload parse error: {e}", flush=True)
 
-    try:
-        db_test = firestore.Client()
-        doc = db_test.collection("_debug").document("ping")
-        doc.set({
-            "ts": datetime.now(timezone.utc).isoformat(),
-            "service": os.environ.get("K_SERVICE"),
-            "project": os.environ.get("GOOGLE_CLOUD_PROJECT"),
-        }, merge=True)
-        got = doc.get().to_dict() or {}
-        print(f"[FS PING] write_ok ts={got.get('ts')} project={got.get('project')}", flush=True)
-    except Exception as e:
-        print(f"[FS PING] write_failed err={e}", flush=True)
-
+    
     try:
         handler.handle(body, signature)
     except Exception as e:
