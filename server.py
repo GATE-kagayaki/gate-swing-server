@@ -1469,24 +1469,47 @@ def build_paid_07_from_analysis(analysis: Dict[str, Any], raw: Dict[str, Any]) -
     swing_type = judge_swing_type(c)
     priorities = extract_priorities(c, 2)
 
+    # データの抽出（直接解説に使用）
+    sh = raw.get("shoulder", {})
+    h = raw.get("head", {})
+    k = raw.get("knee", {})
+    xf = raw.get("x_factor", {})
     conf = _conf(raw)
     frames = _frames(raw)
 
     lines: List[str] = []
     lines.append(f"今回のスイングは「{swing_type}」です（confidence {conf:.3f} / 区間 {frames} frames）。")
-    lines.append("※ 初回の方は、今回は「最優先テーマ」だけを確認してください。")
+    lines.append("※ 初回の方は、まずは「最優先テーマ」だけを確認してください。")
     lines.append("")
 
-    # 型の説明（2文）
-    lines.extend(_summary_template(swing_type))
+    # --- プロの直接的な洞察（テンプレートを廃止し、数値から動的に生成） ---
+    
+    # 1. 軸の安定性（頭部・膝）
+    h_mean = h.get("mean", 0)
+    k_mean = k.get("mean", 0)
+    if h_mean > 5.0 or k_mean > 8.0:
+        lines.append(f"【軸の安定性】頭部（{h_mean:.1f}%）や膝（{k_mean:.1f}%）の左右動が基準を超えています。回転量よりも先に、まずはこの『土台の揺れ』を抑えることが打点の再現性を高める最短ルートです。")
+    else:
+        lines.append("【軸の安定性】頭部・下半身ともにブレが最小限に抑えられており、独楽（こま）のような安定した軸回転ができています。")
+
+    # 2. エネルギー効率（捻転差）
+    xf_max = xf.get("max", 0)
+    if xf_max < 35:
+        lines.append(f"【パワー効率】捻転差（max {xf_max:.1f}°）が不足しています。切り返しで上半身と下半身が一緒に動く傾向があり、ヘッドを加速させる『溜め』が作りにくい状態です。")
+    else:
+        lines.append(f"【パワー効率】捻転差（max {xf_max:.1f}°）は十分に確保されており、切り返しでエネルギーを爆発させる準備が整っています。")
+
+    # 3. 再現性（肩回転のばらつき）
+    sh_std = sh.get("std", 0)
+    if sh_std > 12.0:
+        lines.append(f"【再現性】肩回転の深さにばらつき（$\sigma$ {sh_std:.1f}°）が見られます。トップの位置が毎スイング変わるため、ミート率を不安定にさせる要因となります。")
+
     lines.append("")
 
     # 優先テーマ（最大2つ）
     if priorities:
-        if len(priorities) == 1:
-            lines.append(f"数値上の最優先テーマは「{priorities[0]}」です。")
-        else:
-            lines.append("数値上の優先テーマは「" + "／".join(priorities) + "」の2点です。")
+        p_str = "／".join(priorities)
+        lines.append(f"数値上の最優先テーマは「{p_str}」です。")
     else:
         lines.append("数値上の優先テーマはありません。")
 
