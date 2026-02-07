@@ -2764,6 +2764,27 @@ def handle_text_message(event):
 
     # ここに追加
     db = firestore.Client()
+
+    if "料金プラン" in text:
+        plan_text = (
+            "GATE公式LINEへようこそ！⛳️\n\n"
+            "正確なAI解析結果をお届けするため、画面上部に「追加」ボタンが表示されている方は、まず登録をお願いいたします。\n\n"
+            "決済完了後は、このトーク画面にスイング動画を送るだけでAI解析がスタートします。\n"
+            "--------------------\n\n"
+            "【単発プラン】500円/1回\n"
+            "単発プランで試す → \n"
+            f"https://buy.stripe.com/00w28sdezc5A8lR2ej18c00?client_reference_id={user_id}\n\n"
+            "【回数券プラン】1,980円/5回\n"
+            "回数券を購入する → \n"
+            f"https://buy.stripe.com/bJeaEY1vR9Xs7hN4mr18c07?client_reference_id={user_id}\n\n"
+            "【月額プラン】4,980円/月\n"
+            "月額プランを申し込む → \n"
+            f"https://buy.stripe.com/3cIfZi2zVd9E1XtdX118c05?client_reference_id={user_id}\n\n"
+            "--------------------\n"
+            "※操作方法などは、このままトークでお気軽にご質問ください。"
+        )
+        line_bot_api.reply_message(event.reply_token, TextSendMessage(text=plan_text))
+        return
    
     # 2. 解約・キャンセル判定（最優先）
     if text in ["解約", "キャンセル", "サブスク解除"]:
@@ -2957,27 +2978,7 @@ def handle_text_message(event):
         )
         return
 
-   # ===== 5) 最後に既存分岐（料金プランなど） =====
-    if "料金プラン" in text:
-        plan_text = (
-            "GATE公式LINEへようこそ！⛳️\n\n"
-            "正確なAI解析結果をお届けするため、画面上部に「追加」ボタンが表示されている方は、まず登録をお願いいたします。\n\n"
-            "決済完了後は、このトーク画面にスイング動画を送るだけでAI解析がスタートします。\n"
-            "--------------------\n\n"
-            "【単発プラン】500円/1回\n"
-            "単発プランで試す → \n"
-            f"https://buy.stripe.com/00w28sdezc5A8lR2ej18c00?client_reference_id={user_id}\n\n"
-            "【回数券プラン】1,980円/5回\n"
-            "回数券を購入する → \n"
-            f"https://buy.stripe.com/bJeaEY1vR9Xs7hN4mr18c07?client_reference_id={user_id}\n\n"
-            "【月額プラン】4,980円/月\n"
-            "月額プランを申し込む → \n"
-            f"https://buy.stripe.com/3cIfZi2zVd9E1XtdX118c05?client_reference_id={user_id}\n\n"
-            "--------------------\n"
-            "※操作方法などは、このままトークでお気軽にご質問ください。"
-        )
-        line_bot_api.reply_message(event.reply_token, TextSendMessage(text=plan_text))
-        return
+  
         
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", "8080"))
