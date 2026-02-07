@@ -2755,21 +2755,21 @@ def handle_video(event: MessageEvent):
 @handler.add(MessageEvent, message=TextMessage)
 def handle_text_message(event):
     user_id = event.source.user_id
-    
-    import logging
-    from google.cloud import firestore
-    # 1. メッセージの内容を取得（空白削除）
     text = event.message.text.strip()
 
+    import logging
+    from google.cloud import firestore
+    # 1. まずメッセージの内容を取得（空白を削除して判定を正確にする）
+    text = event.message.text.strip()
+
+    # ここに追加
     db = firestore.Client()
-    
-    # 2. 解約・キャンセル判定（最優先の「割り込み」処理）
-    # 「解約」や「キャンセル」という単語が含まれているか判定
-    cancel_keywords = ["解約", "キャンセル", "サブスク解除", "やめたい"]
-    if any(keyword in text for keyword in cancel_keywords):
+   
+    # 2. 解約・キャンセル判定（最優先）
+    if text in ["解約", "キャンセル", "サブスク解除"]:
         # Firestoreからユーザー情報を取得
         user_doc = db.collection("users").document(user_id).get()
-        
+    
         stripe_id = None
         if user_doc.exists:
             stripe_id = user_doc.to_dict().get("stripe_customer_id")
@@ -2784,11 +2784,6 @@ def handle_text_message(event):
                     f"{url}\n\n"
                     "※有効期限があるため、お早めにアクセスしてください。"
                 )
-                # 重要：解約の意志を示したため、入力中のステータス（ヘッドスピード待ち等）をリセットする
-                db.collection("users").document(user_id).update({
-                    "prefill_step": firestore.DELETE_FIELD, # ステータスを削除
-                    "status": "idle" # 待機状態に戻す
-                })
             else:
                 reply = "URLの発行に失敗しました。お手数ですが事務局までご連絡ください。"
         else:
@@ -2796,7 +2791,7 @@ def handle_text_message(event):
 
         # LINEへ返信して処理を終了
         line_bot_api.reply_message(event.reply_token, TextSendMessage(text=reply))
-        return  # 3. 以下の「ヘッドスピード判定」などに行かせない
+        return  # ここで処理を完全に終了させる
         
     # 二重処理防止（最優先）
     event_id = f"{event.source.user_id}:{event.reply_token}"
