@@ -2723,44 +2723,7 @@ def handle_video(event: MessageEvent):
         safe_line_push(user_id, "受付後の処理でエラーが発生しました。進行状況URLをご確認ください。", force=True)
         return    
 
-
-        # ===== チケット消費（premiumでない & tickets>0 のときだけ）=====
-        logging.warning(
-            "[DEBUG] consume_check BEFORE user_id=%s is_premium=%s plan=%s tickets=%r type=%s user_ref=%s",
-            user_id, is_premium, user_data.get("plan"), tickets, type(tickets), user_ref.path
-        )
-
-        safe_tickets = int(tickets or 0)
-
-        if (not is_premium) and safe_tickets > 0:
-            user_ref.update({'ticket_remaining': firestore.Increment(-1)})
-            after_doc = user_ref.get()
-            after = after_doc.to_dict() if after_doc.exists else {}
-            logging.warning(
-                "[DEBUG] consume_check AFTER user_id=%s ticket_remaining=%r",
-                user_id, after.get("ticket_remaining")
-            )
-        else:
-            logging.warning("[DEBUG] consume_check SKIP user_id=%s", user_id)
-
-        reply_text = make_initial_reply(report_id)
-        if (not is_premium) and safe_tickets > 0:
-            remaining = max(safe_tickets - 1, 0)
-            reply_text += f"\n\n残りチケット：{remaining}回"
-        safe_line_reply(event.reply_token, reply_text, user_id=user_id)
-
-    except Exception:
-        logging.exception("[ERROR] handle_video failed after report created user_id=%s report_id=%s", user_id, report_id)
-        # ユーザーには最低限返す（webhook 200 で落とさない）
-        safe_line_reply(
-            event.reply_token,
-            "動画の受付中にエラーが発生しました。時間をおいて再度お試しください。",
-            user_id=user_id
-        )
-        return
-
-
-
+        
 @handler.add(MessageEvent, message=TextMessage)
 def handle_text_message(event):
     user_id = event.source.user_id
