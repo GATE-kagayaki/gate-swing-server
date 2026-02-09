@@ -2504,7 +2504,6 @@ def stripe_webhook():
     db = firestore.Client() # ★追加
     payload = request.get_data()
     sig_header = request.headers.get("Stripe-Signature", "")
-    print(f"[BOOT] webhook_secret_prefix={endpoint_secret[:10]} len={len(endpoint_secret)}", flush=True)
 
 
     # 1) 署名検証（ここが通らないとFirestoreは絶対更新されない）
