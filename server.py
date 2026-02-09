@@ -2591,16 +2591,15 @@ def stripe_webhook():
             logging.error(traceback.format_exc())
             return "Internal Error", 500
 
-    return "OK", 200
     session = event["data"]["object"]
     event_id = event.get("id")
     session_id = session.get("id")
-    metadata = session.get("metadata") or {}
-    line_user_id = session.get("client_reference_id") or metadata.get("line_user_id")
+    line_user_id = session.get("client_reference_id")
 
     if not line_user_id:
-        print("❌ user_id missing (client_reference_id & metadata.line_user_id)")
+        print("❌ client_reference_id missing")
         return "OK", 200
+
 
 
     try:
