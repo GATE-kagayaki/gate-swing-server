@@ -2691,8 +2691,8 @@ def handle_video(event: MessageEvent):
     user_inputs = {k: v for k, v in user_inputs.items() if v is not None}
 
     # ===== 有料判定（ここは既存ロジックを尊重）=====
-    is_premium = is_premium_user(user_id)
-    force_paid_report = is_premium or tickets > 0
+    is_subscription = is_premium_user(user_id)
+    force_paid_report = is_subscription or tickets > 0
 
     firestore_safe_set(report_id, {
         "user_id": user_id,
@@ -2705,6 +2705,12 @@ def handle_video(event: MessageEvent):
     try:
         task_name = create_cloud_task(report_id, user_id, msg.id)
         firestore_safe_update(report_id, {"task_name": task_name})
+
+        # ===== チケット消費（Tasks作成成功後のみ）=====
+        if (not is_subscription) and tickets > 0:
+            user_ref.update({"ticket_remaining": firestore.Increment(-1)})
+
+
 
         # ===== チケット消費（premiumでない & tickets>0 のときだけ）=====
         logging.warning(
