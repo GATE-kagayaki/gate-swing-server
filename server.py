@@ -2595,13 +2595,13 @@ def stripe_webhook():
     session = event["data"]["object"]
     event_id = event.get("id")
     session_id = session.get("id")
-    line_user_id = session.get("client_reference_id")
-
-    print(f"[STRIPE] livemode={event.get('livemode')} event_id={event_id} session_id={session_id} client_reference_id={line_user_id}")
+    metadata = session.get("metadata") or {}
+    line_user_id = session.get("client_reference_id") or metadata.get("line_user_id")
 
     if not line_user_id:
-        print("❌ client_reference_id missing")
+        print("❌ user_id missing (client_reference_id & metadata.line_user_id)")
         return "OK", 200
+
 
     try:
         # 3) price_idを確実に取る（expandより堅い）
