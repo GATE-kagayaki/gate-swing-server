@@ -2675,8 +2675,10 @@ def handle_video(event: MessageEvent):
             )
             return
 
-    logging.warning("[DEBUG] handle_video HIT user_id=%s message_id=%s plan=%s free_used_month=%s tickets=%s",
-                    user_id, msg.id, plan, user_data.get("free_used_month"), tickets)
+    logging.warning(
+        "[DEBUG] handle_video HIT user_id=%s message_id=%s plan=%s free_used_month=%s tickets=%s",
+        user_id, msg.id, plan, user_data.get("free_used_month"), tickets
+    )
 
     # ===== prefill → user_inputs =====
     prefill = user_data.get("prefill") or {}
@@ -2685,6 +2687,7 @@ def handle_video(event: MessageEvent):
         "miss_tendency": prefill.get("miss_tendency"),
         "gender": prefill.get("gender"),
     }
+
     user_inputs = {k: v for k, v in user_inputs.items() if v is not None}
 
     # ===== 有料判定（ここは既存ロジックを尊重）=====
@@ -2704,7 +2707,7 @@ def handle_video(event: MessageEvent):
         firestore_safe_update(report_id, {"task_name": task_name})
 
         # ===== チケット消費（premiumでない & tickets>0 のときだけ）=====
-            logging.warning(
+        logging.warning(
             "[DEBUG] consume_check BEFORE user_id=%s is_premium=%s plan=%s tickets=%r type=%s user_ref=%s",
             user_id, is_premium, user_data.get("plan"), tickets, type(tickets), user_ref.path
         )
@@ -2728,18 +2731,15 @@ def handle_video(event: MessageEvent):
             reply_text += f"\n\n残りチケット：{remaining}回"
         safe_line_reply(event.reply_token, reply_text, user_id=user_id)
 
-
     except Exception:
-        logging.exception("[ERROR] handle_video failed")
-        firestore_safe_update(report_id, {
-            "status": "TASK_FAILED",
-            "error": traceback.format_exc()
-        })
+        logging.exception("[ERROR] handle_video failed after report created user_id=%s report_id=%s", user_id, report_id)
+        # ユーザーには最低限返す（webhook 200 で落とさない）
         safe_line_reply(
             event.reply_token,
-            "動画は受け取りましたが、解析の予約に失敗しました。時間を置いて再度お試しください。",
+            "動画の受付中にエラーが発生しました。時間をおいて再度お試しください。",
             user_id=user_id
         )
+        return
 
 
 
