@@ -2704,17 +2704,31 @@ def handle_video(event: MessageEvent):
         firestore_safe_update(report_id, {"task_name": task_name})
 
         # ===== チケット消費（premiumでない & tickets>0 のときだけ）=====
-        if (not is_premium) and tickets > 0:
-            user_ref.update({'ticket_remaining': firestore.Increment(-1)})
+        import logging
+        logging.warning(
+            "[DEBUG] consume_check BEFORE user_id=%s is_premium=%s plan=%s tickets=%r type=%s user_ref=%s",
+            user_id, is_premium, user_data.get("plan"), tickets, type(tickets), user_ref.path
+        )
 
-        # free月1は “予約＝消費” 済みなので、ここで increment_free_usage は基本不要
-        # （残すなら increment_free_usage の中身と二重計上しないよう要確認）
+        safe_tickets = int(tickets or 0)
+
+        if (not is_premium) and safe_tickets > 0:
+            user_ref.update({'ticket_remaining': firestore.Increment(-1)})
+            after_doc = user_ref.get()
+            after = after_doc.to_dict() if after_doc.exists else {}
+            logging.warning(
+                "[DEBUG] consume_check AFTER user_id=%s ticket_remaining=%r",
+                user_id, after.get("ticket_remaining")
+            )
+        else:
+            logging.warning("[DEBUG] consume_check SKIP user_id=%s", user_id)
 
         reply_text = make_initial_reply(report_id)
-        if (not is_premium) and tickets > 0:
-            remaining = max(int(tickets) - 1, 0)  # 今回消費後
+        if (not is_premium) and safe_tickets > 0:
+            remaining = max(safe_tickets - 1, 0)
             reply_text += f"\n\n残りチケット：{remaining}回"
         safe_line_reply(event.reply_token, reply_text, user_id=user_id)
+
 
     except Exception:
         logging.exception("[ERROR] handle_video failed")
