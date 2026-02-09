@@ -2560,6 +2560,26 @@ def stripe_webhook():
                 "updated_at": firestore.SERVER_TIMESTAMP,
             }, merge=True)
 
+            # ===== 購入完了メッセージ（新規追加・既存文言は触らない）=====
+            after = user_ref.get().to_dict() or {}
+            plan = after.get("plan")
+            tickets = int(after.get("ticket_remaining", 0))
+
+            if plan == "monthly":
+                message = (
+                    "月額プランのご契約、誠にありがとうございます。\n\n"
+                    "ご契約期間中は、無制限でご利用いただけます。\n\n"
+                    "リッチメニューの「分析スタート」からスイング動画を送信してください。"
+                )
+            else:
+                message = (
+                    "チケットのご購入、誠にありがとうございます。\n\n"
+                    f"残りチケット：{tickets}回\n\n"
+                    "リッチメニューの「分析スタート」からスイング動画を送信してください。"
+                )
+
+            safe_line_push(line_user_id, message, force=True)
+
             print(f"✅ Firestore updated user={line_user_id} add={add_tickets}", flush=True)
             return "OK", 200
 
