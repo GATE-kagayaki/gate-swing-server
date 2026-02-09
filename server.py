@@ -2702,6 +2702,9 @@ def handle_video(event: MessageEvent):
         "user_inputs": user_inputs,
     })
 
+    reply_text = make_initial_reply(report_id)
+    safe_line_reply(event.reply_token, reply_text, user_id=user_id)
+
     try:
         task_name = create_cloud_task(report_id, user_id, msg.id)
         firestore_safe_update(report_id, {"task_name": task_name})
@@ -2710,6 +2713,13 @@ def handle_video(event: MessageEvent):
         if (not is_subscription) and tickets > 0:
             user_ref.update({"ticket_remaining": firestore.Increment(-1)})
 
+    except Exception:
+        logging.exception("[ERROR] handle_video failed after report created user_id=%s report_id=%s", user_id, report_id)
+        firestore_safe_update(report_id, {"status": "TASK_FAILED", "error": "handle_video exception"})
+        # ❌ ここで safe_line_reply はしない（既に返信済み）
+        # ✅ 必要なら push で通知
+        safe_line_push(user_id, "受付後の処理でエラーが発生しました。進行状況URLをご確認ください。", force=True)
+        return    
 
 
         # ===== チケット消費（premiumでない & tickets>0 のときだけ）=====
