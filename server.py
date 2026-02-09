@@ -2279,12 +2279,11 @@ def build_analysis(raw: Dict[str, Any], premium: bool, report_id: str, user_inpu
     # ✅ 修正箇所1：build_paid_08 は (analysis, raw) の2つが必要です
     analysis["08"] = build_paid_08(analysis, raw)
 
-    # ✅ 09は常にセクションを出す（入力があれば本体、無ければ案内のみ）
+    # ✅ # 09は入力がある場合のみ出力する
     ui = user_inputs or {}
     if ui.get("head_speed") is not None or ui.get("miss_tendency") or ui.get("gender"):
         analysis["09"] = build_paid_09(raw, ui)
-    else:
-        analysis["09"] = build_paid_09_placeholder()
+    # else: 何もしない（09を出さない）
 
     # ✅ 修正箇所2：build_paid_10 は 01〜09の結果をまとめるため (analysis) を渡します
     # ※ raw を渡すと、まとめロジック内でデータが参照できずエラーになります
