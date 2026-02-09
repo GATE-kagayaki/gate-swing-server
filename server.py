@@ -2704,8 +2704,7 @@ def handle_video(event: MessageEvent):
         firestore_safe_update(report_id, {"task_name": task_name})
 
         # ===== チケット消費（premiumでない & tickets>0 のときだけ）=====
-        import logging
-        logging.warning(
+            logging.warning(
             "[DEBUG] consume_check BEFORE user_id=%s is_premium=%s plan=%s tickets=%r type=%s user_ref=%s",
             user_id, is_premium, user_data.get("plan"), tickets, type(tickets), user_ref.path
         )
