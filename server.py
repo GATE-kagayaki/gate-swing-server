@@ -2538,8 +2538,10 @@ def stripe_webhook():
             price_id = first.get("price", {}).get("id") if first else None
 
             add_tickets = 1
-            if price_id == "price_1SrGGcK85rGl4ns4FpiYMXtt":
+            ticket_price_id = (os.environ.get("STRIPE_PRICE_TICKET", "") or "").strip()
+            if ticket_price_id and price_id == ticket_price_id:
                 add_tickets = 5
+
 
             user_ref = db.collection("users").document(line_user_id)
 
