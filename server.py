@@ -2749,8 +2749,7 @@ def handle_text_message(event):
     user_id = event.source.user_id
     text = event.message.text.strip()
 
-    import logging
-    from google.cloud import firestore
+
     # 1. まずメッセージの内容を取得（空白を削除して判定を正確にする）
     text = event.message.text.strip()
 
