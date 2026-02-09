@@ -2712,6 +2712,9 @@ def handle_video(event: MessageEvent):
         # （残すなら increment_free_usage の中身と二重計上しないよう要確認）
 
         reply_text = make_initial_reply(report_id)
+        if (not is_premium) and tickets > 0:
+            remaining = max(int(tickets) - 1, 0)  # 今回消費後
+            reply_text += f"\n\n残りチケット：{remaining}回"
         safe_line_reply(event.reply_token, reply_text, user_id=user_id)
 
     except Exception:
