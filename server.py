@@ -2711,9 +2711,36 @@ def handle_video(event: MessageEvent):
         task_name = create_cloud_task(report_id, user_id, msg.id)
         firestore_safe_update(report_id, {"task_name": task_name})
 
-        # ===== チケット消費（Tasks作成成功後のみ）=====
-        if (not is_subscription) and tickets > 0:
-            user_ref.update({"ticket_remaining": firestore.Increment(-1)})
+    # ===== チケット消費（Tasks作成成功後のみ）=====
+    if (not is_subscription) and tickets > 0:
+
+        @firestore.transactional
+        def consume_and_downgrade(txn: firestore.Transaction):
+            snap = user_ref.get(transaction=txn)
+            u = snap.to_dict() if snap.exists else {}
+
+            plan_now = (u.get("plan") or "free").lower()
+            remaining = int(u.get("ticket_remaining", 0))
+
+            if plan_now not in ("single", "ticket") or remaining <= 0:
+                return
+
+            new_remaining = remaining - 1
+
+            updates = {
+                "ticket_remaining": new_remaining,
+                "updated_at": firestore.SERVER_TIMESTAMP,
+            }
+
+            # ★ single / ticket は残数0で free に戻す
+            if new_remaining <= 0:
+                updates["plan"] = "free"
+
+            txn.update(user_ref, updates)
+
+        txn = db.transaction()
+        consume_and_downgrade(txn)
+
 
     except Exception:
         logging.exception("[ERROR] handle_video failed after report created user_id=%s report_id=%s", user_id, report_id)
