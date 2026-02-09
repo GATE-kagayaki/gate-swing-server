@@ -412,7 +412,7 @@ def is_premium_user(user_id: str) -> bool:
 
     # 単発/回数券
     if plan in ("single", "ticket"):
-        return int(data.get("ticket_remaining", 0)) > 0
+        return False
 
     # 月額
     if plan == "monthly":
