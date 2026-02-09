@@ -2494,156 +2494,105 @@ db = firestore.Client()
 
 @app.route("/stripe/webhook", methods=["POST"])
 def stripe_webhook():
-    import os, traceback
+    import os, traceback, logging
     from flask import request
     import stripe
     from google.cloud import firestore
 
-    endpoint_secret = os.environ.get("STRIPE_WEBHOOK_SECRET", "")
-    stripe.api_key = os.environ.get("STRIPE_SECRET_KEY", "") # ★追加
-    db = firestore.Client() # ★追加
+    endpoint_secret = os.environ.get("STRIPE_WEBHOOK_SECRET")
+    stripe.api_key = os.environ.get("STRIPE_SECRET_KEY")
+    if not endpoint_secret or not stripe.api_key:
+        return "Missing stripe env", 500
+
+    db = firestore.Client()
     payload = request.get_data()
     sig_header = request.headers.get("Stripe-Signature", "")
 
-
-    # 1) 署名検証（ここが通らないとFirestoreは絶対更新されない）
+    # 1) 署名検証
     try:
         event = stripe.Webhook.construct_event(payload, sig_header, endpoint_secret)
     except stripe.error.SignatureVerificationError as e:
-        print(f"⚠️ Stripe署名検証に失敗しました: {e}")
+        print(f"⚠️ Stripe署名検証に失敗しました: {e}", flush=True)
         return "Invalid signature", 400
     except Exception as e:
-        print(f"⚠️ Stripe webhook error: {e}")
+        print(f"⚠️ Stripe webhook error: {e}", flush=True)
         return "Error", 400
 
-    # 2) イベント種別の取得（ここを分岐の起点にします）
     event_type = event.get("type")
 
-    # --- 購入完了（既存のロジック。すべて右にインデントして格納） ---
+    # =========================================================
+    # A) 購入完了（単発/回数券）
+    # =========================================================
     if event_type == "checkout.session.completed":
         session = event["data"]["object"]
         event_id = event.get("id")
         session_id = session.get("id")
         line_user_id = session.get("client_reference_id")
 
-        print(f"[STRIPE] livemode={event.get('livemode')} event_id={event_id} session_id={session_id} client_reference_id={line_user_id}")
-
         if not line_user_id:
-            print("❌ client_reference_id missing")
+            print("❌ client_reference_id missing", flush=True)
             return "OK", 200
 
         try:
-            # 3) price_idを確実に取る（expandより堅い）
             li = stripe.checkout.Session.list_line_items(session_id, limit=1)
             first = li["data"][0] if li and li.get("data") else None
             price_id = first.get("price", {}).get("id") if first else None
-            print(f"[STRIPE] price_id={price_id}", flush=True)
 
-            # 4) 付与数（回数券だけ +5 / それ以外 +1）
             add_tickets = 1
             if price_id == "price_1SrGGcK85rGl4ns4FpiYMXtt":
                 add_tickets = 5
 
             user_ref = db.collection("users").document(line_user_id)
 
-            # 5) 冪等（Stripe再送でも二重加算しない）
+            # 冪等（Stripe再送でも二重加算しない）
             before = user_ref.get().to_dict() or {}
-            print(f"[BEFORE] ticket_remaining={before.get('ticket_remaining')} last_stripe_event_id={before.get('last_stripe_event_id')}")
-
             if before.get("last_stripe_event_id") == event_id:
-                print("✅ duplicate event ignored")
+                print("✅ duplicate event ignored", flush=True)
                 return "OK", 200
 
-            # 既存の更新処理（statusをpaidにする処理を含む）
-            user_ref.update({
-                "ticket_remaining": firestore.Increment(add_tickets),
-                "last_stripe_event_id": event_id,
+            # Firestore更新（ここで増える）
+            user_ref.set({
+                "plan": "ticket" if add_tickets > 1 else "single",
                 "status": "paid",
-                "updated_at": firestore.SERVER_TIMESTAMP
-            })
-            print(f"✅ Purchase processed for {line_user_id}")
+                "ticket_remaining": firestore.Increment(add_tickets),
+                "last_payment_date": firestore.SERVER_TIMESTAMP,
+                "last_stripe_event_id": event_id,
+                "updated_at": firestore.SERVER_TIMESTAMP,
+            }, merge=True)
 
-        except Exception as e:
-            print(f"❌ Error in checkout processing: {e}")
-            logging.error(traceback.format_exc())
+            print(f"✅ Firestore updated user={line_user_id} add={add_tickets}", flush=True)
+            return "OK", 200
+
+        except Exception:
+            print("❌ post-payment handler failed:", traceback.format_exc(), flush=True)
             return "Internal Error", 500
 
-    # --- 追加：解約（サブスクリプション削除）時の処理 ---
+    # =========================================================
+    # B) 解約（サブスク削除）
+    # =========================================================
     elif event_type == "customer.subscription.deleted":
         try:
             subscription = event["data"]["object"]
             customer_id = subscription.get("customer")
-            
-            # stripe_customer_id を元に Firestore からユーザーを探して status を free に更新
+
             users_ref = db.collection("users")
             docs = users_ref.where("stripe_customer_id", "==", customer_id).limit(1).get()
-            
+
             for doc in docs:
                 doc.reference.update({
                     "status": "free",
                     "updated_at": firestore.SERVER_TIMESTAMP
                 })
-                print(f"✅ Subscription cancelled for customer: {customer_id}")
 
-        except Exception as e:
-            print(f"❌ Deletion Error: {e}")
-            logging.error(traceback.format_exc())
-            return "Internal Error", 500
-
-    session = event["data"]["object"]
-    event_id = event.get("id")
-    session_id = session.get("id")
-    line_user_id = session.get("client_reference_id")
-
-    if not line_user_id:
-        print("❌ client_reference_id missing")
-        return "OK", 200
-
-
-
-    try:
-        # 3) price_idを確実に取る（expandより堅い）
-        li = stripe.checkout.Session.list_line_items(session_id, limit=1)
-        first = li["data"][0] if li and li.get("data") else None
-        price_id = first.get("price", {}).get("id") if first else None
-        print(f"[STRIPE] price_id={price_id}", flush=True)
-
-        # 4) 付与数（回数券だけ +5 / それ以外 +1）
-        add_tickets = 1
-        if price_id == "price_1SrGGcK85rGl4ns4FpiYMXtt":
-            add_tickets = 5
-
-        user_ref = db.collection("users").document(line_user_id)
-
-        # 5) 冪等（Stripe再送でも二重加算しない）
-        before = user_ref.get().to_dict() or {}
-        print(f"[BEFORE] ticket_remaining={before.get('ticket_remaining')} last_stripe_event_id={before.get('last_stripe_event_id')}")
-
-        if before.get("last_stripe_event_id") == event_id:
-            print("✅ duplicate event ignored")
+            print(f"✅ Subscription cancelled for customer: {customer_id}", flush=True)
             return "OK", 200
 
-        # 6) Firestore更新（ここで必ず増える）
-        user_ref.set({
-            "plan": "ticket" if add_tickets > 1 else "single",
-            "ticket_remaining": firestore.Increment(add_tickets),
-            "last_payment_date": firestore.SERVER_TIMESTAMP,
-            "last_stripe_event_id": event_id,
-            "updated_at": firestore.SERVER_TIMESTAMP,
-        }, merge=True)
+        except Exception:
+            print("❌ Deletion Error:", traceback.format_exc(), flush=True)
+            return "Internal Error", 500
 
-        after = user_ref.get().to_dict() or {}
-        print(f"[AFTER] ticket_remaining={after.get('ticket_remaining')} plan={after.get('plan')}")
-        print(f"✅ Firestore updated user={line_user_id} add={add_tickets}", flush=True)
-
-
-    except Exception:
-        print("❌ post-payment handler failed:", traceback.format_exc(), flush=True)
-        return "OK", 500
-
+    # その他イベントは無視
     return "OK", 200
-
-
 
 
 from datetime import datetime, timezone
