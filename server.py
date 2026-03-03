@@ -2348,6 +2348,11 @@ def task_handler():
 
             raw = analyze_swing_with_mediapipe(video_path)
 
+            logging.warning(f"[DEBUG] raw_type={type(raw)}")
+            logging.warning(f"[DEBUG] raw_keys={(list(raw.keys()) if isinstance(raw, dict) else None)}")
+            logging.warning(f"[DEBUG] raw_overlay_path={(raw.get('overlay_path') if isinstance(raw, dict) else None)}")
+
+
             # --- overlay動画URLを作る ---
             try:
                 overlay_path = raw.get("overlay_path") if isinstance(raw, dict) else None
