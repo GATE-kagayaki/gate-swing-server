@@ -324,6 +324,11 @@ function render09(secData) {
       loadingEl.classList.add("hidden");
       if (String(data.status).toUpperCase() === "COMPLETED") {
         reportContent.classList.remove("hidden");
+
+        // ★ここ追加
+        if (data.overlay_video_url) {
+          renderVideo(data.overlay_video_url);
+        }
         if (data.is_premium) premiumBadge.classList.remove("hidden");
         const a = data.analysis || {};
         if (a["01"]) render01(a["01"]);
