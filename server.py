@@ -2348,6 +2348,7 @@ def task_handler():
             "status": "DONE",
             "raw": raw,
             "analysis": analysis,
+            "overlay_video_url": overlay_url,
             "completed_at": datetime.now(timezone.utc).isoformat(),
         }, merge=True)
 
