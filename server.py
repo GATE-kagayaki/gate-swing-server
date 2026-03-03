@@ -2353,6 +2353,9 @@ def task_handler():
                 overlay_url = upload_video_to_gcs(overlay_path, report_id)
         except Exception:
             logging.exception("[WARN] overlay upload failed")
+
+        logging.warning(f"[DEBUG] overlay_url={overlay_url}")
+        
         # --- ここまで ---
 
         analysis = build_analysis(raw=raw, premium=premium, report_id=report_id, user_inputs=user_inputs)
