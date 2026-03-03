@@ -669,7 +669,7 @@ def analyze_swing_with_mediapipe(video_path: str, overlay_out_path: Optional[str
             # ここでGPUを探しに行ってエラーが出ていましたが、CPU指定により回避されます。
             res = pose.process(rgb)
 
-            # ★ overlayを書き出す（ランドマークがあるフレームだけ描画）
+            # ★ overlayを書き出す（毎フレーム書く。骨格がある時だけ描画する）
             if writer is not None:
                 out = frame.copy()
                 if res.pose_landmarks:
