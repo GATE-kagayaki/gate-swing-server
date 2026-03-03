@@ -2360,23 +2360,7 @@ def task_handler():
 
         analysis = build_analysis(raw=raw, premium=premium, report_id=report_id, user_inputs=user_inputs)
         
-        import os
-        import logging
-
-        logging.info("=== overlay debug start ===")
-        logging.info(f"report_id={report_id}")
-
-        logging.info(f"overlay_path={overlay_path!r}")
-        logging.info(
-            f"overlay_exists={os.path.exists(overlay_path) if overlay_path else None}"
-        )
-
-        logging.info(f"overlay_bucket={bucket_name!r}")
-        logging.info(f"overlay_object={object_name!r}")
-
-        logging.info(f"overlay_url={overlay_url!r}")
-        logging.info("=== overlay debug end ===")
-
+       
         report_ref.set({
             "status": "DONE",
             "raw": raw,
