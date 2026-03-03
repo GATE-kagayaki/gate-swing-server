@@ -131,6 +131,46 @@
     return sec;
   }
 
+  <script>
+  // ...既存...
+
+  function renderVideo(videoUrl) {
+    const sec = sectionWrap("00. 骨格ライン動画（解析結果）");
+    const box = document.createElement("div");
+    box.className = "card mt-3";
+    box.innerHTML = `
+      <div class="muted mb-2">前傾ズレなどの検知箇所は色で表示されます（緑→黄→赤）。</div>
+      <video controls playsinline class="w-full rounded-lg" preload="metadata">
+        <source src="${videoUrl}" type="video/mp4">
+        お使いのブラウザでは動画を再生できません。
+      </video>
+      <div class="muted mt-2">※再生できない場合は、Wi-Fi環境で再読み込みしてください。</div>
+    `;
+    sec.appendChild(box);
+    reportContent.appendChild(sec);
+  }
+
+  fetch(`/api/report_data/${reportId}`)
+    .then(r => r.json())
+    .then(data => {
+      loadingEl.classList.add("hidden");
+      if (String(data.status).toUpperCase() === "COMPLETED") {
+        reportContent.classList.remove("hidden");
+        if (data.is_premium) premiumBadge.classList.remove("hidden");
+
+        // ★ここ：動画URLがあれば最上部に表示
+        if (data.overlay_video_url) renderVideo(data.overlay_video_url);
+
+        const a = data.analysis || {};
+        if (a["01"]) render01(a["01"]);
+        ["02","03","04","05","06"].forEach(k => a[k] && render02to06(k, a[k]));
+        if (a["07"]) renderTextSection(a["07"]);
+        if (a["08"]) render08(a["08"]);
+        if (a["09"]) render09(a["09"]);
+        if (a["10"]) renderTextSection(a["10"]);
+      }
+    });
+</script>
   function render01(secData) {
     const sec = sectionWrap(secData.title);
     const table = document.createElement("table");
