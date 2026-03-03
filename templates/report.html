@@ -114,7 +114,7 @@
 
 <script>
   const parts = location.pathname.split("/").filter(Boolean);
-　const reportId = parts[parts.length - 1];
+  const reportId = parts[parts.length - 1];
 
   document.getElementById("reportId").innerText = reportId;
 
@@ -130,10 +130,7 @@
     sec.appendChild(h2);
     return sec;
   }
-
-  <script>
-  // ...既存...
-
+  
   function renderVideo(videoUrl) {
     const sec = sectionWrap("00. 骨格ライン動画（解析結果）");
     const box = document.createElement("div");
@@ -149,28 +146,7 @@
     sec.appendChild(box);
     reportContent.appendChild(sec);
   }
-
-  fetch(`/api/report_data/${reportId}`)
-    .then(r => r.json())
-    .then(data => {
-      loadingEl.classList.add("hidden");
-      if (String(data.status).toUpperCase() === "COMPLETED") {
-        reportContent.classList.remove("hidden");
-        if (data.is_premium) premiumBadge.classList.remove("hidden");
-
-        // ★ここ：動画URLがあれば最上部に表示
-        if (data.overlay_video_url) renderVideo(data.overlay_video_url);
-
-        const a = data.analysis || {};
-        if (a["01"]) render01(a["01"]);
-        ["02","03","04","05","06"].forEach(k => a[k] && render02to06(k, a[k]));
-        if (a["07"]) renderTextSection(a["07"]);
-        if (a["08"]) render08(a["08"]);
-        if (a["09"]) render09(a["09"]);
-        if (a["10"]) renderTextSection(a["10"]);
-      }
-    });
-</script>
+ 
   function render01(secData) {
     const sec = sectionWrap(secData.title);
     const table = document.createElement("table");
