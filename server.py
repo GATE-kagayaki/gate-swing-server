@@ -571,6 +571,37 @@ def analyze_swing_with_mediapipe(video_path: str) -> Dict[str, Any]:
     import mediapipe as mp
     import math
     from typing import List, Dict, Any
+    from typing import Optional  # 追加（上にあれば不要）
+
+def analyze_swing_with_mediapipe(video_path: str, overlay_out_path: Optional[str] = None) -> Dict[str, Any]:
+    snaps = []
+    import os
+    os.environ["MP_DEVICE"] = "cpu"
+    os.environ["MEDIAPIPE_DISABLE_GPU"] = "1"
+
+    import logging
+    import cv2
+    import mediapipe as mp
+    import math
+    from typing import List, Dict, Any
+
+    mp_pose = mp.solutions.pose
+    mp_draw = mp.solutions.drawing_utils  # ★追加
+    mp_styles = mp.solutions.drawing_styles  # ★追加（任意、見た目が安定）
+
+    cap = cv2.VideoCapture(video_path)
+    if not cap.isOpened():
+        raise RuntimeError("OpenCVがビデオを読み込めませんでした。")
+
+    # ★overlay writer（必要な時だけ作る）
+    writer = None
+    if overlay_out_path:
+        fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
+        w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+        h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+        writer = cv2.VideoWriter(overlay_out_path, fourcc, fps, (w, h))
+        logging.warning(f"[DEBUG] overlay_writer_opened={writer.isOpened()} path={overlay_out_path} fps={fps} size=({w},{h})")
 
 
   # 530行目付近：ここから入れ替え
