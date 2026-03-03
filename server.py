@@ -2335,26 +2335,31 @@ def task_handler():
         premium = bool(report.get("is_premium", False))
         user_inputs = report.get("user_inputs") or {}
 
-        # 動画DL → 解析
-        with tempfile.TemporaryDirectory() as tmpdir:
-            video_path = os.path.join(tmpdir, f"{report_id}.mp4")
-            content = line_bot_api.get_message_content(message_id)
-            with open(video_path, "wb") as f:
-                for chunk in content.iter_content():
-                    f.write(chunk)
+       # 動画DL → 解析（＋overlayアップロードまでをwith内でやる）
+    overlay_url = None
 
-            raw = analyze_swing_with_mediapipe(video_path)
-            
-        # --- overlay動画URLを作る ---
-        overlay_url = None
+    with tempfile.TemporaryDirectory() as tmpdir:
+        video_path = os.path.join(tmpdir, f"{report_id}.mp4")
+        content = line_bot_api.get_message_content(message_id)
+        with open(video_path, "wb") as f:
+            for chunk in content.iter_content():
+                f.write(chunk)
+
+        raw = analyze_swing_with_mediapipe(video_path)
+
+    # --- overlay動画URLを作る（★withの中に移動） ---
         try:
-            overlay_path = raw.get("overlay_path")
+            overlay_path = raw.get("overlay_path") if isinstance(raw, dict) else None
+            logging.warning(f"[DEBUG] overlay_path={overlay_path}")
+            logging.warning(f"[DEBUG] overlay_exists={os.path.exists(overlay_path) if overlay_path else None}")
+
             if overlay_path and os.path.exists(overlay_path):
                 overlay_url = upload_video_to_gcs(overlay_path, report_id)
+
         except Exception:
             logging.exception("[WARN] overlay upload failed")
 
-        logging.warning(f"[DEBUG] overlay_url={overlay_url}")
+    logging.warning(f"[DEBUG] overlay_url={overlay_url}")
         
         # --- ここまで ---
 
