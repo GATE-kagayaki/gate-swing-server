@@ -2344,6 +2344,16 @@ def task_handler():
                     f.write(chunk)
 
             raw = analyze_swing_with_mediapipe(video_path)
+            
+        # --- overlay動画URLを作る ---
+        overlay_url = None
+        try:
+            overlay_path = raw.get("overlay_path")
+            if overlay_path and os.path.exists(overlay_path):
+                overlay_url = upload_video_to_gcs(overlay_path, report_id)
+        except Exception:
+            logging.exception("[WARN] overlay upload failed")
+        # --- ここまで ---
 
         analysis = build_analysis(raw=raw, premium=premium, report_id=report_id, user_inputs=user_inputs)
 
