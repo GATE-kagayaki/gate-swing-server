@@ -31,6 +31,9 @@ from google.cloud import firestore
 from google.cloud import tasks_v2
 from google.api_core.exceptions import NotFound, PermissionDenied
 
+from google.cloud import storage   # ★追加（動画アップロード用）
+from datetime import timedelta     # ★追加（URL期限用）
+
 import stripe
 # --- Stripe設定 ---
 # 本番環境では環境変数から取得することを推奨します
