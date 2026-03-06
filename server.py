@@ -2358,10 +2358,28 @@ def api_report_data(report_id: str):
     return jsonify({
         "ok": True,
         "report_id": report_id,
-        "status": status_out,                 # PROCESSING / COMPLETED
+        "status": status_out,
         "is_premium": bool(r.get("is_premium", False)),
         "analysis": r.get("analysis") or {},
+        "overlay_video_url": r.get("overlay_video_url"),
     })
+
+def upload_video_to_gcs(local_path: str, report_id: str) -> str:
+    bucket_name = "gate20260201"  # 必要なら実際のバケット名に変更
+    object_name = f"overlays/{report_id}.mp4"
+
+    client = storage.Client()
+    bucket = client.bucket(bucket_name)
+    blob = bucket.blob(object_name)
+
+    blob.upload_from_filename(local_path, content_type="video/mp4")
+
+    return blob.generate_signed_url(
+        version="v4",
+        expiration=timedelta(hours=24),
+        method="GET",
+        response_type="video/mp4",
+    )
     
 @app.route("/task-handler", methods=["POST"])
 def task_handler():
