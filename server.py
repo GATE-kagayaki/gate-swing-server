@@ -802,7 +802,30 @@ def analyze_swing_with_mediapipe(video_path: str, overlay_out_path: Optional[str
                 hip = angle_3d(xyz_stable(LH), xyz_stable(RH), xyz_stable(LK))
                 wr = 180.0 - angle_3d(xyz_stable(LE), xyz_stable(LW), xyz_stable(LI))
 
-                # 3. 距離計算（ここも base_nose が確定しているこの場所なら安全です）
+                # --- 前傾角 ---
+                ls = xyz_stable(LS)
+                rs = xyz_stable(RS)
+                lh = xyz_stable(LH)
+                rh = xyz_stable(RH)
+
+                shoulder_mid = (
+                    (ls[0] + rs[0]) / 2,
+                    (ls[1] + rs[1]) / 2,
+                    (ls[2] + rs[2]) / 2
+                )
+
+                hip_mid = (
+                    (lh[0] + rh[0]) / 2,
+                    (lh[1] + rh[1]) / 2,
+                    (lh[2] + rh[2]) / 2
+                )
+
+                # 前傾角（画面上の傾き）
+                dx = shoulder_mid[0] - hip_mid[0]
+                dy = shoulder_mid[1] - hip_mid[1]
+                spine_angle = abs(math.degrees(math.atan2(dx, dy)))
+
+                # 3. 距離計算
                 def dist_3d(p, base):
                     return math.sqrt(sum((a - b)**2 for a, b in zip(p, base)))
 
@@ -816,6 +839,7 @@ def analyze_swing_with_mediapipe(video_path: str, overlay_out_path: Optional[str
                 heads.append(float(hd))
                 knees.append(float(kn))
                 x_factors.append(float(sh - abs(hip)))
+                spines.append(float(spine_angle))
     cap.release()
     if writer is not None:
         writer.release()
@@ -866,6 +890,7 @@ def analyze_swing_with_mediapipe(video_path: str, overlay_out_path: Optional[str
         "head": pack(heads, 4),
         "knee": pack(knees, 4),
         "x_factor": pack(x_factors, 2),
+        "spine": pack(spines, 2),
         "snaps": snaps
     }
 
