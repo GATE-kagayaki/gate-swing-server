@@ -646,7 +646,47 @@ def analyze_swing_with_mediapipe(video_path: str, overlay_out_path: Optional[str
         # 角度計算: cos(theta) = (A・B) / (|A|*|B|)
         c = max(-1.0, min(1.0, dot / (na * nb)))
         return math.degrees(math.acos(c))
+    def draw_overlay_skeleton(frame, lm, mp_pose, color):
+        import cv2
 
+        h, w = frame.shape[:2]
+
+        def pt(idx):
+            return (int(lm[idx].x * w), int(lm[idx].y * h))
+
+        def ok(idx):
+            return lm[idx].visibility >= 0.6
+
+        LS = mp_pose.PoseLandmark.LEFT_SHOULDER.value
+        RS = mp_pose.PoseLandmark.RIGHT_SHOULDER.value
+        LE = mp_pose.PoseLandmark.LEFT_ELBOW.value
+        RE = mp_pose.PoseLandmark.RIGHT_ELBOW.value
+        LW = mp_pose.PoseLandmark.LEFT_WRIST.value
+        RW = mp_pose.PoseLandmark.RIGHT_WRIST.value
+        LH = mp_pose.PoseLandmark.LEFT_HIP.value
+        RH = mp_pose.PoseLandmark.RIGHT_HIP.value
+        LK = mp_pose.PoseLandmark.LEFT_KNEE.value
+        RK = mp_pose.PoseLandmark.RIGHT_KNEE.value
+        NO = mp_pose.PoseLandmark.NOSE.value
+
+        connections = [
+            (LS, RS),
+            (LS, LE), (LE, LW),
+            (RS, RE), (RE, RW),
+            (LH, RH),
+            (LH, LK),
+            (RH, RK),
+            (LS, LH),
+            (RS, RH),
+        ]
+
+        for a, b in connections:
+            if ok(a) and ok(b):
+                cv2.line(frame, pt(a), pt(b), color, 3)
+
+        for idx in [NO, LS, RS, LE, RE, LW, RW, LH, RH, LK, RK]:
+            if ok(idx):
+                cv2.circle(frame, pt(idx), 4, color, -1)
     # model_complexity=1 はCPU環境で速度と精度のバランスが最も良い設定です。
     with mp_pose.Pose(
         static_image_mode=False,
