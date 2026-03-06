@@ -33,6 +33,8 @@ from google.api_core.exceptions import NotFound, PermissionDenied
 
 from google.cloud import storage   # ★追加（動画アップロード用）
 from datetime import timedelta     # ★追加（URL期限用）
+import google.auth
+from google.auth.transport.requests import Request
 
 import stripe
 # --- Stripe設定 ---
@@ -2365,21 +2367,36 @@ def api_report_data(report_id: str):
     })
 
 def upload_video_to_gcs(local_path: str, report_id: str) -> str:
-    bucket_name = "gate20260201"  # 必要なら実際のバケット名に変更
+    bucket_name = "gate20260201"
     object_name = f"overlays/{report_id}.mp4"
+
+    logging.warning(f"[DEBUG] upload start bucket={bucket_name} object={object_name} local_path={local_path}")
 
     client = storage.Client()
     bucket = client.bucket(bucket_name)
     blob = bucket.blob(object_name)
 
     blob.upload_from_filename(local_path, content_type="video/mp4")
+    logging.warning("[DEBUG] upload done")
 
-    return blob.generate_signed_url(
+    import google.auth
+    from google.auth.transport.requests import Request
+
+    credentials, _ = google.auth.default()
+    auth_req = Request()
+    credentials.refresh(auth_req)
+
+    signed_url = blob.generate_signed_url(
         version="v4",
         expiration=timedelta(hours=24),
         method="GET",
         response_type="video/mp4",
+        service_account_email=getattr(credentials, "service_account_email", None),
+        access_token=credentials.token,
     )
+
+    logging.warning(f"[DEBUG] signed_url={signed_url}")
+    return signed_url
     
 @app.route("/task-handler", methods=["POST"])
 def task_handler():
