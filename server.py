@@ -708,19 +708,31 @@ def analyze_swing_with_mediapipe(video_path: str, overlay_out_path: Optional[str
             total_frames += 1
             rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
             
-            # ここでGPUを探しに行ってエラーが出ていましたが、CPU指定により回避されます。
+                        # ここでGPUを探しに行ってエラーが出ていましたが、CPU指定により回避されます。
             res = pose.process(rgb)
 
-            # ★ overlayを書き出す（毎フレーム書く。骨格がある時だけ描画する）
+            # ★ overlayを書き出す（毎フレーム書く。解析中だけ色付き骨格を描画）
             if writer is not None:
                 out = frame.copy()
-                if res.pose_landmarks:
-                    mp_draw.draw_landmarks(
-                        out,
-                        res.pose_landmarks,
-                        mp_pose.POSE_CONNECTIONS,
-                        landmark_drawing_spec=mp_styles.get_default_pose_landmarks_style(),
-                    )
+
+                if res.pose_landmarks and is_analyzing and not swing_ended:
+                    lm = res.pose_landmarks.landmark
+
+                    if base_nose is not None:
+                        curr_nose_for_color = xyz_stable(NO)
+                        hd_color = math.sqrt(sum((a - b) ** 2 for a, b in zip(curr_nose_for_color, base_nose))) * 100
+
+                        if hd_color <= 3.5:
+                            color = (0, 255, 0)        # 緑
+                        elif hd_color <= 6.0:
+                            color = (0, 255, 255)      # 黄
+                        else:
+                            color = (0, 0, 255)        # 赤
+                    else:
+                        color = (0, 255, 0)
+
+                    draw_overlay_skeleton(out, lm, mp_pose, color)
+
                 writer.write(out)
             if not res.pose_landmarks:
                 continue
