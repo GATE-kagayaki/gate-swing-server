@@ -2368,6 +2368,8 @@ def build_paid_10(analysis: Dict[str, Any]) -> Dict[str, Any]:
 def build_analysis(raw: Dict[str, Any], premium: bool, report_id: str, user_inputs: Dict[str, Any]) -> Dict[str, Any]:
     analysis: Dict[str, Any] = {"01": build_section_01(raw)}
 
+    spine_flag = judge_spine_flag(raw)
+
     if not premium:
         analysis["07"] = build_free_07(raw)
         return analysis
@@ -2378,24 +2380,83 @@ def build_analysis(raw: Dict[str, Any], premium: bool, report_id: str, user_inpu
     analysis["05"] = build_paid_05_head(raw, seed=report_id)
     analysis["06"] = build_paid_06_knee(raw, seed=report_id)
 
-    # 07は「解析結果のまとめ(analysis)」と「生データ(raw)」の両方を使用
+    # 05 Head Stability に前傾反映
+    if spine_flag == "ok":
+        analysis["05"].setdefault("good", []).append(
+            "前傾姿勢が安定しており、頭部位置の再現性を保ちやすい土台があります。"
+        )
+    elif spine_flag == "warn":
+        analysis["05"].setdefault("bad", []).append(
+            "前傾姿勢の維持にややばらつきがあり、頭部の安定性にも影響しています。"
+        )
+    elif spine_flag == "bad":
+        analysis["05"].setdefault("bad", []).append(
+            "前傾姿勢の崩れが大きく、頭部の位置再現性を下げています。"
+        )
+
+    # 06 Knee Stability に前傾反映
+    if spine_flag == "ok":
+        analysis["06"].setdefault("good", []).append(
+            "前傾姿勢を保ったまま動けており、下半身の安定性を支える良い要素になっています。"
+        )
+    elif spine_flag == "warn":
+        analysis["06"].setdefault("bad", []).append(
+            "前傾維持の不安定さが、下半身の再現性にも影響しています。"
+        )
+    elif spine_flag == "bad":
+        analysis["06"].setdefault("bad", []).append(
+            "前傾姿勢が起き上がりやすく、膝の安定性を損なっています。"
+        )
+
     analysis["07"] = build_paid_07_from_analysis(analysis, raw)
 
-    # ✅ 修正箇所1：build_paid_08 は (analysis, raw) の2つが必要です
+    # 07 総合評価にも反映
+    if spine_flag == "ok":
+        analysis["07"].setdefault("text", []).append(
+            "【前傾維持】前傾姿勢は比較的安定しており、頭部・下半身の再現性を支える良い要素になっています。"
+        )
+    elif spine_flag == "warn":
+        analysis["07"].setdefault("text", []).append(
+            "【前傾維持】前傾角の再現性にややばらつきがあり、スイング軸の安定性に影響しています。"
+        )
+    elif spine_flag == "bad":
+        analysis["07"].setdefault("text", []).append(
+            "【前傾維持】前傾姿勢の崩れが大きく、頭部・下半身の安定性を下げています。"
+        )
+
     analysis["08"] = build_paid_08(analysis, raw)
 
-    # ✅ # 09は入力がある場合のみ出力する
+    # 前傾が悪い時だけドリル追加
+    if spine_flag in ("warn", "bad"):
+        analysis["08"].setdefault("drills", [])
+        analysis["08"]["drills"].insert(0, {
+            "name": "前傾キープドリル",
+            "purpose": "前傾姿勢を保ったまま回転する感覚を身につけ、頭部と下半身の安定性を高める",
+            "how": "アドレスの前傾角を保ったまま、肩と腰をゆっくり回すハーフスイングを10回×2セット行う"
+        })
+
+    # 09は入力がある場合のみ出力する
     ui = user_inputs or {}
     if ui.get("head_speed") is not None or ui.get("miss_tendency") or ui.get("gender"):
         analysis["09"] = build_paid_09(raw, ui)
-    # else: 何もしない（09を出さない）
 
-    # ✅ 修正箇所2：build_paid_10 は 01〜09の結果をまとめるため (analysis) を渡します
-    # ※ raw を渡すと、まとめロジック内でデータが参照できずエラーになります
     analysis["10"] = build_paid_10(analysis)
 
-    return analysis
+    # 10 Summary にも反映
+    if spine_flag == "ok":
+        analysis["10"].setdefault("text", []).append(
+            "前傾姿勢は比較的安定しており、スイング全体の再現性を支える良い要素になっています。"
+        )
+    elif spine_flag == "warn":
+        analysis["10"].setdefault("text", []).append(
+            "加えて、前傾姿勢の維持を意識すると、スイング全体の再現性がさらに高まります。"
+        )
+    elif spine_flag == "bad":
+        analysis["10"].setdefault("text", []).append(
+            "特に前傾姿勢の維持が重要課題です。起き上がりを抑えることで、他の数値も連動して改善しやすくなります。"
+        )
 
+    return analysis
 # ==================================================
 # Routes
 # ==================================================
