@@ -824,7 +824,7 @@ def analyze_swing_with_mediapipe(video_path: str, overlay_out_path: Optional[str
                 # 前傾角（画面上の傾き）
                 dx = shoulder_mid[0] - hip_mid[0]
                 dy = shoulder_mid[1] - hip_mid[1]
-                spine_angle = abs(math.degrees(math.atan2(dx, dy)))
+                spine_angle = math.degrees(math.atan2(abs(dx), abs(dy)))
 
                 # 3. 距離計算
                 def dist_3d(p, base):
