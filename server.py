@@ -627,6 +627,7 @@ def analyze_swing_with_mediapipe(video_path: str, overlay_out_path: Optional[str
     heads: List[float] = []
     knees: List[float] = []
     x_factors: List[float] = []
+    spines: List[float] = []
 
     def angle_3d(p1, p2, p3):
         # ベクトル BA (p1-p2) と BC (p3-p2) を計算
