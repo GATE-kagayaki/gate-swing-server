@@ -799,24 +799,24 @@ def analyze_swing_with_mediapipe(video_path: str, overlay_out_path: Optional[str
 
     # (ここに必要な計算ロジックが入ります)
 
-        result = {
-            "frame_count": int(total_frames),
-            "valid_frames": int(valid_frames),
-            "confidence": round(conf, 3),
-            "shoulder": pack(shoulders, 2),
-            "hip": pack(hips, 2),
-            "wrist": pack(wrists, 2),
-            "head": pack(heads, 4),
-            "knee": pack(knees, 4),
-            "x_factor": pack(x_factors, 2),
-            "snaps": snaps
-        }
+    result = {
+        "frame_count": int(total_frames),
+        "valid_frames": int(valid_frames),
+        "confidence": round(conf, 3),
+        "shoulder": pack(shoulders, 2),
+        "hip": pack(hips, 2),
+        "wrist": pack(wrists, 2),
+        "head": pack(heads, 4),
+        "knee": pack(knees, 4),
+        "x_factor": pack(x_factors, 2),
+        "snaps": snaps
+    }
 
-        # ★ overlay動画パスを返す
-        if overlay_out_path:
-            result["overlay_path"] = overlay_out_path
+    # ★ overlay動画パスを返す
+    if overlay_out_path:
+        result["overlay_path"] = overlay_out_path
 
-        return result
+    return result
 
   
 # ==================================================
