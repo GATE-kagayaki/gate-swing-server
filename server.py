@@ -2365,6 +2365,22 @@ def build_paid_10(analysis: Dict[str, Any]) -> Dict[str, Any]:
 # ==================================================
 # Analysis builder
 # ==================================================
+def judge_spine_flag(raw: Dict[str, Any]) -> str:
+    spine = raw.get("spine") or {}
+    spine_mean = float(spine.get("mean", 0) or 0)
+    spine_std = float(spine.get("std", 0) or 0)
+
+    # 良い
+    if 20 <= spine_mean <= 35 and spine_std <= 7:
+        return "ok"
+
+    # 悪い
+    if spine_mean < 15 or spine_mean > 40 or spine_std > 10:
+        return "bad"
+
+    # その中間
+    return "warn"
+    
 def build_analysis(raw: Dict[str, Any], premium: bool, report_id: str, user_inputs: Dict[str, Any]) -> Dict[str, Any]:
     analysis: Dict[str, Any] = {"01": build_section_01(raw)}
 
