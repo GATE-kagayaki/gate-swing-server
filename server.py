@@ -765,6 +765,9 @@ def analyze_swing_with_mediapipe(video_path: str, overlay_out_path: Optional[str
                 knees.append(float(kn))
                 x_factors.append(float(sh - abs(hip)))
     cap.release()
+    if writer is not None:
+        writer.release()
+        logging.warning("[DEBUG] overlay writer released")
     
     # --- ヘルパー関数の定義 ---
     def _safe_mean(xs):
