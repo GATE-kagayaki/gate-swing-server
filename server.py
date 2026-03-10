@@ -699,15 +699,8 @@ def analyze_swing_with_mediapipe(video_path: str, overlay_out_path: Optional[str
                 if res.pose_landmarks and is_analyzing and not swing_ended:
                     lm = res.pose_landmarks.landmark
 
-                    # 前傾角による色判定
-                    if spine_angle <= 25:
-                        color = (0, 255, 0)        # 緑 = 良い前傾
-                    elif spine_angle <= 35:
-                        color = (0, 255, 255)      # 黄 = やや深い
-                    else:
-                        color = (0, 0, 255)        # 赤 = 深すぎ
-
-                    draw_overlay_skeleton(out, lm, mp_pose, color)
+                    # --- 前傾角を先に計算（必ず存在するようにする） ---
+                    spine_angle = 0.0
 
                     if (
                         lm[LS].visibility >= 0.7 and
@@ -715,23 +708,39 @@ def analyze_swing_with_mediapipe(video_path: str, overlay_out_path: Optional[str
                         lm[LH].visibility >= 0.7 and
                         lm[RH].visibility >= 0.7
                     ):
-                        ls2 = xyz_stable(LS)
-                        rs2 = xyz_stable(RS)
-                        lh2 = xyz_stable(LH)
-                        rh2 = xyz_stable(RH)
+                        ls = xyz_stable(LS)
+                        rs = xyz_stable(RS)
+                        lh = xyz_stable(LH)
+                        rh = xyz_stable(RH)
 
-                        shoulder_mid_2d = (
-                            int(((ls2[0] + rs2[0]) / 2) * out.shape[1]),
-                            int(((ls2[1] + rs2[1]) / 2) * out.shape[0]),
-                        )
-                        hip_mid_2d = (
-                            int(((lh2[0] + rh2[0]) / 2) * out.shape[1]),
-                            int(((lh2[1] + rh2[1]) / 2) * out.shape[0]),
+                        shoulder_mid = (
+                            (ls[0] + rs[0]) / 2,
+                            (ls[1] + rs[1]) / 2,
+                            (ls[2] + rs[2]) / 2
                         )
 
-                        cv2.line(out, hip_mid_2d, shoulder_mid_2d, color, 4)
-                        cv2.circle(out, shoulder_mid_2d, 6, color, -1)
-                        cv2.circle(out, hip_mid_2d, 6, color, -1)
+                        hip_mid = (
+                            (lh[0] + rh[0]) / 2,
+                            (lh[1] + rh[1]) / 2,
+                            (lh[2] + rh[2]) / 2
+                        )
+
+                        dx = shoulder_mid[0] - hip_mid[0]
+                        dy = shoulder_mid[1] - hip_mid[1]
+                        dz = shoulder_mid[2] - hip_mid[2]
+
+                        horizontal = math.sqrt(dx * dx + dz * dz)
+                        spine_angle = math.degrees(math.atan2(horizontal, abs(dy)))
+
+                    # --- 前傾角による色判定 ---
+                    if spine_angle <= 25:
+                        color = (0, 255, 0)
+                    elif spine_angle <= 35:
+                        color = (0, 255, 255)
+                    else:
+                        color = (0, 0, 255)
+
+                    draw_overlay_skeleton(out, lm, mp_pose, color)
 
                 writer.write(out)
             if not res.pose_landmarks:
