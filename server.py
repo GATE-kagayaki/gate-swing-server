@@ -799,10 +799,13 @@ def analyze_swing_with_mediapipe(video_path: str, overlay_out_path: Optional[str
                     (lh[2] + rh[2]) / 2
                 )
 
-                # 前傾角（画面上の傾き）
+                # 前傾角（3Dベース）
                 dx = shoulder_mid[0] - hip_mid[0]
                 dy = shoulder_mid[1] - hip_mid[1]
-                spine_angle = math.degrees(math.atan2(abs(dx), abs(dy)))
+                dz = shoulder_mid[2] - hip_mid[2]
+
+                horizontal = math.sqrt(dx * dx + dz * dz)
+                spine_angle = math.degrees(math.atan2(horizontal, abs(dy)))
 
                 # 3. 距離計算
                 def dist_3d(p, base):
@@ -2442,19 +2445,19 @@ def build_analysis(raw: Dict[str, Any], premium: bool, report_id: str, user_inpu
 
     analysis["10"] = build_paid_10(analysis)
 
-   # 10 Summary にも反映
-   if spine_flag == "ok":
-       analysis["10"].setdefault("text", []).insert(0,
-           "前傾姿勢は比較的安定しており、スイング全体の再現性を支える良い要素になっています。"
-       )
-   elif spine_flag == "warn":
-       analysis["10"].setdefault("text", []).insert(0,
-           "前傾姿勢の維持を意識すると、スイング全体の再現性がさらに高まります。"
-       )
-   elif spine_flag == "bad":
-       analysis["10"].setdefault("text", []).insert(0,
-           "特に前傾姿勢の維持が重要課題です。起き上がりを抑えることで、他の数値も連動して改善しやすくなります。"
-       )
+    # 10 Summary にも反映
+    if spine_flag == "ok":
+        analysis["10"].setdefault("text", []).insert(0,
+            "前傾姿勢は比較的安定しており、スイング全体の再現性を支える良い要素になっています。"
+        )
+    elif spine_flag == "warn":
+        analysis["10"].setdefault("text", []).insert(0,
+            "前傾姿勢の維持を意識すると、スイング全体の再現性がさらに高まります。"
+        )
+    elif spine_flag == "bad":
+        analysis["10"].setdefault("text", []).insert(0,
+            "特に前傾姿勢の維持が重要課題です。起き上がりを抑えることで、他の数値も連動して改善しやすくなります。"
+        )
         
     return analysis
 # ==================================================
