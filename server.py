@@ -2442,20 +2442,20 @@ def build_analysis(raw: Dict[str, Any], premium: bool, report_id: str, user_inpu
 
     analysis["10"] = build_paid_10(analysis)
 
-    # 10 Summary にも反映
-    if spine_flag == "ok":
-        analysis["10"].setdefault("text", []).append(
-            "前傾姿勢は比較的安定しており、スイング全体の再現性を支える良い要素になっています。"
-        )
-    elif spine_flag == "warn":
-        analysis["10"].setdefault("text", []).append(
-            "加えて、前傾姿勢の維持を意識すると、スイング全体の再現性がさらに高まります。"
-        )
-    elif spine_flag == "bad":
-        analysis["10"].setdefault("text", []).append(
-            "特に前傾姿勢の維持が重要課題です。起き上がりを抑えることで、他の数値も連動して改善しやすくなります。"
-        )
-
+   # 10 Summary にも反映
+   if spine_flag == "ok":
+       analysis["10"].setdefault("text", []).insert(0,
+           "前傾姿勢は比較的安定しており、スイング全体の再現性を支える良い要素になっています。"
+       )
+   elif spine_flag == "warn":
+       analysis["10"].setdefault("text", []).insert(0,
+           "前傾姿勢の維持を意識すると、スイング全体の再現性がさらに高まります。"
+       )
+   elif spine_flag == "bad":
+       analysis["10"].setdefault("text", []).insert(0,
+           "特に前傾姿勢の維持が重要課題です。起き上がりを抑えることで、他の数値も連動して改善しやすくなります。"
+       )
+        
     return analysis
 # ==================================================
 # Routes
