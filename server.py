@@ -790,6 +790,7 @@ def analyze_swing_with_mediapipe(video_path: str, overlay_out_path: Optional[str
                     if dx < 0.01 and dy < 0.01:
                         base_nose = curr_nose
                         base_lknee = curr_lknee
+                        base_spine_angle = spine_angle
                         start_frame = total_frames
                         logging.warning("[DEBUG] START analyzing at frame=%d", start_frame)
                         is_analyzing = True
