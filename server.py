@@ -553,28 +553,6 @@ def create_cloud_task(report_id: str, user_id: str, message_id: str) -> str:
 # ==================================================
 # MediaPipe analysis（max/mean/std/conf）
 # ==================================================
-def analyze_swing_with_mediapipe(video_path: str) -> Dict[str, Any]:
-    snaps = []
-    import os
-    os.environ["MP_DEVICE"] = "cpu"
-    os.environ["MEDIAPIPE_DISABLE_GPU"] = "1"
-
-    import logging
-    logging.warning(
-        "[ENV CHECK] CUDA_VISIBLE_DEVICES=%r MEDIAPIPE_DISABLE_GPU=%r MP_DEVICE=%r EGL_PLATFORM=%r",
-        os.environ.get("CUDA_VISIBLE_DEVICES"),
-        os.environ.get("MEDIAPIPE_DISABLE_GPU"),
-        os.environ.get("MP_DEVICE"),
-        os.environ.get("EGL_PLATFORM"),
-    )
-
-
-    import cv2
-    import mediapipe as mp
-    import math
-    from typing import List, Dict, Any
-    from typing import Optional  # 追加（上にあれば不要）
-
 def analyze_swing_with_mediapipe(video_path: str, overlay_out_path: Optional[str] = None) -> Dict[str, Any]:
     snaps = []
     import os
