@@ -699,18 +699,13 @@ def analyze_swing_with_mediapipe(video_path: str, overlay_out_path: Optional[str
                 if res.pose_landmarks and is_analyzing and not swing_ended:
                     lm = res.pose_landmarks.landmark
 
-                    if base_nose is not None:
-                        curr_nose_for_color = xyz_stable(NO)
-                        hd_color = math.sqrt(sum((a - b) ** 2 for a, b in zip(curr_nose_for_color, base_nose))) * 100
-
-                        if hd_color <= 3.5:
-                            color = (0, 255, 0)        # 緑
-                        elif hd_color <= 6.0:
-                            color = (0, 255, 255)      # 黄
-                        else:
-                            color = (0, 0, 255)        # 赤
+                    # 前傾角による色判定
+                    if spine_angle <= 25:
+                        color = (0, 255, 0)        # 緑 = 良い前傾
+                    elif spine_angle <= 35:
+                        color = (0, 255, 255)      # 黄 = やや深い
                     else:
-                        color = (0, 255, 0)
+                        color = (0, 0, 255)        # 赤 = 深すぎ
 
                     draw_overlay_skeleton(out, lm, mp_pose, color)
 
