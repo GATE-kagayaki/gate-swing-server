@@ -674,6 +674,8 @@ def analyze_swing_with_mediapipe(video_path: str, overlay_out_path: Optional[str
         min_detection_confidence=0.5,
         min_tracking_confidence=0.5,
     ) as pose:
+        spine_shoulder_history = []
+        spine_hip_history = []
         base_nose = None
         base_lknee = None
         pos_history = []      # アドレス静止判定用
@@ -686,7 +688,7 @@ def analyze_swing_with_mediapipe(video_path: str, overlay_out_path: Optional[str
                 break
             total_frames += 1
             rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-            
+                    
                         # ここでGPUを探しに行ってエラーが出ていましたが、CPU指定により回避されます。
             res = pose.process(rgb)
 
@@ -712,6 +714,30 @@ def analyze_swing_with_mediapipe(video_path: str, overlay_out_path: Optional[str
 
                     draw_overlay_skeleton(out, lm, mp_pose, color)
 
+                    if (
+                        lm[LS].visibility >= 0.7 and
+                        lm[RS].visibility >= 0.7 and
+                        lm[LH].visibility >= 0.7 and
+                        lm[RH].visibility >= 0.7
+                    ):
+                        ls2 = xyz_stable(LS)
+                        rs2 = xyz_stable(RS)
+                        lh2 = xyz_stable(LH)
+                        rh2 = xyz_stable(RH)
+
+                        shoulder_mid_2d = (
+                            int(((ls2[0] + rs2[0]) / 2) * out.shape[1]),
+                            int(((ls2[1] + rs2[1]) / 2) * out.shape[0]),
+                        )
+                        hip_mid_2d = (
+                            int(((lh2[0] + rh2[0]) / 2) * out.shape[1]),
+                            int(((lh2[1] + rh2[1]) / 2) * out.shape[0]),
+                        )
+
+                        cv2.line(out, hip_mid_2d, shoulder_mid_2d, color, 4)
+                        cv2.circle(out, shoulder_mid_2d, 6, color, -1)
+                        cv2.circle(out, hip_mid_2d, 6, color, -1)
+
                 writer.write(out)
             if not res.pose_landmarks:
                 continue
@@ -721,6 +747,16 @@ def analyze_swing_with_mediapipe(video_path: str, overlay_out_path: Optional[str
 
             def xyz_stable(i):
                 return (lm[i].x, lm[i].y, lm[i].z * 0.5)
+
+            def avg_point(history):
+                n = len(history)
+                if n == 0:
+                    return None
+                return (
+                    sum(p[0] for p in history) / n,
+                    sum(p[1] for p in history) / n,
+                    sum(p[2] for p in history) / n,
+                )
 
                            
             LS = mp_pose.PoseLandmark.LEFT_SHOULDER.value
@@ -781,31 +817,51 @@ def analyze_swing_with_mediapipe(video_path: str, overlay_out_path: Optional[str
                 hip = angle_3d(xyz_stable(LH), xyz_stable(RH), xyz_stable(LK))
                 wr = 180.0 - angle_3d(xyz_stable(LE), xyz_stable(LW), xyz_stable(LI))
 
-                # --- 前傾角 ---
-                ls = xyz_stable(LS)
-                rs = xyz_stable(RS)
-                lh = xyz_stable(LH)
-                rh = xyz_stable(RH)
+                # --- 前傾角（肩中点−腰中点、visibility条件付き、3フレーム平均） ---
+                spine_angle = 0.0
+                smooth_shoulder_mid = None
+                smooth_hip_mid = None
 
-                shoulder_mid = (
-                    (ls[0] + rs[0]) / 2,
-                    (ls[1] + rs[1]) / 2,
-                    (ls[2] + rs[2]) / 2
-                )
+                if (
+                    lm[LS].visibility >= 0.7 and
+                    lm[RS].visibility >= 0.7 and
+                    lm[LH].visibility >= 0.7 and
+                    lm[RH].visibility >= 0.7
+                ):
+                    ls = xyz_stable(LS)
+                    rs = xyz_stable(RS)
+                    lh = xyz_stable(LH)
+                    rh = xyz_stable(RH)
 
-                hip_mid = (
-                    (lh[0] + rh[0]) / 2,
-                    (lh[1] + rh[1]) / 2,
-                    (lh[2] + rh[2]) / 2
-                )
+                    shoulder_mid = (
+                        (ls[0] + rs[0]) / 2,
+                        (ls[1] + rs[1]) / 2,
+                        (ls[2] + rs[2]) / 2
+                    )
 
-                # 前傾角（3Dベース）
-                dx = shoulder_mid[0] - hip_mid[0]
-                dy = shoulder_mid[1] - hip_mid[1]
-                dz = shoulder_mid[2] - hip_mid[2]
+                    hip_mid = (
+                        (lh[0] + rh[0]) / 2,
+                        (lh[1] + rh[1]) / 2,
+                        (lh[2] + rh[2]) / 2
+                    )
 
-                horizontal = math.sqrt(dx * dx + dz * dz)
-                spine_angle = math.degrees(math.atan2(horizontal, abs(dy)))
+                    spine_shoulder_history.append(shoulder_mid)
+                    spine_hip_history.append(hip_mid)
+
+                    if len(spine_shoulder_history) > 3:
+                        spine_shoulder_history.pop(0)
+                    if len(spine_hip_history) > 3:
+                        spine_hip_history.pop(0)
+
+                    smooth_shoulder_mid = avg_point(spine_shoulder_history)
+                    smooth_hip_mid = avg_point(spine_hip_history)
+
+                    dx = smooth_shoulder_mid[0] - smooth_hip_mid[0]
+                    dy = smooth_shoulder_mid[1] - smooth_hip_mid[1]
+                    dz = smooth_shoulder_mid[2] - smooth_hip_mid[2]
+
+                    horizontal = math.sqrt(dx * dx + dz * dz)
+                    spine_angle = math.degrees(math.atan2(horizontal, abs(dy)))
 
                 # 3. 距離計算
                 def dist_3d(p, base):
