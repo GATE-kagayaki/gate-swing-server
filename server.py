@@ -733,6 +733,9 @@ def analyze_swing_with_mediapipe(video_path: str, overlay_out_path: Optional[str
                         horizontal = math.sqrt(dx * dx + dz * dz)
                         spine_angle = math.degrees(math.atan2(horizontal, abs(dy)))
 
+                        if base_spine_angle is None and is_analyzing:
+                            base_spine_angle = spine_angle
+
                     # --- 前傾角による色判定 ---
                     if base_spine_angle is not None:
                         delta_spine = abs(spine_angle - base_spine_angle)
