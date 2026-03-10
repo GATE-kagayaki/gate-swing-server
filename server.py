@@ -2485,15 +2485,15 @@ def build_analysis(raw: Dict[str, Any], premium: bool, report_id: str, user_inpu
     # 07 総合評価にも反映
     if spine_flag == "ok":
         analysis["07"].setdefault("text", []).append(
-            "【前傾維持】前傾姿勢は比較的安定しており、頭部・下半身の再現性を支える良い要素になっています。"
+            "【前傾維持】前傾姿勢は全体としては比較的安定していますが、局面によって軽いズレが見られます。"
         )
     elif spine_flag == "warn":
         analysis["07"].setdefault("text", []).append(
-            "【前傾維持】前傾角の再現性にややばらつきがあり、スイング軸の安定性に影響しています。"
+            "【前傾維持】前傾姿勢は大きく崩れてはいませんが、局面によってズレが見られ、再現性に影響しています。"
         )
     elif spine_flag == "bad":
         analysis["07"].setdefault("text", []).append(
-            "【前傾維持】前傾姿勢の崩れが大きく、頭部・下半身の安定性を下げています。"
+            "【前傾維持】前傾姿勢の崩れが大きく、スイング軸の安定性に影響しています。"
         )
 
     analysis["08"] = build_paid_08(analysis, raw)
@@ -2517,11 +2517,11 @@ def build_analysis(raw: Dict[str, Any], premium: bool, report_id: str, user_inpu
     # 10 Summary にも反映
     if spine_flag == "ok":
         analysis["10"].setdefault("text", []).insert(0,
-            "前傾姿勢は比較的安定しており、スイング全体の再現性を支える良い要素になっています。"
+            "前傾姿勢は全体としては比較的安定していますが、一部の局面ではズレも見られます。"
         )
     elif spine_flag == "warn":
         analysis["10"].setdefault("text", []).insert(0,
-            "前傾姿勢の維持を意識すると、スイング全体の再現性がさらに高まります。"
+            "前傾姿勢は大きく崩れてはいませんが、局面によってズレが見られるため、維持の再現性を高める余地があります。"
         )
     elif spine_flag == "bad":
         analysis["10"].setdefault("text", []).insert(0,
