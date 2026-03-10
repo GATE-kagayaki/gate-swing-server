@@ -840,7 +840,9 @@ def analyze_swing_with_mediapipe(video_path: str, overlay_out_path: Optional[str
                 heads.append(float(hd))
                 knees.append(float(kn))
                 x_factors.append(float(sh - abs(hip)))
-                spines.append(float(spine_angle))
+                # spineノイズ除去
+                if spine_angle > 5:
+                    spines.append(float(spine_angle))
     cap.release()
     if writer is not None:
         writer.release()
