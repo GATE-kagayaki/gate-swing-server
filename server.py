@@ -733,12 +733,14 @@ def analyze_swing_with_mediapipe(video_path: str, overlay_out_path: Optional[str
                         spine_angle = math.degrees(math.atan2(horizontal, abs(dy)))
 
                     # --- 前傾角による色判定 ---
-                    if spine_angle <= 25:
-                        color = (0, 255, 0)
-                    elif spine_angle <= 35:
-                        color = (0, 255, 255)
+                    delta_spine = abs(spine_angle - base_spine_angle)
+
+                    if delta_spine <= 3:
+                        color = (0, 255, 0)        # 緑 = 前傾維持
+                    elif delta_spine <= 6:
+                        color = (0, 255, 255)      # 黄 = やや崩れ
                     else:
-                        color = (0, 0, 255)
+                        color = (0, 0, 255)        # 赤 = 大きく崩れ
 
                     draw_overlay_skeleton(out, lm, mp_pose, color)
 
