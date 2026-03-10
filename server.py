@@ -2455,25 +2455,24 @@ def build_analysis(raw: Dict[str, Any], premium: bool, report_id: str, user_inpu
     # 05 Head Stability に前傾反映
     if spine_flag == "ok":
         analysis["05"].setdefault("good", []).append(
-            "前傾姿勢が安定しており、頭部位置の再現性を保ちやすい土台があります。"
+            "前傾姿勢は全体としては比較的安定しており、頭部位置の再現性を支えています。"
         )
     elif spine_flag == "warn":
         analysis["05"].setdefault("bad", []).append(
-            "前傾姿勢の維持にややばらつきがあり、頭部の安定性にも影響しています。"
+            "前傾姿勢にややばらつきが見られ、頭部の安定性にも影響しています。"
         )
     elif spine_flag == "bad":
         analysis["05"].setdefault("bad", []).append(
-            "前傾姿勢の崩れが大きく、頭部の位置再現性を下げています。"
+            "前傾姿勢の崩れが大きく、頭部位置の再現性を下げています。"
         )
-
     # 06 Knee Stability に前傾反映
     if spine_flag == "ok":
         analysis["06"].setdefault("good", []).append(
-            "前傾姿勢を保ったまま動けており、下半身の安定性を支える良い要素になっています。"
-        )
+            "前傾姿勢は概ね保たれており、下半身の安定性を支える要素になっています。"
+        )  
     elif spine_flag == "warn":
         analysis["06"].setdefault("bad", []).append(
-            "前傾維持の不安定さが、下半身の再現性にも影響しています。"
+            "前傾維持にばらつきがあり、下半身の再現性にも影響しています。"
         )
     elif spine_flag == "bad":
         analysis["06"].setdefault("bad", []).append(
