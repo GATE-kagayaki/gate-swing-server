@@ -881,6 +881,10 @@ def analyze_swing_with_mediapipe(video_path: str, overlay_out_path: Optional[str
     # --- データの集計・計算 ---
     conf = float(valid_frames) / float(total_frames)
 
+    # spine保険
+    if len(spines) == 0:
+        spines.append(0.0)
+
     # (ここに必要な計算ロジックが入ります)
 
     result = {
