@@ -674,6 +674,7 @@ def analyze_swing_with_mediapipe(video_path: str, overlay_out_path: Optional[str
         min_detection_confidence=0.5,
         min_tracking_confidence=0.5,
     ) as pose:
+        base_spine_angle = None
         spine_shoulder_history = []
         spine_hip_history = []
         base_nose = None
