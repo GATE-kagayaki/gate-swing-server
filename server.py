@@ -1426,6 +1426,8 @@ def build_paid_05_head(raw: Dict[str, Any], seed: str) -> Dict[str, Any]:
     good: List[str] = []
     bad: List[str] = []
 
+    spine_flag = judge_spine_flag(raw)
+
     # --- 良い点（最低1行） --- ％基準に数値を書き換え ---
 
     if h["mean"] <= 3.5:  # 0.10相当
@@ -1461,11 +1463,18 @@ def build_paid_05_head(raw: Dict[str, Any], seed: str) -> Dict[str, Any]:
         pro_lines.append("本動画では頭部の位置は比較的安定しています。")
 
     if h["std"] > 2.5:
-        pro_lines.append("頭の位置が一定せず、スイング軸が安定していません。")
+        pro_lines.append("場面によって頭の位置にややばらつきがあり、再現性に少しムラがあります。")
     else:
-        pro_lines.append("頭の位置は揃っており、軸は一定です。")
+        pro_lines.append("頭の位置は全体として揃っており、再現性は比較的保たれています。")
 
     pro_lines.append("このスイングでは、主因は上半身の軸管理です。")
+
+    if spine_flag == "bad":
+        pro_lines.append("加えて前傾変化も大きく、頭部の軸管理を難しくしています。")
+    elif spine_flag == "warn":
+        pro_lines.append("加えて前傾は大きく崩れてはいませんが、場面によって少しズレが見られます。")
+    else:
+        pro_lines.append("前傾は全体として比較的保たれており、頭部の軸安定を支えています。")
 
     pro_comment = " ".join(pro_lines[:3])
        
