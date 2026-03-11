@@ -584,13 +584,6 @@ def analyze_swing_with_mediapipe(video_path: str, overlay_out_path: Optional[str
         logging.warning(f"[DEBUG] overlay_writer_opened={writer.isOpened()} path={overlay_out_path} fps={fps} size=({w},{h})")
 
 
-  # 530行目付近：ここから入れ替え
-    mp_pose = mp.solutions.pose
-
-    cap = cv2.VideoCapture(video_path)
-    if not cap.isOpened():
-        raise RuntimeError("OpenCVがビデオを読み込めませんでした。")
-
     total_frames = 0
     valid_frames = 0
     start_frame = None
