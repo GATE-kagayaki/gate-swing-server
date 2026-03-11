@@ -693,7 +693,7 @@ def analyze_swing_with_mediapipe(video_path: str, overlay_out_path: Optional[str
             res = pose.process(rgb)
 
             if not res.pose_landmarks:
-                if writer is not None:
+                if writer is not None and frame is not None:
                     writer.write(frame)
                 continue
 
@@ -731,9 +731,13 @@ def analyze_swing_with_mediapipe(video_path: str, overlay_out_path: Optional[str
             curr_lwrist = xyz_stable(LW)
             nose_y = lm[NO].y
 
-            
-        # --- B. 打ち終わり（フィニッシュ）判定 ---
-        if is_analyzing and not swing_ended:
+            # --- A. ベース確保 ---
+            if base_nose is None:
+                base_nose = curr_nose
+            if base_lknee is None:
+                base_lknee = curr_lknee
+
+            # --- B. 打ち終わり（フィニッシュ）判定 ---
             if curr_lwrist[1] < nose_y:
                 has_reached_top = True
 
@@ -741,16 +745,11 @@ def analyze_swing_with_mediapipe(video_path: str, overlay_out_path: Optional[str
                 swing_ended = True
                 end_frame = total_frames
 
-        # --- C. 角度計算（前傾はここで1回だけ） ---
-        sh = 0.0
-        hip = 0.0
-        wr = 0.0
-        spine_angle = 0.0
-
-        if is_analyzing and not swing_ended:
+            # --- C. 角度計算（前傾はここで1回だけ） ---
             sh = angle_3d(xyz_stable(LS), xyz_stable(RS), xyz_stable(RH))
             hip = angle_3d(xyz_stable(LH), xyz_stable(RH), xyz_stable(LK))
             wr = 180.0 - angle_3d(xyz_stable(LE), xyz_stable(LW), xyz_stable(LI))
+            spine_angle = 0.0
 
             if (
                 lm[LS].visibility >= 0.7 and
@@ -793,8 +792,7 @@ def analyze_swing_with_mediapipe(video_path: str, overlay_out_path: Optional[str
                     horizontal = math.sqrt(dx * dx + dz * dz)
                     spine_angle = math.degrees(math.atan2(horizontal, abs(dy) + 1e-6))
 
-        # --- D. データ保存 ---
-        if is_analyzing and not swing_ended:
+            # --- D. データ保存 ---
             hd = dist_3d(curr_nose, base_nose) * 100
             kn = dist_3d(curr_lknee, base_lknee) * 100
 
@@ -820,26 +818,29 @@ def analyze_swing_with_mediapipe(video_path: str, overlay_out_path: Optional[str
                     impact_spine_angle = float(spine_angle)
                     impact_detected = True
 
-        # --- E. overlay描画（前傾は再計算しない） ---
-                # 修正ポイント: frame が None でないことも条件に加える
-                if writer is not None and frame is not None:
-                    out = frame.copy()
+            # --- E. overlay描画 ---
+            if writer is not None and frame is not None:
+                out = frame.copy()
 
-                    if res.pose_landmarks:
-                        mp_draw.draw_landmarks(
-                            out,
-                            res.pose_landmarks,
-                            mp_pose.POSE_CONNECTIONS,
-                            landmark_drawing_spec=mp_styles.get_default_pose_landmarks_style(),
-                        )
+                color = (0, 255, 0)
+                if base_spine_angle is not None and spine_angle > 0:
+                    delta_spine = abs(spine_angle - base_spine_angle)
 
-                    writer.write(out)
+                    if delta_spine <= 3:
+                        color = (0, 255, 0)
+                    elif delta_spine <= 6:
+                        color = (0, 255, 255)
+                    else:
+                        color = (0, 0, 255)
+
+                draw_overlay_skeleton(out, lm, mp_pose, color)
+                writer.write(out)
             
-            # whileループ終了後
-            cap.release()
-            if writer is not None:
-                writer.release()
-                logging.warning("[DEBUG] overlay writer released")
+        # whileループ終了後
+        cap.release()
+        if writer is not None:
+            writer.release()
+            logging.warning("[DEBUG] overlay writer released")
     
     # --- ヘルパー関数の定義 ---
     def _safe_mean(xs):
