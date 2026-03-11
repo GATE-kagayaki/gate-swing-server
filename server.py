@@ -684,73 +684,71 @@ def analyze_swing_with_mediapipe(video_path: str, overlay_out_path: Optional[str
         impact_detected = False
 
         while cap.isOpened():
-            ok, frame = cap.read()
-            if not ok:
-                break
+    ok, frame = cap.read()
+    if not ok:
+        break
 
-            total_frames += 1
-            rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-            res = pose.process(rgb)
+    total_frames += 1
+    rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+    res = pose.process(rgb)
 
-        if not res.pose_landmarks:
-            if writer is not None:
-                writer.write(frame)
-            continue
+    if not res.pose_landmarks:
+        if writer is not None:
+            writer.write(frame)
+        continue
 
-        lm = res.pose_landmarks.landmark
-        valid_frames += 1
+    lm = res.pose_landmarks.landmark
+    valid_frames += 1
 
-        def xyz_stable(i):
-            return (lm[i].x, lm[i].y, lm[i].z * 0.5)
+    def xyz_stable(i):
+        return (lm[i].x, lm[i].y, lm[i].z * 0.5)
 
-        def avg_point(history):
-            n = len(history)
-            if n == 0:
-                return None
-            return (
-                sum(p[0] for p in history) / n,
-                sum(p[1] for p in history) / n,
-                sum(p[2] for p in history) / n,
-            )
+    def avg_point(history):
+        n = len(history)
+        if n == 0:
+            return None
+        return (
+            sum(p[0] for p in history) / n,
+            sum(p[1] for p in history) / n,
+            sum(p[2] for p in history) / n,
+        )
 
-        def dist_3d(p, base):
-            return math.sqrt(sum((a - b) ** 2 for a, b in zip(p, base)))
+    def dist_3d(p, base):
+        return math.sqrt(sum((a - b) ** 2 for a, b in zip(p, base)))
 
-        LS = mp_pose.PoseLandmark.LEFT_SHOULDER.value
-        RS = mp_pose.PoseLandmark.RIGHT_SHOULDER.value
-        LH = mp_pose.PoseLandmark.LEFT_HIP.value
-        RH = mp_pose.PoseLandmark.RIGHT_HIP.value
-        LE = mp_pose.PoseLandmark.LEFT_ELBOW.value
-        LW = mp_pose.PoseLandmark.LEFT_WRIST.value
-        LI = mp_pose.PoseLandmark.LEFT_INDEX.value
-        NO = mp_pose.PoseLandmark.NOSE.value
-        LK = mp_pose.PoseLandmark.LEFT_KNEE.value
+    LS = mp_pose.PoseLandmark.LEFT_SHOULDER.value
+    RS = mp_pose.PoseLandmark.RIGHT_SHOULDER.value
+    LH = mp_pose.PoseLandmark.LEFT_HIP.value
+    RH = mp_pose.PoseLandmark.RIGHT_HIP.value
+    LE = mp_pose.PoseLandmark.LEFT_ELBOW.value
+    LW = mp_pose.PoseLandmark.LEFT_WRIST.value
+    LI = mp_pose.PoseLandmark.LEFT_INDEX.value
+    NO = mp_pose.PoseLandmark.NOSE.value
+    LK = mp_pose.PoseLandmark.LEFT_KNEE.value
 
-        curr_nose = xyz_stable(NO)
-        curr_lknee = xyz_stable(LK)
-        curr_lwrist = xyz_stable(LW)
-        nose_y = lm[NO].y
+    curr_nose = xyz_stable(NO)
+    curr_lknee = xyz_stable(LK)
+    curr_lwrist = xyz_stable(LW)
+    nose_y = lm[NO].y
 
-        # --- A. 打ち始め（アドレス）判定 ---
-        if not is_analyzing:
-            pos_history.append(curr_nose)
-            if len(pos_history) > 15:
-                pos_history.pop(0)
+    if not is_analyzing:
+        pos_history.append(curr_nose)
+        if len(pos_history) > 15:
+            pos_history.pop(0)
 
-                dx = max(p[0] for p in pos_history) - min(p[0] for p in pos_history)
-                dy = max(p[1] for p in pos_history) - min(p[1] for p in pos_history)
+            dx = max(p[0] for p in pos_history) - min(p[0] for p in pos_history)
+            dy = max(p[1] for p in pos_history) - min(p[1] for p in pos_history)
 
-                if dx < 0.01 and dy < 0.01:
-                    base_nose = curr_nose
-                    base_lknee = curr_lknee
-                    start_frame = total_frames
-                    logging.warning("[DEBUG] START analyzing at frame=%d", start_frame)
-                    is_analyzing = True
+            if dx < 0.01 and dy < 0.01:
+                base_nose = curr_nose
+                base_lknee = curr_lknee
+                start_frame = total_frames
+                logging.warning("[DEBUG] START analyzing at frame=%d", start_frame)
+                is_analyzing = True
 
-            if writer is not None:
-                writer.write(frame)
-            continue
-
+        if writer is not None:
+            writer.write(frame)
+        continue
         # --- B. 打ち終わり（フィニッシュ）判定 ---
         if is_analyzing and not swing_ended:
             if curr_lwrist[1] < nose_y:
