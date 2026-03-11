@@ -740,6 +740,20 @@ def analyze_swing_with_mediapipe(video_path: str, overlay_out_path: Optional[str
                         horizontal = math.sqrt(dx * dx + dz * dz)
                         spine_angle = math.degrees(math.atan2(horizontal, abs(dy)))
 
+                        # アドレス基準の前傾を最初の解析フレームで固定
+                        if base_spine_angle is None and is_analyzing:
+                            base_spine_angle = spine_angle
+
+                        # トップ前傾：左手首が最も高いフレーム
+                        if curr_lwrist[1] < top_wrist_y:
+                            top_wrist_y = curr_lwrist[1]
+                            top_spine_angle = spine_angle
+
+                        # インパクト前傾：トップ到達後、左手首が nose より十分下がった最初のフレーム
+                        if has_reached_top and (not impact_detected) and curr_lwrist[1] > (nose_y + 0.05):
+                            impact_spine_angle = spine_angle
+                            impact_detected = True
+
                         if base_spine_angle is None and is_analyzing:
                             base_spine_angle = spine_angle
 
