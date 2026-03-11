@@ -838,29 +838,31 @@ def analyze_swing_with_mediapipe(video_path: str, overlay_out_path: Optional[str
                     impact_detected = True
 
         # --- E. overlay描画（前傾は再計算しない） ---
-        if writer is not None:
-            out = frame.copy()
+                # 修正ポイント: frame が None でないことも条件に加える
+                if writer is not None and frame is not None:
+                    out = frame.copy()
 
-            color = (0, 255, 0)
+                    color = (0, 255, 0)
 
-            if is_analyzing and not swing_ended:
-                if base_spine_angle is not None and spine_angle > 0:
-                    delta_spine = abs(spine_angle - base_spine_angle)
+                    if is_analyzing and not swing_ended:
+                        if base_spine_angle is not None and spine_angle > 0:
+                            delta_spine = abs(spine_angle - base_spine_angle)
 
-                    if delta_spine <= 3:
-                        color = (0, 255, 0)
-                    elif delta_spine <= 6:
-                        color = (0, 255, 255)
-                    else:
-                        color = (0, 0, 255)
+                            if delta_spine <= 3:
+                                color = (0, 255, 0)
+                            elif delta_spine <= 6:
+                               color = (0, 255, 255)
+                            else:
+                               color = (0, 0, 255)
 
-            draw_overlay_skeleton(out, lm, mp_pose, color)
-            writer.write(out)       
+                    draw_overlay_skeleton(out, lm, mp_pose, color)
+                    writer.write(out)       
             
-    cap.release()
-    if writer is not None:
-        writer.release()
-        logging.warning("[DEBUG] overlay writer released")
+            # whileループ終了後
+            cap.release()
+           if writer is not None:
+                writer.release()
+                logging.warning("[DEBUG] overlay writer released")
     
     # --- ヘルパー関数の定義 ---
     def _safe_mean(xs):
