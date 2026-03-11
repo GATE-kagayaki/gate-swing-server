@@ -2468,20 +2468,35 @@ def build_paid_10(analysis: Dict[str, Any]) -> Dict[str, Any]:
 # Analysis builder
 # ==================================================
 def judge_spine_flag(raw: Dict[str, Any]) -> str:
-    spine = raw.get("spine") or {}
-    spine_mean = float(spine.get("mean", 0) or 0)
-    spine_std = float(spine.get("std", 0) or 0)
+    spines = raw.get("spine_raw") or []
 
-    # 良い
-    if 20 <= spine_mean <= 35 and spine_std <= 7:
+    if not spines:
         return "ok"
 
-    # 悪い
-    if spine_mean < 15 or spine_mean > 40 or spine_std > 10:
-        return "bad"
+    base = float(spines[0])
 
-    # その中間
-    return "warn"
+    deltas = [abs(float(x) - base) for x in spines if x is not None]
+
+    if not deltas:
+        return "ok"
+
+    delta_mean = sum(deltas) / len(deltas)
+
+    spine_top = float(raw.get("spine_top") or 0)
+    spine_impact = float(raw.get("spine_impact") or 0)
+
+    delta_top = abs(spine_top - base) if spine_top else 0
+    delta_impact = abs(spine_impact - base) if spine_impact else 0
+
+    worst = max(delta_mean, delta_top, delta_impact)
+
+    if worst <= 3:
+        return "ok"
+
+    if worst <= 6:
+        return "warn"
+
+    return "bad"
     
 def build_analysis(raw: Dict[str, Any], premium: bool, report_id: str, user_inputs: Dict[str, Any]) -> Dict[str, Any]:
     analysis: Dict[str, Any] = {"01": build_section_01(raw)}
