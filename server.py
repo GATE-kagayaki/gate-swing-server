@@ -683,89 +683,181 @@ def analyze_swing_with_mediapipe(video_path: str, overlay_out_path: Optional[str
         impact_spine_angle = None
         impact_detected = False
 
-        while cap.isOpened():
-            ok, frame = cap.read()
-            if not ok:
-                break
-            total_frames += 1
-            rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                    
-                        # ここでGPUを探しに行ってエラーが出ていましたが、CPU指定により回避されます。
-            res = pose.process(rgb)
+    while cap.isOpened():
+        ok, frame = cap.read()
+        if not ok:
+            break
 
-            # ★ overlayを書き出す（毎フレーム書く。解析中だけ色付き骨格を描画）
+        total_frames += 1
+        rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        res = pose.process(rgb)
+
+        if not res.pose_landmarks:
             if writer is not None:
-                out = frame.copy()
+                writer.write(frame)
+            continue
 
-                if res.pose_landmarks and is_analyzing and not swing_ended:
-                    lm = res.pose_landmarks.landmark
+        lm = res.pose_landmarks.landmark
+        valid_frames += 1
 
-                    # --- 前傾角を先に計算（必ず存在するようにする） ---
-                    spine_angle = 0.0
+        def xyz_stable(i):
+            return (lm[i].x, lm[i].y, lm[i].z * 0.5)
 
-                    if (
-                        lm[LS].visibility >= 0.7 and
-                        lm[RS].visibility >= 0.7 and
-                        lm[LH].visibility >= 0.7 and
-                        lm[RH].visibility >= 0.7
-                    ):
-                        ls = xyz_stable(LS)
-                        rs = xyz_stable(RS)
-                        lh = xyz_stable(LH)
-                        rh = xyz_stable(RH)
+        def avg_point(history):
+            n = len(history)
+            if n == 0:
+                return None
+            return (
+                sum(p[0] for p in history) / n,
+                sum(p[1] for p in history) / n,
+                sum(p[2] for p in history) / n,
+            )
 
-                        shoulder_mid = (
-                            (ls[0] + rs[0]) / 2,
-                            (ls[1] + rs[1]) / 2,
-                            (ls[2] + rs[2]) / 2
-                        )
+        def dist_3d(p, base):
+            return math.sqrt(sum((a - b) ** 2 for a, b in zip(p, base)))
 
-                        hip_mid = (
-                            (lh[0] + rh[0]) / 2,
-                            (lh[1] + rh[1]) / 2,
-                            (lh[2] + rh[2]) / 2
-                        )
+        LS = mp_pose.PoseLandmark.LEFT_SHOULDER.value
+        RS = mp_pose.PoseLandmark.RIGHT_SHOULDER.value
+        LH = mp_pose.PoseLandmark.LEFT_HIP.value
+        RH = mp_pose.PoseLandmark.RIGHT_HIP.value
+        LE = mp_pose.PoseLandmark.LEFT_ELBOW.value
+        LW = mp_pose.PoseLandmark.LEFT_WRIST.value
+        LI = mp_pose.PoseLandmark.LEFT_INDEX.value
+        NO = mp_pose.PoseLandmark.NOSE.value
+        LK = mp_pose.PoseLandmark.LEFT_KNEE.value
 
-                        dx = shoulder_mid[0] - hip_mid[0]
-                        dy = shoulder_mid[1] - hip_mid[1]
-                        dz = shoulder_mid[2] - hip_mid[2]
+        curr_nose = xyz_stable(NO)
+        curr_lknee = xyz_stable(LK)
+        curr_lwrist = xyz_stable(LW)
+        nose_y = lm[NO].y
 
-                        horizontal = math.sqrt(dx * dx + dz * dz)
-                        spine_angle = math.degrees(math.atan2(horizontal, abs(dy)))
+        # --- A. 打ち始め（アドレス）判定 ---
+        if not is_analyzing:
+            pos_history.append(curr_nose)
+            if len(pos_history) > 15:
+                pos_history.pop(0)
 
-                        # アドレス基準の前傾を最初の解析フレームで固定
-                        if base_spine_angle is None and is_analyzing:
-                            base_spine_angle = spine_angle
+                dx = max(p[0] for p in pos_history) - min(p[0] for p in pos_history)
+                dy = max(p[1] for p in pos_history) - min(p[1] for p in pos_history)
 
-                        # トップ前傾：左手首が最も高いフレーム
-                        if curr_lwrist[1] < top_wrist_y:
-                            top_wrist_y = curr_lwrist[1]
-                            top_spine_angle = spine_angle
+                if dx < 0.01 and dy < 0.01:
+                    base_nose = curr_nose
+                    base_lknee = curr_lknee
+                    start_frame = total_frames
+                    logging.warning("[DEBUG] START analyzing at frame=%d", start_frame)
+                    is_analyzing = True
 
-                        # インパクト前傾：トップ到達後、左手首が nose より十分下がった最初のフレーム
-                        if has_reached_top and (not impact_detected) and curr_lwrist[1] > (nose_y + 0.05):
-                            impact_spine_angle = spine_angle
-                            impact_detected = True
+            if writer is not None:
+                writer.write(frame)
+            continue
 
-                        if base_spine_angle is None and is_analyzing:
-                            base_spine_angle = spine_angle
+        # --- B. 打ち終わり（フィニッシュ）判定 ---
+        if is_analyzing and not swing_ended:
+            if curr_lwrist[1] < nose_y:
+                has_reached_top = True
 
-                    # --- 前傾角による色判定 ---
-                    if base_spine_angle is not None:
-                        delta_spine = abs(spine_angle - base_spine_angle)
+            if has_reached_top and curr_lwrist[1] > (nose_y + 0.1):
+                swing_ended = True
+                end_frame = total_frames
 
-                        if delta_spine <= 3:
-                            color = (0, 255, 0)        # 緑 = 前傾維持
-                        elif delta_spine <= 6:
-                            color = (0, 255, 255)      # 黄 = やや崩れ
-                        else:
-                            color = (0, 0, 255)        # 赤 = 大きく崩れ
-                    else:
+        # --- C. 角度計算（前傾はここで1回だけ） ---
+        sh = 0.0
+        hip = 0.0
+        wr = 0.0
+        spine_angle = 0.0
+
+        if is_analyzing and not swing_ended:
+            sh = angle_3d(xyz_stable(LS), xyz_stable(RS), xyz_stable(RH))
+            hip = angle_3d(xyz_stable(LH), xyz_stable(RH), xyz_stable(LK))
+            wr = 180.0 - angle_3d(xyz_stable(LE), xyz_stable(LW), xyz_stable(LI))
+
+            if (
+                lm[LS].visibility >= 0.7 and
+                lm[RS].visibility >= 0.7 and
+                lm[LH].visibility >= 0.7 and
+                lm[RH].visibility >= 0.7
+            ):
+                ls = xyz_stable(LS)
+                rs = xyz_stable(RS)
+                lh = xyz_stable(LH)
+                rh = xyz_stable(RH)
+
+                shoulder_mid = (
+                    (ls[0] + rs[0]) / 2.0,
+                    (ls[1] + rs[1]) / 2.0,
+                    (ls[2] + rs[2]) / 2.0,
+                )
+                hip_mid = (
+                    (lh[0] + rh[0]) / 2.0,
+                    (lh[1] + rh[1]) / 2.0,
+                    (lh[2] + rh[2]) / 2.0,
+                )
+
+                spine_shoulder_history.append(shoulder_mid)
+                spine_hip_history.append(hip_mid)
+
+                if len(spine_shoulder_history) > 3:
+                    spine_shoulder_history.pop(0)
+                if len(spine_hip_history) > 3:
+                    spine_hip_history.pop(0)
+
+                smooth_shoulder_mid = avg_point(spine_shoulder_history)
+                smooth_hip_mid = avg_point(spine_hip_history)
+
+                if smooth_shoulder_mid is not None and smooth_hip_mid is not None:
+                    dx = smooth_shoulder_mid[0] - smooth_hip_mid[0]
+                    dy = smooth_shoulder_mid[1] - smooth_hip_mid[1]
+                    dz = smooth_shoulder_mid[2] - smooth_hip_mid[2]
+
+                    horizontal = math.sqrt(dx * dx + dz * dz)
+                    spine_angle = math.degrees(math.atan2(horizontal, abs(dy) + 1e-6))
+
+        # --- D. データ保存 ---
+        if is_analyzing and not swing_ended:
+            hd = dist_3d(curr_nose, base_nose) * 100
+            kn = dist_3d(curr_lknee, base_lknee) * 100
+
+            shoulders.append(float(sh))
+            hips.append(float(hip))
+            wrists.append(float(wr))
+            heads.append(float(hd))
+            knees.append(float(kn))
+            x_factors.append(float(sh - abs(hip)))
+
+            if spine_angle > 0 and base_spine_angle is None:
+                base_spine_angle = spine_angle
+
+            if spine_angle > 10:
+                spines.append(float(spine_angle))
+
+            if spine_angle > 0:
+                if curr_lwrist[1] < top_wrist_y:
+                    top_wrist_y = curr_lwrist[1]
+                    top_spine_angle = float(spine_angle)
+
+                if has_reached_top and (not impact_detected) and curr_lwrist[1] > (nose_y + 0.05):
+                    impact_spine_angle = float(spine_angle)
+                    impact_detected = True
+
+        # --- E. overlay描画（前傾は再計算しない） ---
+        if writer is not None:
+            out = frame.copy()
+
+            color = (0, 255, 0)
+
+            if is_analyzing and not swing_ended:
+                if base_spine_angle is not None and spine_angle > 0:
+                    delta_spine = abs(spine_angle - base_spine_angle)
+
+                    if delta_spine <= 3:
                         color = (0, 255, 0)
+                    elif delta_spine <= 6:
+                        color = (0, 255, 255)
+                    else:
+                        color = (0, 0, 255)
 
-                    draw_overlay_skeleton(out, lm, mp_pose, color)
-
-                writer.write(out)
+            draw_overlay_skeleton(out, lm, mp_pose, color)
+            writer.write(out)
             if not res.pose_landmarks:
                 continue
 
