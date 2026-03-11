@@ -1411,8 +1411,7 @@ def build_paid_05_head(raw: Dict[str, Any], seed: str) -> Dict[str, Any]:
     bad: List[str] = []
 
     # --- 良い点（最低1行） --- ％基準に数値を書き換え ---
-    if h["std"] <= 1.5:  # 0.03相当
-        good.append("頭の位置は非常に揃っており、スイング軸の再現性は極めて高いです。")
+
     if h["mean"] <= 3.5:  # 0.10相当
         good.append("頭の左右ブレは最小限に抑えられており、理想的な軸の安定感があります。")
     
@@ -1429,8 +1428,7 @@ def build_paid_05_head(raw: Dict[str, Any], seed: str) -> Dict[str, Any]:
     # --- 改善点 --- ％基準に数値を書き換え ---
     if h["mean"] > 5.0:  # 0.15相当
         bad.append(f"頭部ブレは mean {h['mean']:.1f}% で大きく、軸が崩れています。")
-    if h["std"] > 2.5:  # 0.05相当
-        bad.append(f"頭部ブレのばらつき（σ {h['std']:.1f}）が大きく、位置が揃っていません。")
+
     if k["mean"] > 8.0:  # 0.20相当
         bad.append(f"膝ブレは mean {k['mean']:.1f}% で大きく、頭部ブレを増幅させています。")
     
@@ -1496,8 +1494,7 @@ def build_paid_06_knee(raw: Dict[str, Any], seed: str) -> Dict[str, Any]:
     bad: List[str] = []
 
     # --- 良い点（最低1行） --- ％基準に数値を書き換え ---
-    if k["std"] <= 1.5:  # 0.04相当
-        good.append("膝の位置は揃っており、下半身の再現性がインパクトの安定感を生んでいます。")
+
     if k["mean"] <= 4.5:  # 0.12相当
         good.append("膝の左右ブレが抑えられており、エネルギーを逃がさない強い土台があります。")
     
@@ -1505,8 +1502,6 @@ def build_paid_06_knee(raw: Dict[str, Any], seed: str) -> Dict[str, Any]:
     if 4.5 < k["mean"] <= 7.0:  # 0.12〜0.18相当
         good.append("下半身に粘りがあり、スイング中のパワーをしっかり受け止めています。")
     # バッファ：再現性重視
-    if k["std"] <= 2.0 and k["mean"] > 8.0:  # 0.05 / 0.20相当
-        good.append("ブレ自体はありますが、毎回同じ場所で踏み込めている点は安定への足がかりになります。")
 
     if not good:
         good = ["良い点は特にありません。"]
@@ -1514,8 +1509,7 @@ def build_paid_06_knee(raw: Dict[str, Any], seed: str) -> Dict[str, Any]:
     # --- 改善点 --- ％基準に数値を書き換え ---
     if k["mean"] > 8.0:  # 0.20相当
         bad.append(f"膝ブレは mean {k['mean']:.1f}% で大きく、土台が崩れています。")
-    if k["std"] > 2.5:  # 0.06相当
-        bad.append(f"膝ブレのばらつき（σ {k['std']:.1f}）が大きく、位置が揃っていません。")
+
     if h["mean"] > 5.0:  # 0.15相当
         bad.append(f"頭部ブレは mean {h['mean']:.1f}% で大きく、膝ブレと同時に軸が崩れています。")
     
