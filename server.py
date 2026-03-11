@@ -731,24 +731,7 @@ def analyze_swing_with_mediapipe(video_path: str, overlay_out_path: Optional[str
             curr_lwrist = xyz_stable(LW)
             nose_y = lm[NO].y
 
-            if not is_analyzing:
-                pos_history.append(curr_nose)
-                if len(pos_history) > 15:
-                    pos_history.pop(0)
-
-                    dx = max(p[0] for p in pos_history) - min(p[0] for p in pos_history)
-                    dy = max(p[1] for p in pos_history) - min(p[1] for p in pos_history)
-
-                    if dx < 0.01 and dy < 0.01:
-                        base_nose = curr_nose
-                        base_lknee = curr_lknee
-                        start_frame = total_frames
-                        logging.warning("[DEBUG] START analyzing at frame=%d", start_frame)
-                        is_analyzing = True
-
-                if writer is not None:
-                    writer.write(frame)
-                continue
+            
         # --- B. 打ち終わり（フィニッシュ）判定 ---
         if is_analyzing and not swing_ended:
             if curr_lwrist[1] < nose_y:
