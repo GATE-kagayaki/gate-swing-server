@@ -950,7 +950,6 @@ def analyze_swing_with_mediapipe(video_path: str, overlay_out_path: Optional[str
         spines.append(0.0)
 
     # (ここに必要な計算ロジックが入ります)
-
     result = {
         "frame_count": int(total_frames),
         "valid_frames": int(valid_frames),
@@ -962,6 +961,7 @@ def analyze_swing_with_mediapipe(video_path: str, overlay_out_path: Optional[str
         "knee": pack(knees, 4),
         "x_factor": pack(x_factors, 2),
         "spine": pack(spines, 2),
+        "spine_raw": [round(float(x), 2) for x in spines],
         "spine_top": round(float(top_spine_angle), 2) if top_spine_angle is not None else 0.0,
         "spine_impact": round(float(impact_spine_angle), 2) if impact_spine_angle is not None else 0.0,
         "snaps": snaps
