@@ -860,7 +860,7 @@ def analyze_swing_with_mediapipe(video_path: str, overlay_out_path: Optional[str
             
             # whileループ終了後
             cap.release()
-           if writer is not None:
+            if writer is not None:
                 writer.release()
                 logging.warning("[DEBUG] overlay writer released")
     
