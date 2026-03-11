@@ -1838,10 +1838,10 @@ def build_free_07(raw: Dict[str, Any]) -> Dict[str, Any]:
         lines.append(f"本動画では手首コックが mean {w_mean:.1f}°で大きく、手元の介入が強い状態です。")
 
     if "前傾維持不安定" in priorities or ("前傾維持不安定" in c and len(priorities) == 0):
-        lines.append(f"本動画では前傾姿勢の崩れが大きく、スイング軸の安定性を下げています（mean {spine_mean:.1f}°）。")
+        lines.append(f"本動画では前傾変化が大きく、上体の起き上がりがスイング軸の安定性に影響しています。（mean {spine_mean:.1f}°）。")
 
     elif "前傾維持にばらつき" in priorities or ("前傾維持にばらつき" in c and len(priorities) == 0):
-        lines.append(f"本動画では前傾姿勢にややばらつきがあり、スイング軸の再現性に影響しています（mean {spine_mean:.1f}°）。")
+        lines.append(f"本動画では前傾は大きく崩れてはいませんが、場面によって少しズレが見られます。（mean {spine_mean:.1f}°）。")
 
     lines.append("")
 
@@ -1864,7 +1864,7 @@ def build_free_07(raw: Dict[str, Any]) -> Dict[str, Any]:
         good_points.append("捻転差は確保できており、切り返しの準備はできています。")
 
     if spine_flag == "ok":
-        good_points.append("前傾姿勢は比較的安定しており、スイング軸の再現性を支える要素になっています。")
+        good_points.append("前傾は全体として比較的保たれており、動きはおおむね安定しています。")
 
     if good_points:
         lines.append("良い点： " + " ".join(good_points[:2]))
