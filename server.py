@@ -842,21 +842,15 @@ def analyze_swing_with_mediapipe(video_path: str, overlay_out_path: Optional[str
                 if writer is not None and frame is not None:
                     out = frame.copy()
 
-                    color = (0, 255, 0)
+                    if res.pose_landmarks:
+                        mp_draw.draw_landmarks(
+                            out,
+                            res.pose_landmarks,
+                            mp_pose.POSE_CONNECTIONS,
+                            landmark_drawing_spec=mp_styles.get_default_pose_landmarks_style(),
+                        )
 
-                    if is_analyzing and not swing_ended:
-                        if base_spine_angle is not None and spine_angle > 0:
-                            delta_spine = abs(spine_angle - base_spine_angle)
-
-                            if delta_spine <= 3:
-                                color = (0, 255, 0)
-                            elif delta_spine <= 6:
-                               color = (0, 255, 255)
-                            else:
-                               color = (0, 0, 255)
-
-                    draw_overlay_skeleton(out, lm, mp_pose, color)
-                    writer.write(out)       
+                    writer.write(out)
             
             # whileループ終了後
             cap.release()
