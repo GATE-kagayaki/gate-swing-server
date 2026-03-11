@@ -1514,50 +1514,56 @@ def build_paid_06_knee(raw: Dict[str, Any], seed: str) -> Dict[str, Any]:
     k = raw["knee"]
     h = raw["head"]
     conf = _conf(raw)
+    spine_flag = judge_spine_flag(raw)
 
     good: List[str] = []
     bad: List[str] = []
 
-    # --- 良い点（最低1行） --- ％基準に数値を書き換え ---
-
-    if k["mean"] <= 4.5:  # 0.12相当
+    # --- 良い点 ---
+    if k["mean"] <= 4.5:
         good.append("膝の左右ブレが抑えられており、エネルギーを逃がさない強い土台があります。")
-    
-    # バッファ：粘りのある下半身
-    if 4.5 < k["mean"] <= 7.0:  # 0.12〜0.18相当
+
+    if 4.5 < k["mean"] <= 7.0:
         good.append("下半身に粘りがあり、スイング中のパワーをしっかり受け止めています。")
-    # バッファ：再現性重視
 
     if not good:
         good = ["良い点は特にありません。"]
 
-    # --- 改善点 --- ％基準に数値を書き換え ---
-    if k["mean"] > 8.0:  # 0.20相当
+    # --- 改善点 ---
+    if k["mean"] > 8.0:
         bad.append(f"膝ブレは mean {k['mean']:.1f}% で大きく、土台が崩れています。")
 
-    if h["mean"] > 5.0:  # 0.15相当
+    if h["mean"] > 5.0:
         bad.append(f"頭部ブレは mean {h['mean']:.1f}% で大きく、膝ブレと同時に軸が崩れています。")
-    
+
     if not bad:
         bad = ["改善点は特にありません。"]
 
-    # --- プロ目線（言語化）：既存の構成を維持 ---
+    # --- プロ目線 ---
     pro_lines: List[str] = []
     pro_lines.append("下半身は「踏めているか」より、回転中も土台が横に流れないかが評価軸です。")
-    
+
     if k["mean"] > 8.0:
-        pro_lines.append("本動画では下半身の横方向の動きが大きく出ています。")
+        pro_lines.append("本動画では下半身の横方向の動きがやや大きく出ています。")
     else:
-        pro_lines.append("本動画では下半身の動きは抑えられています。")
+        pro_lines.append("本動画では下半身の動きは全体として比較的抑えられています。")
 
     if k["std"] > 2.5:
-        pro_lines.append("膝の位置が一定せず、インパクト時の土台が不安定です。")
+        pro_lines.append("場面によって膝の位置にややばらつきがあり、土台の再現性に少しムラがあります。")
     else:
-        pro_lines.append("膝の位置は安定しており、下半身は土台として機能しています。")
+        pro_lines.append("膝の位置は全体として揃っており、土台の再現性は比較的保たれています。")
+
+    if spine_flag == "bad":
+        pro_lines.append("加えて前傾変化も大きく、下半身の安定が上体側で受け切れていません。")
+    elif spine_flag == "warn":
+        pro_lines.append("加えて前傾は大きく崩れてはいませんが、場面によって少しズレが見られます。")
+    else:
+        pro_lines.append("前傾は全体として比較的保たれており、下半身の安定も活かしやすい状態です。")
 
     pro_lines.append("このスイングでは、主因は下半身の安定性です。")
 
-    pro_comment = " ".join(pro_lines[:3])
+    pro_comment = " ".join(pro_lines[:4])
+
     bench = [
         _bench_line("膝ブレ(%)", "%", "mean", _le_ideal(8.0, "%"), current=float(k["mean"])),
         _bench_line("膝ブレの再現性(%)", "%", "σ", _le_ideal(1.5, "%"), current=float(k["std"])),
@@ -1566,7 +1572,6 @@ def build_paid_06_knee(raw: Dict[str, Any], seed: str) -> Dict[str, Any]:
 
     return {
         "title": "06. Knee Stability（膝）",
-        # 【整合性】単位に % を追加
         "value": f'max {k["max"]:.1f} / mean {k["mean"]:.1f} / σ {k["std"]:.1f} (%) （conf {conf:.3f}）',
         "tags": j["tags"],
         "bench": bench,
@@ -1670,49 +1675,54 @@ def build_paid_07_from_analysis(analysis: Dict[str, Any], raw: Dict[str, Any]) -
     swing_type = judge_swing_type(c)
     priorities = extract_priorities(c, 2)
 
-    # データの抽出（直接解説に使用）
     sh = raw.get("shoulder", {})
     h = raw.get("head", {})
     k = raw.get("knee", {})
     xf = raw.get("x_factor", {})
     conf = _conf(raw)
     frames = _frames(raw)
+    spine_flag = judge_spine_flag(raw)
 
     lines: List[str] = []
     lines.append(f"今回のスイングは「{swing_type}」です（confidence {conf:.3f} / 区間 {frames} frames）。")
     lines.append("※ 初回の方は、まずは「最優先テーマ」だけを確認してください。")
     lines.append("")
 
-    # --- プロの直接的な洞察（テンプレートを廃止し、数値から動的に生成） ---
-    
-    # 1. 軸の安定性（頭部・膝）
     h_mean = h.get("mean", 0)
     k_mean = k.get("mean", 0)
-    if h_mean > 5.0 or k_mean > 8.0:
-        lines.append(f"【軸の安定性】頭部（{h_mean:.1f}%）や膝（{k_mean:.1f}%）の左右動が基準を超えています。回転量よりも先に、まずはこの『土台の揺れ』を抑えることが打点の再現性を高める最短ルートです。")
-    else:
-        lines.append("【軸の安定性】頭部・下半身ともにブレが最小限に抑えられており、独楽（こま）のような安定した軸回転ができています。")
 
-    # 2. エネルギー効率（捻転差）
+    if h_mean > 5.0 or k_mean > 8.0 or spine_flag in ["warn", "bad"]:
+        if spine_flag == "bad":
+            lines.append(f"【軸の安定性】頭部（{h_mean:.1f}%）や膝（{k_mean:.1f}%）の左右動に加え、前傾変化も大きく出ています。回転量よりも先に、まずはこの『土台と上体の揺れ』を抑えることが打点の再現性を高める最短ルートです。")
+        elif spine_flag == "warn":
+            lines.append(f"【軸の安定性】頭部（{h_mean:.1f}%）や膝（{k_mean:.1f}%）の左右動に加え、前傾にも場面ごとのズレが見られます。まずはこの『土台と上体のズレ』を抑えることが、打点の再現性を高める近道です。")
+        else:
+            lines.append(f"【軸の安定性】頭部（{h_mean:.1f}%）や膝（{k_mean:.1f}%）の左右動が基準を超えています。回転量よりも先に、まずはこの『土台の揺れ』を抑えることが打点の再現性を高める最短ルートです。")
+    else:
+        lines.append("【軸の安定性】頭部・下半身ともにブレが大きくはなく、前傾も全体として比較的保たれています。軸回転の土台はおおむね整っています。")
+
     xf_max = xf.get("max", 0)
     if xf_max < 35:
         lines.append(f"【パワー効率】捻転差（max {xf_max:.1f}°）が不足しています。切り返しで上半身と下半身が一緒に動く傾向があり、ヘッドを加速させる『溜め』が作りにくい状態です。")
     else:
         lines.append(f"【パワー効率】捻転差（max {xf_max:.1f}°）は十分に確保されており、切り返しでエネルギーを爆発させる準備が整っています。")
 
-    # 3. 再現性（肩回転のばらつき）
     sh_std = sh.get("std", 0)
     if sh_std > 12.0:
         lines.append(f"【再現性】肩回転の深さにばらつき（$\sigma$ {sh_std:.1f}°）が見られます。トップの位置が毎スイング変わるため、ミート率を不安定にさせる要因となります。")
 
     lines.append("")
 
-    # 優先テーマ（最大2つ）
     if priorities:
         p_str = "／".join(priorities)
         lines.append(f"数値上の最優先テーマは「{p_str}」です。")
     else:
         lines.append("数値上の優先テーマはありません。")
+
+    if "前傾維持不安定" in priorities:
+        lines.append("特に前傾変化が大きいため、切り返しからインパクトまで上体の起き上がりを抑えることが重要です。")
+    elif "前傾維持にばらつき" in priorities:
+        lines.append("特に前傾は大きく崩れてはいませんが、場面によって少しズレが出るため、上体角度の再現性を上げたい状態です。")
 
     lines.append("")
     lines.append("08では優先テーマに直結するドリルを選択し、09では動きを安定させやすいシャフト特性を提示します。")
@@ -1726,6 +1736,7 @@ def build_paid_07_from_analysis(analysis: Dict[str, Any], raw: Dict[str, Any]) -
             "tag_summary": dict(c),
             "confidence": conf,
             "frames": frames,
+            "spine_flag": spine_flag,
         },
     }
 
@@ -2052,42 +2063,47 @@ def select_drills_with_priority(tags: List[str], priorities: List[str], max_dril
 
 
 def build_paid_08(analysis: Dict[str, Any], raw: Dict[str, Any]) -> Dict[str, Any]:
-    # 07の解析結果から優先課題を取得
     sec07 = analysis.get("07") or {}
     meta07 = sec07.get("meta") or {}
     priorities = meta07.get("priorities", [])
-    
-    # すべての検知タグを収集
+
     all_tags = collect_all_tags(analysis)
-    
-    # 【数値による動的タグ付与】ばらつきが大きい場合、再現性ドリルを候補に入れる
+
     sh_std = raw.get("shoulder", {}).get("std", 0)
+    spine_flag = judge_spine_flag(raw)
+
     if sh_std > 15:
         all_tags.append("ばらつき大")
         all_tags.append("肩回転のばらつき大")
 
-    # 優先順位を考慮してドリルを選定
+    if spine_flag == "warn":
+        all_tags.append("前傾維持にばらつき")
+    elif spine_flag == "bad":
+        all_tags.append("前傾維持不安定")
+        all_tags.append("起き上がり傾向")
+
     selected_drills = select_drills_with_priority(all_tags, priorities, 3)
-    
-    # 【AI数値アドバイス】ばらつき（σ）が大きいユーザーへの動的注釈
-    # build_paid_08 関数内の for d in selected_drills: ループ内
+
     for d in selected_drills:
         if sh_std > 15:
-            # プロらしい詳細な指導文に差し替え
             d["how"] += f"\n\n● 【プロの特別指導】現在、動作に $\sigma$ {sh_std:.1f} という大きなばらつきが検出されています。回数よりも『ゆっくりとした正確な動き』による神経系への定着を最優先してください。"
 
+        if spine_flag == "bad":
+            d["how"] += "\n\n● 【前傾補足】このスイングは前傾変化が大きいため、切り返しからインパクトまで胸の向きと上体角度を保つ意識を強めてください。"
+        elif spine_flag == "warn":
+            d["how"] += "\n\n● 【前傾補足】前傾は大きく崩れてはいませんが、場面によって少しズレが出ます。動作スピードを落として、上体角度を揃えることを優先してください。"
+
     return {
-        "title": "08. Training Drills（練習ドリル）", 
+        "title": "08. Training Drills（練習ドリル）",
         "drills": [
             {
-                "name": d["name"], 
-                "purpose": d["purpose"], 
+                "name": d["name"],
+                "purpose": d["purpose"],
                 "how": d["how"]
-            } 
+            }
             for d in selected_drills
         ]
     }
-
 
 # ==================================================
 # 09 フィッティング（解析数値による全身統合・逆転ロジック版）
@@ -2408,70 +2424,64 @@ def build_paid_10(analysis: Dict[str, Any]) -> Dict[str, Any]:
     - 08 から：取り組むべきメインドリル
     - 09 から：推奨シャフトとその選定根拠
     """
-    # --- 07. 総合評価（型と優先課題）の抽出 ---
-    # analysis辞書内の 07 セクション、またはそれに相当するキーから取得
     sec07 = analysis.get("07") or {}
     meta07 = sec07.get("meta") or {}
     swing_type = meta07.get("swing_type", "バランス型")
     priorities = meta07.get("priorities", [])
+    spine_flag = meta07.get("spine_flag", "ok")
 
-    # --- 08. 練習ドリルの抽出 ---
     sec08 = analysis.get("08") or {}
     drills = sec08.get("drills", [])
     drill_names = [d["name"] for d in drills]
 
-    # --- 09. フィッティングの抽出 ---
     sec09 = analysis.get("09") or {}
     table = sec09.get("table", [])
     meta09 = sec09.get("meta") or {}
-    
-    # キックポイントの推奨情報と選定理由(AI逆転判定の根拠)を取得
+
     kp_info = next((item for item in table if item["item"] == "キックポイント"), {})
     kp_guide = kp_info.get("guide", "中")
     kp_reason = kp_info.get("reason", "")
 
-    # --- 文章の組み立て（ストーリー構築） ---
     summary_text = []
 
-    # 1. スイング型の総評
     summary_text.append(f"今回の解析結果、あなたのスイングは『{swing_type}』に分類されます。")
-    
-    # 2. 優先課題とアクションプランの連動
+
     if priorities:
         p_str = "／".join(priorities)
         summary_text.append(f"現在、スコアアップのために最も優先すべきテーマは『{p_str}』の改善です。")
-        
+
         if drill_names:
             summary_text.append(f"この課題を克服するために、まずは推奨ドリル筆頭の「{drill_names[0]}」に集中して取り組んでください。")
             summary_text.append("複数の動きを同時に直すよりも、この一点を整えることで他の数値も連鎖的に向上します。")
     else:
         summary_text.append("全体的に大きな破綻はなく、非常にバランスの良いスイングです。提示されたドリルでさらなる再現性の向上を目指しましょう。")
 
-    summary_text.append("")  # 視認性のための改行
+    if spine_flag == "bad":
+        summary_text.append("加えて前傾変化がやや大きいため、切り返しからインパクトまで上体の起き上がりを抑えることが、全体の安定性向上につながります。")
+    elif spine_flag == "warn":
+        summary_text.append("前傾は大きく崩れてはいませんが、場面によって少しズレが見られるため、上体角度の再現性も意識するとさらに安定しやすくなります。")
+    else:
+        summary_text.append("前傾は全体として比較的保たれており、スイング全体の再現性を支える要素になっています。")
 
-    # 3. フィッティングとスイングの相関（09の逆転ロジックを尊重）
+    summary_text.append("")
+
     summary_text.append(f"道具の面では、AIの解析数値に基づき『{kp_guide}調子』のシャフトを提案しました。")
     if kp_reason:
-        # 09で生成された「理由」には、スライス傾向と解析数値の矛盾などが含まれているため、そのまま引用
         summary_text.append(f"【選定根拠】{kp_reason}")
 
-    summary_text.append("")  # 視認性のための改行
+    summary_text.append("")
 
-    # 4. 結びの言葉（動的メッセージ）
     summary_text.append("『練習による動作の最適化』と『シャフトによる挙動の補正』。")
     summary_text.append("この両輪を回すことが、目標達成への最短距離となります。")
     summary_text.append("次回の解析で、各数値がどのように進化しているかを楽しみにしています！")
 
-    summary_text.append("")  # 視認性のための改行
-
-    # 5. 共通メッセージ（全ての利用者共通）
+    summary_text.append("")
     summary_text.append("あなたのゴルフライフが、より充実したものになることを願っています。")
 
     return {
         "title": "10. Summary（まとめ）",
         "text": summary_text,
     }
-
 
 # ==================================================
 # Analysis builder
