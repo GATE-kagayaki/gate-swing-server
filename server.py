@@ -683,14 +683,14 @@ def analyze_swing_with_mediapipe(video_path: str, overlay_out_path: Optional[str
         impact_spine_angle = None
         impact_detected = False
 
-    while cap.isOpened():
-        ok, frame = cap.read()
-        if not ok:
-            break
+        while cap.isOpened():
+            ok, frame = cap.read()
+            if not ok:
+                break
 
-        total_frames += 1
-        rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        res = pose.process(rgb)
+            total_frames += 1
+            rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            res = pose.process(rgb)
 
         if not res.pose_landmarks:
             if writer is not None:
