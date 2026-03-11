@@ -667,23 +667,30 @@ def analyze_swing_with_mediapipe(video_path: str, overlay_out_path: Optional[str
             if ok(idx):
                 cv2.circle(frame, pt(idx), 4, color, -1)
     # model_complexity=1 はCPU環境で速度と精度のバランスが最も良い設定です。
-    with mp_pose.Pose(
-        static_image_mode=False,
-        model_complexity=0,
-        enable_segmentation=False,
-        min_detection_confidence=0.5,
-        min_tracking_confidence=0.5,
-    ) as pose:
-        base_spine_angle = None
-        spine_shoulder_history = []
-        spine_hip_history = []
-        base_nose = None
-        base_lknee = None
-        pos_history = []      # アドレス静止判定用
-        is_analyzing = False  # アドレス検知で True になる
-        swing_ended = False   # フィニッシュ検知で True になる
-        has_reached_top = False # クラブが上がったかの判定
-        while cap.isOpened():
+            with mp_pose.Pose(
+            static_image_mode=False,
+            model_complexity=0,
+            enable_segmentation=False,
+            min_detection_confidence=0.5,
+            min_tracking_confidence=0.5,
+        ) as pose:
+            base_spine_angle = None
+            spine_shoulder_history = []
+            spine_hip_history = []
+            base_nose = None
+            base_lknee = None
+            pos_history = []
+            is_analyzing = False
+            swing_ended = False
+            has_reached_top = False
+
+            top_wrist_y = 999.0
+            top_spine_angle = None
+
+            impact_spine_angle = None
+            impact_detected = False
+
+            while cap.isOpened():
             ok, frame = cap.read()
             if not ok:
                 break
