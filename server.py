@@ -969,6 +969,8 @@ def analyze_swing_with_mediapipe(video_path: str, overlay_out_path: Optional[str
         "knee": pack(knees, 4),
         "x_factor": pack(x_factors, 2),
         "spine": pack(spines, 2),
+        "spine_top": round(float(top_spine_angle), 2) if top_spine_angle is not None else 0.0,
+        "spine_impact": round(float(impact_spine_angle), 2) if impact_spine_angle is not None else 0.0,
         "snaps": snaps
     }
 
