@@ -253,7 +253,9 @@ def increment_free_usage(user_id: str) -> None:
 # ==================================================
 FORCE_PREMIUM_USER_IDS = {
     "U9b5fd7cc3faa61b33f8705d4265b0dfc",
+    "Ud8a58146e64e232efe3f94681d17d8ff",  
 }
+
 
 line_bot_api = LineBotApi(LINE_CHANNEL_ACCESS_TOKEN)
 handler = WebhookHandler(LINE_CHANNEL_SECRET)
