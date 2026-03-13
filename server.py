@@ -3242,6 +3242,7 @@ def handle_text_message(event):
 
     # ===== 1) 分析スタート → Quick Reply =====
     if text == "分析スタート":
+        is_premium = is_premium_user(user_id)
         users_ref.document(user_id).set({
             "prefill_step": "head_speed",
             "updated_at": firestore.SERVER_TIMESTAMP,
