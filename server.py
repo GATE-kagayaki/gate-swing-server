@@ -575,13 +575,19 @@ def analyze_swing_with_mediapipe(video_path: str, overlay_out_path: Optional[str
 
     # ★overlay writer（必要な時だけ作る）
     writer = None
+    tmp_path = None  # ✅ 追加
+
     if overlay_out_path:
         fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
         w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
         h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+
+        # ✅ 一時ファイルパスを作成
+        tmp_path = overlay_out_path.replace(".mp4", "_tmp.mp4")
+
         fourcc = cv2.VideoWriter_fourcc(*"mp4v")
-        writer = cv2.VideoWriter(overlay_out_path, fourcc, fps, (w, h))
-        logging.warning(f"[DEBUG] overlay_writer_opened={writer.isOpened()} path={overlay_out_path} fps={fps} size=({w},{h})")
+        writer = cv2.VideoWriter(tmp_path, fourcc, fps, (w, h))  # ✅ tmp_pathに書き出し
+        logging.warning(f"[DEBUG] overlay_writer_opened={writer.isOpened()} path={tmp_path} fps={fps} size=({w},{h})")
 
 
     total_frames = 0
