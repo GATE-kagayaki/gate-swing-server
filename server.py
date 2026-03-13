@@ -659,6 +659,26 @@ def analyze_swing_with_mediapipe(video_path: str, overlay_out_path: Optional[str
         for idx in [NO, LS, RS, LE, RE, LW, RW, LH, RH, LK, RK]:
             if ok(idx):
                 cv2.circle(frame, pt(idx), 4, color, -1)
+
+    def draw_spine_line(frame, lm, mp_pose, color):
+        import cv2
+
+        h, w = frame.shape[:2]
+
+        LS = mp_pose.PoseLandmark.LEFT_SHOULDER.value
+        RS = mp_pose.PoseLandmark.RIGHT_SHOULDER.value
+        LH = mp_pose.PoseLandmark.LEFT_HIP.value
+        RH = mp_pose.PoseLandmark.RIGHT_HIP.value
+
+        sh_x = int(((lm[LS].x + lm[RS].x) / 2.0) * w)
+        sh_y = int(((lm[LS].y + lm[RS].y) / 2.0) * h)
+
+        hip_x = int(((lm[LH].x + lm[RH].x) / 2.0) * w)
+        hip_y = int(((lm[LH].y + lm[RH].y) / 2.0) * h)
+
+        cv2.line(frame, (hip_x, hip_y), (sh_x, sh_y), color, 4)
+        cv2.circle(frame, (hip_x, hip_y), 5, color, -1)
+        cv2.circle(frame, (sh_x, sh_y), 5, color, -1)
     # model_complexity=1 はCPU環境で速度と精度のバランスが最も良い設定です。
     with mp_pose.Pose(
         static_image_mode=False,
