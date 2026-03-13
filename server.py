@@ -910,11 +910,6 @@ def analyze_swing_with_mediapipe(video_path: str, overlay_out_path: Optional[str
                 import os
                 try:
                     subprocess.run([
-            if tmp_path and overlay_out_path:        # ← ここから追加
-                import subprocess
-                import os
-                try:
-                    subprocess.run([
                         "ffmpeg", "-y",
                         "-i", tmp_path,
                         "-vcodec", "libx264",
