@@ -697,7 +697,7 @@ def analyze_swing_with_mediapipe(video_path: str, overlay_out_path: Optional[str
         vec_x = sh_x - hip_x
         vec_y = sh_y - hip_y
         length = math.sqrt(vec_x**2 + vec_y**2)
-            if length < 1e-6:
+        if length < 1e-6:
             return
 
         extend = length * 0.6
@@ -711,36 +711,7 @@ def analyze_swing_with_mediapipe(video_path: str, overlay_out_path: Optional[str
                     (sh_x + 10, sh_y - 10),
                      cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 1, cv2.LINE_AA)
 
-    def draw_gaze_line(frame, lm, mp_pose, spine_angle_deg, color=(255, 255, 0)):
-        import cv2, math
-        h, w = frame.shape[:2]
-
-        LS = mp_pose.PoseLandmark.LEFT_SHOULDER.value
-        RS = mp_pose.PoseLandmark.RIGHT_SHOULDER.value
-        LH = mp_pose.PoseLandmark.LEFT_HIP.value
-        RH = mp_pose.PoseLandmark.RIGHT_HIP.value
-
-        sh_x = int(((lm[LS].x + lm[RS].x) / 2.0) * w)
-        sh_y = int(((lm[LS].y + lm[RS].y) / 2.0) * h)
-        hip_x = int(((lm[LH].x + lm[RH].x) / 2.0) * w)
-        hip_y = int(((lm[LH].y + lm[RH].y) / 2.0) * h)
-
-        vec_x = sh_x - hip_x
-        vec_y = sh_y - hip_y
-        length = math.sqrt(vec_x**2 + vec_y**2)
-        if length < 1e-6:
-            return
-
-        extend = length * 0.6
-        norm_x = vec_x / length
-        norm_y = vec_y / length
-        end_x = int(sh_x + norm_x * extend)
-        end_y = int(sh_y + norm_y * extend)
-
-        cv2.arrowedLine(frame, (sh_x, sh_y), (end_x, end_y), color, 2, tipLength=0.3)
-        cv2.putText(frame, f"Tilt: {spine_angle_deg:.1f}",
-                    (sh_x + 10, sh_y - 10),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 1, cv2.LINE_AA)
+    
     # model_complexity=1 はCPU環境で速度と精度のバランスが最も良い設定です。
     with mp_pose.Pose(
         static_image_mode=False,
