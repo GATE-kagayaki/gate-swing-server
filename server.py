@@ -983,7 +983,7 @@ def build_section_01(raw: Dict[str, Any]) -> Dict[str, Any]:
                 # 【修正】3D角度なので小数点第1位まで表示
                 "value": f'max {raw["shoulder"]["max"]:.1f} / mean {raw["shoulder"]["mean"]:.1f} / σ {raw["shoulder"]["std"]:.1f}',
                 "description": "3D空間での上半身の回旋量です。",
-                "guide": "maxで85°〜105°",
+                "guide": "maxで85°〜110°",
             },
             {
                 "name": "腰回転（°）",
@@ -996,7 +996,7 @@ def build_section_01(raw: Dict[str, Any]) -> Dict[str, Any]:
                 # 【重要】バックエンドで反転済みなので、そのまま表示
                 "value": f'max {raw["wrist"]["max"]:.1f} / mean {raw["wrist"]["mean"]:.1f} / σ {raw["wrist"]["std"]:.1f}',
                 "description": "手首のタメの角度（3D）です。",
-                "guide": "meanで25°〜35°",
+                "guide": "meanで45°〜75°",
             },
             {
                 "name": "頭部ブレ（%）",
@@ -1133,10 +1133,12 @@ def build_paid_02_shoulder(raw: Dict[str, Any], seed: str) -> Dict[str, Any]:
     # 改善点（max値を使って具体的に指摘）
     if sh["max"] < 85:
         bad.append(f"最大肩回転は {sh['max']:.1f}° で、捻転が浅い状態です。")
-    if sh["max"] > 115:
+    if sh["max"] > 110:
         bad.append(f"肩回転が {sh['max']:.1f}° に達しており、オーバースイングの傾向があります。")
     if xf["max"] < 35:
         bad.append(f"最大捻転差は {xf['max']:.1f}° で、パワーが溜まりきっていません。")
+    if xf["max"] > 60:
+        bad.append(f"捻転差が {xf['max']:.1f}° と過大で、腰と肩の連動が崩れやすくなっています。")
     if sh["std"] > 15:
         bad.append(f"肩回転のばらつき（σ {sh['std']:.1f}°）が大きく、トップの位置が揃っていません。")
     
