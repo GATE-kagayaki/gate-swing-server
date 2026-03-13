@@ -902,12 +902,12 @@ def analyze_swing_with_mediapipe(video_path: str, overlay_out_path: Optional[str
         if writer is not None:
             writer.release()
             logging.warning("[DEBUG] overlay writer released")
+            import subprocess
+            import os
             logging.warning(f"[DEBUG] tmp_path={tmp_path}")
             logging.warning(f"[DEBUG] overlay_out_path={overlay_out_path}")
             logging.warning(f"[DEBUG] tmp_exists={os.path.exists(tmp_path) if tmp_path else False}")
             if tmp_path and overlay_out_path:
-                import subprocess
-                import os
                 try:
                     subprocess.run([
                         "ffmpeg", "-y",
@@ -925,6 +925,7 @@ def analyze_swing_with_mediapipe(video_path: str, overlay_out_path: Optional[str
                     if os.path.exists(tmp_path):
                         os.remove(tmp_path)
                         logging.warning("[DEBUG] tmp_path削除完了")
+
     
     # --- ヘルパー関数の定義 ---
     def _safe_mean(xs):
