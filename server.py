@@ -1778,19 +1778,19 @@ def build_free_07(raw: Dict[str, Any]) -> Dict[str, Any]:
     # 腰回転
     if hip_mean < 36:
         tags.append("腰回転不足")
-    elif hip_mean > 50:
+    elif hip_mean > 55:
         tags.append("腰回転過多")
 
     # 手首コック
-    if w_mean < 70:
+    if w_mean < 45:
         tags.append("コック不足")
-    elif w_mean > 90:
+    elif w_mean > 75:
         tags.append("コック過多")
 
     # 捻転差
     if xf_mean < 35:
         tags.append("捻転差不足")
-    elif xf_mean > 55:
+    elif xf_mean > 60:
         tags.append("捻転差過多")
 
     # 安定性（%基準に統一）
@@ -2232,12 +2232,11 @@ def build_paid_09(raw: Dict[str, Any], user_inputs: Dict[str, Any]) -> Dict[str,
         return "high"
 
     def _band_tame(max_wrist: float, mean_wrist: float, std_wrist: float) -> str:
-        """タメの深さと安定性を判定（v2ロジック維持）"""
-        if max_wrist < 30.0:
+        if max_wrist < 45.0:     
             return "shallow"
-        if max_wrist < 45.0:
+        if max_wrist < 75.0:     
             return "normal"
-        if mean_wrist < 35.0 or std_wrist >= 15.0: # stdしきい値を15に調整
+        if mean_wrist < 45.0 or std_wrist >= 15.0:  
             return "unstable_deep"
         return "deep"
 
@@ -2246,14 +2245,14 @@ def build_paid_09(raw: Dict[str, Any], user_inputs: Dict[str, Any]) -> Dict[str,
     xf_band = _band_xfactor(avg_xfactor)
     tame_band = _band_tame(max_wrist, wrist_cock, wrist_std)
 
-    # 【2軸分析用レベル判定：mean基準 25°-35°】
+    # 【2軸分析用レベル判定：mean基準 45°-75°】
     if hs is not None:
         hs_level = "low" if hs < 38 else ("mid" if hs <= 45 else "high")
     else:
         hs_level = "low" if power_idx < 12 else ("mid" if power_idx <= 18 else "high")
     
-    # 手首コック(mean)による分類：26.6°は「標準」に該当
-    cock_level = "shallow" if wrist_cock < 20.0 else ("deep" if wrist_cock > 35.0 else "normal")
+    # 手首コック(mean)による分類：45°未満を「浅め」、45-75°を「標準」、75°超を「深め」と判定
+    cock_level = "shallow" if wrist_cock < 45.0 else ("deep" if wrist_cock > 75.0 else "normal")
     cock_label = "浅め" if cock_level == "shallow" else ("深め" if cock_level == "deep" else "標準")
 
     # --- 4. rows の作成 ---
@@ -2266,7 +2265,7 @@ def build_paid_09(raw: Dict[str, Any], user_inputs: Dict[str, Any]) -> Dict[str,
         "reason": "\n".join([
             f"● 軸ブレ：{stability_val:.1f}%（{stab_band}）",
             f"● 捻転差：{avg_xfactor:.1f}°（{xf_band}）",
-            f"● タメ平均：{wrist_cock:.1f}°（目安：25-35°に対して {cock_label}）",
+            f"● タメ平均：{wrist_cock:.1f}°（目安：45-75°に対して {cock_label}）",
         ])
     })
 
