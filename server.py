@@ -902,6 +902,14 @@ def analyze_swing_with_mediapipe(video_path: str, overlay_out_path: Optional[str
         if writer is not None:
             writer.release()
             logging.warning("[DEBUG] overlay writer released")
+            logging.warning(f"[DEBUG] tmp_path={tmp_path}")
+            logging.warning(f"[DEBUG] overlay_out_path={overlay_out_path}")
+            logging.warning(f"[DEBUG] tmp_exists={os.path.exists(tmp_path) if tmp_path else False}")
+            if tmp_path and overlay_out_path:
+                import subprocess
+                import os
+                try:
+                    subprocess.run([
             if tmp_path and overlay_out_path:        # ← ここから追加
                 import subprocess
                 import os
