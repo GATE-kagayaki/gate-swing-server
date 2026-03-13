@@ -679,6 +679,68 @@ def analyze_swing_with_mediapipe(video_path: str, overlay_out_path: Optional[str
         cv2.line(frame, (hip_x, hip_y), (sh_x, sh_y), color, 4)
         cv2.circle(frame, (hip_x, hip_y), 5, color, -1)
         cv2.circle(frame, (sh_x, sh_y), 5, color, -1)
+
+    def draw_gaze_line(frame, lm, mp_pose, spine_angle_deg, color=(255, 255, 0)):
+        import cv2, math
+        h, w = frame.shape[:2]
+
+        LS = mp_pose.PoseLandmark.LEFT_SHOULDER.value
+        RS = mp_pose.PoseLandmark.RIGHT_SHOULDER.value
+        LH = mp_pose.PoseLandmark.LEFT_HIP.value
+        RH = mp_pose.PoseLandmark.RIGHT_HIP.value
+
+        sh_x = int(((lm[LS].x + lm[RS].x) / 2.0) * w)
+        sh_y = int(((lm[LS].y + lm[RS].y) / 2.0) * h)
+        hip_x = int(((lm[LH].x + lm[RH].x) / 2.0) * w)
+        hip_y = int(((lm[LH].y + lm[RH].y) / 2.0) * h)
+
+        vec_x = sh_x - hip_x
+        vec_y = sh_y - hip_y
+        length = math.sqrt(vec_x**2 + vec_y**2)
+            if length < 1e-6:
+            return
+
+        extend = length * 0.6
+        norm_x = vec_x / length
+        norm_y = vec_y / length
+        end_x = int(sh_x + norm_x * extend)
+        end_y = int(sh_y + norm_y * extend)
+
+        cv2.arrowedLine(frame, (sh_x, sh_y), (end_x, end_y), color, 2, tipLength=0.3)
+        cv2.putText(frame, f"Tilt: {spine_angle_deg:.1f}",
+                    (sh_x + 10, sh_y - 10),
+                     cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 1, cv2.LINE_AA)
+
+    def draw_gaze_line(frame, lm, mp_pose, spine_angle_deg, color=(255, 255, 0)):
+        import cv2, math
+        h, w = frame.shape[:2]
+
+        LS = mp_pose.PoseLandmark.LEFT_SHOULDER.value
+        RS = mp_pose.PoseLandmark.RIGHT_SHOULDER.value
+        LH = mp_pose.PoseLandmark.LEFT_HIP.value
+        RH = mp_pose.PoseLandmark.RIGHT_HIP.value
+
+        sh_x = int(((lm[LS].x + lm[RS].x) / 2.0) * w)
+        sh_y = int(((lm[LS].y + lm[RS].y) / 2.0) * h)
+        hip_x = int(((lm[LH].x + lm[RH].x) / 2.0) * w)
+        hip_y = int(((lm[LH].y + lm[RH].y) / 2.0) * h)
+
+        vec_x = sh_x - hip_x
+        vec_y = sh_y - hip_y
+        length = math.sqrt(vec_x**2 + vec_y**2)
+        if length < 1e-6:
+            return
+
+        extend = length * 0.6
+        norm_x = vec_x / length
+        norm_y = vec_y / length
+        end_x = int(sh_x + norm_x * extend)
+        end_y = int(sh_y + norm_y * extend)
+
+        cv2.arrowedLine(frame, (sh_x, sh_y), (end_x, end_y), color, 2, tipLength=0.3)
+        cv2.putText(frame, f"Tilt: {spine_angle_deg:.1f}",
+                    (sh_x + 10, sh_y - 10),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 1, cv2.LINE_AA)
     # model_complexity=1 はCPU環境で速度と精度のバランスが最も良い設定です。
     with mp_pose.Pose(
         static_image_mode=False,
@@ -805,12 +867,9 @@ def analyze_swing_with_mediapipe(video_path: str, overlay_out_path: Optional[str
                 smooth_hip_mid = avg_point(spine_hip_history)
 
                 if smooth_shoulder_mid is not None and smooth_hip_mid is not None:
-                    dx = smooth_shoulder_mid[0] - smooth_hip_mid[0]
-                    dy = smooth_shoulder_mid[1] - smooth_hip_mid[1]
-                    dz = smooth_shoulder_mid[2] - smooth_hip_mid[2]
-
-                    horizontal = math.sqrt(dx * dx + dz * dz)
-                    spine_angle = math.degrees(math.atan2(horizontal, abs(dy) + 1e-6))
+                    dx = smooth_shoulder_mid[0] - smooth_hip_mid[0]  # 正規化座標 (0~1)
+                    dy = smooth_shoulder_mid[1] - smooth_hip_mid[1]  # 正規化座標 (0~1)
+                    spine_angle = math.degrees(math.atan2(abs(dx), abs(dy) + 1e-6))
 
             # --- D. データ保存 ---
             hd = dist_3d(curr_nose, base_nose) * 100
@@ -855,6 +914,10 @@ def analyze_swing_with_mediapipe(video_path: str, overlay_out_path: Optional[str
 
                 draw_overlay_skeleton(out, lm, mp_pose, color)
                 draw_spine_line(out, lm, mp_pose, color)
+                
+                if spine_angle > 0:
+                    draw_gaze_line(out, lm, mp_pose, spine_angle)
+                
                 writer.write(out)
             
         # whileループ終了後
