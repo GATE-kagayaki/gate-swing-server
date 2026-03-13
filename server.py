@@ -1521,7 +1521,7 @@ def build_paid_06_knee(raw: Dict[str, Any], seed: str) -> Dict[str, Any]:
         bad.append(f"膝ブレは mean {k['mean']:.1f}% で大きく、土台が崩れています。")
 
     if h["mean"] > 5.0:
-        bad.append(f"頭部ブレは mean {h['mean']:.1f}% で大きく、膝ブレと同時に軸が崩れています。")
+        bad.append(f"上半身の軸も不安定なため、膝ブレと合わさって全体の軸崩れが起きています。")
 
     if not bad:
         bad = ["改善点は特にありません。"]
