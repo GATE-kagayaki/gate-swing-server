@@ -854,6 +854,7 @@ def analyze_swing_with_mediapipe(video_path: str, overlay_out_path: Optional[str
                         color = (0, 0, 255)
 
                 draw_overlay_skeleton(out, lm, mp_pose, color)
+                draw_spine_line(out, lm, mp_pose, color)
                 writer.write(out)
             
         # whileループ終了後
