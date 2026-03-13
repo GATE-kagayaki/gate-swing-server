@@ -902,6 +902,26 @@ def analyze_swing_with_mediapipe(video_path: str, overlay_out_path: Optional[str
         if writer is not None:
             writer.release()
             logging.warning("[DEBUG] overlay writer released")
+            if tmp_path and overlay_out_path:        # ← ここから追加
+                import subprocess
+                import os
+                try:
+                    subprocess.run([
+                        "ffmpeg", "-y",
+                        "-i", tmp_path,
+                        "-vcodec", "libx264",
+                        "-pix_fmt", "yuv420p",
+                        "-crf", "23",
+                        overlay_out_path
+                    ], check=True)
+                    logging.warning("[DEBUG] FFmpeg変換完了")
+                except Exception as e:
+                    logging.warning(f"[DEBUG] FFmpeg変換失敗: {e}")
+                    os.rename(tmp_path, overlay_out_path)
+                finally:
+                    if os.path.exists(tmp_path):
+                        os.remove(tmp_path)
+                        logging.warning("[DEBUG] tmp_path削除完了")
     
     # --- ヘルパー関数の定義 ---
     def _safe_mean(xs):
