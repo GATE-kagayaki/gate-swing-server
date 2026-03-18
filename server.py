@@ -2756,18 +2756,18 @@ def task_handler():
 
             # --- overlay動画URLを作る ---
             try:
-                overlay_path = raw.get("overlay_path") if isinstance(raw, dict) else None
-                logging.warning(f"[DEBUG] overlay_path={overlay_path}")
-                logging.warning(
-                    f"[DEBUG] overlay_exists={os.path.exists(overlay_path) if overlay_path else None}"
-                )
+                logging.warning(f"[DEBUG] overlay_out={overlay_out}")
+                logging.warning(f"[DEBUG] overlay_out_exists={os.path.exists(overlay_out)}")
 
-                if overlay_path and os.path.exists(overlay_path):
-                    overlay_url = upload_video_to_gcs(overlay_path, report_id)
+                if os.path.exists(overlay_out):
+                    overlay_url = upload_video_to_gcs(overlay_out, report_id)
+                    logging.warning(f"[DEBUG] overlay_url uploaded={overlay_url}")
+                else:
+                    logging.warning("[DEBUG] overlay file not found, upload skipped")
 
             except Exception:
                 logging.exception("[WARN] overlay upload failed")
-
+                
         # ← with を抜けた後
         logging.warning(f"[DEBUG] overlay_url={overlay_url}")
         
