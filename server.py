@@ -927,7 +927,11 @@ def analyze_swing_with_mediapipe(video_path: str, overlay_out_path: Optional[str
                     if os.path.exists(tmp_path):
                         os.remove(tmp_path)
                         logging.warning("[DEBUG] tmp_path削除完了")
-
+                        
+        # --- 1. まずURLを定義する（ここを追加） ---
+        import os
+        report_id = os.path.basename(overlay_out_path).split('.')[0]
+        report_url = f"https://gate-kagayaki-562867875402.asia-northeast2.run.app/report/{report_id}"
         # --- ここからコピー（cap.release() と同じ位置に貼り付け） ---
         from linebot.models import FlexSendMessage
 
