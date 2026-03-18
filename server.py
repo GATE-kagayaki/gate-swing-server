@@ -555,7 +555,7 @@ def create_cloud_task(report_id: str, user_id: str, message_id: str) -> str:
 # ==================================================
 # MediaPipe analysis（max/mean/std/conf）
 # ==================================================
-def analyze_swing_with_mediapipe(video_path, overlay_out_path=None, user_id=None):
+def analyze_swing_with_mediapipe(video_path, overlay_out_path=None):
     snaps = []
     import os
     os.environ["MP_DEVICE"] = "cpu"
