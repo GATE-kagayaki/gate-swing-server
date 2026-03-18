@@ -902,35 +902,82 @@ def analyze_swing_with_mediapipe(video_path, overlay_out_path=None):
         if user_id is None:
             raise ValueError("user_id が渡されていません")   
             
-        # whileループ終了後
-        cap.release()
-        if writer is not None:
-            writer.release()
-            logging.warning("[DEBUG] overlay writer released")
-            import subprocess
-            import os
-            logging.warning(f"[DEBUG] tmp_path={tmp_path}")
-            logging.warning(f"[DEBUG] overlay_out_path={overlay_out_path}")
-            logging.warning(f"[DEBUG] tmp_exists={os.path.exists(tmp_path) if tmp_path else False}")
-            if tmp_path and overlay_out_path:
-                try:
-                    subprocess.run([
+    # whileループ終了後
+    cap.release()
+
+    final_overlay_path = None
+
+    if writer is not None:
+        writer.release()
+        logging.warning("[DEBUG] overlay writer released")
+
+        import os
+        import subprocess
+
+        logging.warning(f"[DEBUG] tmp_path={tmp_path}")
+        logging.warning(f"[DEBUG] overlay_out_path={overlay_out_path}")
+        logging.warning(f"[DEBUG] tmp_exists_before={os.path.exists(tmp_path) if tmp_path else False}")
+
+        if tmp_path and overlay_out_path and os.path.exists(tmp_path):
+            try:
+                result = subprocess.run(
+                    [
                         "ffmpeg", "-y",
                         "-i", tmp_path,
                         "-vcodec", "libx264",
                         "-pix_fmt", "yuv420p",
                         "-crf", "23",
                         overlay_out_path
-                    ], check=True)
-                    logging.warning("[DEBUG] FFmpeg変換完了")
-                except Exception as e:
-                    logging.warning(f"[DEBUG] FFmpeg変換失敗: {e}")
+                    ],
+                    check=True,
+                    capture_output=True,
+                    text=True
+                )
+                logging.warning("[DEBUG] FFmpeg変換完了")
+                logging.warning(f"[DEBUG] ffmpeg stderr={result.stderr}")
+
+                if os.path.exists(overlay_out_path):
+                    final_overlay_path = overlay_out_path
+                    logging.warning(f"[DEBUG] final_overlay_path={final_overlay_path}")
+                else:
+                    logging.warning("[DEBUG] ffmpeg成功扱いだが overlay_out_path が存在しない")
+
+            except Exception as e:
+                logging.warning(f"[DEBUG] FFmpeg変換失敗: {e}")
+
+                try:
                     os.rename(tmp_path, overlay_out_path)
-                finally:
-                    if os.path.exists(tmp_path):
-                        os.remove(tmp_path)
-                        logging.warning("[DEBUG] tmp_path削除完了")
-                        
+                    if os.path.exists(overlay_out_path):
+                        final_overlay_path = overlay_out_path
+                        logging.warning("[DEBUG] rename fallback 成功")
+                    else:
+                        logging.warning("[DEBUG] rename後も overlay_out_path が存在しない")
+                except Exception as rename_e:
+                    logging.warning(f"[DEBUG] rename失敗: {rename_e}")
+
+            finally:
+                if tmp_path and os.path.exists(tmp_path):
+                    os.remove(tmp_path)
+                    logging.warning("[DEBUG] tmp_path削除完了")
+
+    # ここで返す
+    return {
+        "frame_count": frame_count,
+        "valid_frames": valid_frames,
+        "confidence": confidence_stats,
+        "shoulder": shoulder_stats,
+        "hip": hip_stats,
+        "wrist": wrist_stats,
+        "head": head_stats,
+        "knee": knee_stats,
+        "x_factor": x_factor_stats,
+        "spine": spine_stats,
+        "spine_raw": spine_raw_stats,
+        "spine_top": spine_top_stats,
+        "spine_impact": spine_impact_stats,
+        "snaps": snaps,
+        "overlay_path": final_overlay_path,   # ← ここ重要
+    }
    
     # --- ヘルパー関数の定義 ---
     def _safe_mean(xs):
