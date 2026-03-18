@@ -931,73 +931,7 @@ def analyze_swing_with_mediapipe(video_path, overlay_out_path=None, user_id=None
                         os.remove(tmp_path)
                         logging.warning("[DEBUG] tmp_path削除完了")
                         
-        # --- 1. まずURLを定義する（ここを追加） ---
-        import os
-        report_id = os.path.basename(overlay_out_path).split('.')[0]
-        report_url = f"https://gate-kagayaki-562867875402.asia-northeast2.run.app/report/{report_id}"
-        # --- ここからコピー（cap.release() と同じ位置に貼り付け） ---
-        from linebot.models import FlexSendMessage
-
-        flex_contents = {
-            "type": "bubble",
-            "body": {
-                "type": "box",
-                "layout": "vertical",
-                "contents": [
-                    {
-                        "type": "text",
-                        "text": "🎉 スイング計測が完了しました！",
-                        "weight": "bold",
-                        "size": "lg",
-                        "color": "#1DB446"
-                    },
-                    {
-                        "type": "text",
-                        "text": "AIがスイングを精密に解析しました。下記のボタンから結果を確認・共有できます。",
-                        "size": "sm",
-                        "color": "#666666",
-                        "wrap": True,
-                        "margin": "md"
-                    }
-                ]
-            },
-            "footer": {
-                "type": "box",
-                "layout": "vertical",
-                "spacing": "sm",
-                "contents": [
-                    {
-                        "type": "button",
-                        "style": "primary",
-                        "color": "#00b900",
-                        "action": {
-                            "type": "uri",
-                            "label": "📊 診断レポートを見る",
-                            "uri": report_url
-                        }
-                    },
-                    {
-                        "type": "button",
-                        "style": "secondary",
-                        "action": {
-                            "type": "uri",
-                            "label": "🎬 動画をシェアする",
-                            "uri": f"https://line.me/R/msg/text/?GATEでスイングを解析しました！%0a{report_url}"
-                        }
-                    }
-                ]
-            }
-        }
-
-        # 解析完了後にプッシュ通知で送信
-        # ※ user_id と report_url がこのスコープで定義されている必要があります
-        line_bot_api.push_message(
-            user_id,
-            FlexSendMessage(alt_text="スイング診断完了のお知らせ", contents=flex_contents)
-        )
-        # --- ここまで ---
-
-    
+   
     # --- ヘルパー関数の定義 ---
     def _safe_mean(xs):
         return sum(xs) / len(xs) if xs else 0.0
