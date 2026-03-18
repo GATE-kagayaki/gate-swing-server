@@ -2784,10 +2784,12 @@ def task_handler():
             "completed_at": datetime.now(timezone.utc).isoformat(),
         }, merge=True)
 
-        # 完了通知（ボタン付き）
         from linebot.models import FlexSendMessage
+        from urllib.parse import quote
 
         report_url = f"https://gate-kagayaki-562867875402.asia-northeast2.run.app/report/{report_id}"
+        share_text = f"GATEでスイングを解析しました！\n{report_url}"
+        share_uri = "https://line.me/R/msg/text/?" + quote(share_text, safe="")
 
         flex_contents = {
             "type": "bubble",
@@ -2833,7 +2835,7 @@ def task_handler():
                         "action": {
                             "type": "uri",
                             "label": "🎬 動画をシェアする",
-                            "uri": f"https://line.me/R/msg/text/?GATEでスイングを解析しました！%0a{report_url}"
+                            "uri": share_uri
                         }
                     }
                 ]
