@@ -898,6 +898,9 @@ def analyze_swing_with_mediapipe(video_path, overlay_out_path=None, user_id=None
                     draw_gaze_line(out, lm, mp_pose, spine_angle)
                 
                 writer.write(out)
+    def analyze_swing_with_mediapipe(video_path, overlay_out_path=None, user_id=None):
+        if user_id is None:
+            raise ValueError("user_id が渡されていません")   
             
         # whileループ終了後
         cap.release()
