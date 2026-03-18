@@ -2807,7 +2807,11 @@ def task_handler():
                     f.write(chunk)
 
             overlay_out = os.path.join(tmpdir, f"{report_id}_overlay.mp4")
-            raw = analyze_swing_with_mediapipe(video_path, overlay_out_path=overlay_out)
+            raw = analyze_swing_with_mediapipe(
+                video_path,
+                overlay_out_path=overlay_out,
+                user_id=user_id
+            )
 
             logging.warning(f"[DEBUG] raw_type={type(raw)}")
             logging.warning(f"[DEBUG] raw_keys={(list(raw.keys()) if isinstance(raw, dict) else None)}")
