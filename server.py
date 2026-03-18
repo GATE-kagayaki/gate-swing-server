@@ -2784,8 +2784,70 @@ def task_handler():
             "completed_at": datetime.now(timezone.utc).isoformat(),
         }, merge=True)
 
-        # 完了通知
-        safe_line_push(user_id, make_done_push(report_id), force=True)
+        # 完了通知（ボタン付き）
+        from linebot.models import FlexSendMessage
+
+        report_url = f"https://gate-kagayaki-562867875402.asia-northeast2.run.app/report/{report_id}"
+
+        flex_contents = {
+            "type": "bubble",
+            "body": {
+                "type": "box",
+                "layout": "vertical",
+                "contents": [
+                    {
+                        "type": "text",
+                        "text": "🎉 スイング計測が完了しました！",
+                        "weight": "bold",
+                        "size": "lg",
+                        "color": "#1DB446"
+                    },
+                    {
+                        "type": "text",
+                        "text": "AIがスイングを精密に解析しました。下記のボタンから結果を確認・共有できます。",
+                        "size": "sm",
+                        "color": "#666666",
+                        "wrap": True,
+                        "margin": "md"
+                    }
+                ]
+            },
+            "footer": {
+                "type": "box",
+                "layout": "vertical",
+                "spacing": "sm",
+                "contents": [
+                    {
+                        "type": "button",
+                        "style": "primary",
+                        "color": "#00b900",
+                        "action": {
+                            "type": "uri",
+                            "label": "📊 診断レポートを見る",
+                            "uri": report_url
+                        }
+                    },
+                    {
+                        "type": "button",
+                        "style": "secondary",
+                        "action": {
+                            "type": "uri",
+                            "label": "🎬 動画をシェアする",
+                            "uri": f"https://line.me/R/msg/text/?GATEでスイングを解析しました！%0a{report_url}"
+                        }
+                    }
+                ]
+            }
+        }
+
+        line_bot_api.push_message(
+            user_id,
+            FlexSendMessage(
+                alt_text="スイング診断完了のお知らせ",
+                contents=flex_contents
+            )
+        )
+        
 
         return jsonify({"ok": True}), 200
 
