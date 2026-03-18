@@ -2746,8 +2746,7 @@ def task_handler():
             overlay_out = os.path.join(tmpdir, f"{report_id}_overlay.mp4")
             raw = analyze_swing_with_mediapipe(
                 video_path,
-                overlay_out_path=overlay_out,
-                user_id=user_id
+                overlay_out_path=overlay_out
             )
 
             logging.warning(f"[DEBUG] raw_type={type(raw)}")
