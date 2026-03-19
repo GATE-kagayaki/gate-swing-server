@@ -960,24 +960,8 @@ def analyze_swing_with_mediapipe(video_path, overlay_out_path=None):
                     os.remove(tmp_path)
                     logging.warning("[DEBUG] tmp_path削除完了")
 
-    # ここで返す
-    return {
-        "frame_count": frame_count,
-        "valid_frames": valid_frames,
-        "confidence": confidence_stats,
-        "shoulder": shoulder_stats,
-        "hip": hip_stats,
-        "wrist": wrist_stats,
-        "head": head_stats,
-        "knee": knee_stats,
-        "x_factor": x_factor_stats,
-        "spine": spine_stats,
-        "spine_raw": spine_raw_stats,
-        "spine_top": spine_top_stats,
-        "spine_impact": spine_impact_stats,
-        "snaps": snaps,
-        "overlay_path": final_overlay_path,   # ← ここ重要
-    }
+    if final_overlay_path:
+        overlay_out_path = final_overlay_path
    
     # --- ヘルパー関数の定義 ---
     def _safe_mean(xs):
