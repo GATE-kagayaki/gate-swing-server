@@ -934,7 +934,6 @@ def analyze_swing_with_mediapipe(video_path, overlay_out_path=None):
                     text=True
                 )
                 logging.warning("[DEBUG] FFmpeg変換完了")
-                logging.warning(f"[DEBUG] ffmpeg stderr={result.stderr}")
 
                 if os.path.exists(overlay_out_path):
                     final_overlay_path = overlay_out_path
