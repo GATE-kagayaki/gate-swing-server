@@ -2710,18 +2710,15 @@ def api_report_data(report_id: str):
         "overlay_video_url": r.get("overlay_video_url"),
     })
 
-def upload_video_to_gcs(local_path: str, report_id: str) -> str:
+def upload_video_to_gcs(local_path: str, report_id: str) -> dict:
     bucket_name = "gate20260201"
     object_name = f"overlays/{report_id}.mp4"
-
-    logging.warning(f"[DEBUG] upload start bucket={bucket_name} object={object_name} local_path={local_path}")
 
     client = storage.Client()
     bucket = client.bucket(bucket_name)
     blob = bucket.blob(object_name)
 
     blob.upload_from_filename(local_path, content_type="video/mp4")
-    logging.warning("[DEBUG] upload done")
 
     import google.auth
     from google.auth.transport.requests import Request
@@ -2730,7 +2727,7 @@ def upload_video_to_gcs(local_path: str, report_id: str) -> str:
     auth_req = Request()
     credentials.refresh(auth_req)
 
-    signed_url = blob.generate_signed_url(
+    play_url = blob.generate_signed_url(
         version="v4",
         expiration=timedelta(hours=24),
         method="GET",
@@ -2739,8 +2736,20 @@ def upload_video_to_gcs(local_path: str, report_id: str) -> str:
         access_token=credentials.token,
     )
 
-    logging.warning(f"[DEBUG] signed_url={signed_url}")
-    return signed_url
+    download_url = blob.generate_signed_url(
+        version="v4",
+        expiration=timedelta(hours=24),
+        method="GET",
+        response_type="video/mp4",
+        response_disposition='attachment; filename="overlay.mp4"',
+        service_account_email=getattr(credentials, "service_account_email", None),
+        access_token=credentials.token,
+    )
+
+    return {
+        "play_url": play_url,
+        "download_url": download_url,
+    }
     
 @app.route("/task-handler", methods=["POST"])
 def task_handler():
@@ -2764,7 +2773,8 @@ def task_handler():
 
               # 動画DL → 解析（＋overlayアップロード）
         overlay_url = None
-
+        overlay_download_url = None
+        
         with tempfile.TemporaryDirectory() as tmpdir:
             video_path = os.path.join(tmpdir, f"{report_id}.mp4")
             content = line_bot_api.get_message_content(message_id)
@@ -2790,8 +2800,9 @@ def task_handler():
                 logging.warning(f"[DEBUG] overlay_out_exists={os.path.exists(overlay_out)}")
 
                 if os.path.exists(overlay_out):
-                    overlay_url = upload_video_to_gcs(overlay_out, report_id)
-                    logging.warning(f"[DEBUG] overlay_url uploaded={overlay_url}")
+                    overlay_urls = upload_video_to_gcs(overlay_out, report_id)
+                    overlay_url = overlay_urls.get("play_url")
+                    overlay_download_url = overlay_urls.get("download_url")
                 else:
                     logging.warning("[DEBUG] overlay file not found, upload skipped")
 
@@ -2811,6 +2822,7 @@ def task_handler():
             "raw": raw,
             "analysis": analysis,
             "overlay_video_url": overlay_url,
+            "overlay_video_download_url": overlay_download_url,
             "completed_at": datetime.now(timezone.utc).isoformat(),
         }, merge=True)
 
