@@ -318,7 +318,7 @@ function render09(secData) {
 
         // ★ここ追加
         if (data.overlay_video_url) {
-          renderVideo(data.overlay_video_url);
+          renderVideo(report.overlay_video_url, report.overlay_video_download_url);
         }
         if (data.is_premium) premiumBadge.classList.remove("hidden");
         const a = data.analysis || {};
