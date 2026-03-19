@@ -2711,7 +2711,7 @@ def api_report_data(report_id: str):
         "overlay_video_url": r.get("overlay_video_url"),
     })
 
-def upload_video_to_gcs(local_path: str, report_id: str) -> str:
+def upload_video_to_gcs(local_path: str, report_id: str) -> dict:
     bucket_name = "gate20260201"
     object_name = f"overlays/{report_id}.mp4"
 
@@ -2731,7 +2731,7 @@ def upload_video_to_gcs(local_path: str, report_id: str) -> str:
     auth_req = Request()
     credentials.refresh(auth_req)
 
-    signed_url = blob.generate_signed_url(
+    play_url = blob.generate_signed_url(
         version="v4",
         expiration=timedelta(hours=24),
         method="GET",
@@ -2740,8 +2740,23 @@ def upload_video_to_gcs(local_path: str, report_id: str) -> str:
         access_token=credentials.token,
     )
 
-    logging.warning(f"[DEBUG] signed_url={signed_url}")
-    return signed_url
+    download_url = blob.generate_signed_url(
+        version="v4",
+        expiration=timedelta(hours=24),
+        method="GET",
+        response_type="video/mp4",
+        response_disposition='attachment; filename="overlay.mp4"',
+        service_account_email=getattr(credentials, "service_account_email", None),
+        access_token=credentials.token,
+    )
+
+    logging.warning(f"[DEBUG] play_url={play_url}")
+    logging.warning(f"[DEBUG] download_url={download_url}")
+
+    return {
+        "play_url": play_url,
+        "download_url": download_url,
+    }
     
 @app.route("/task-handler", methods=["POST"])
 def task_handler():
