@@ -132,9 +132,12 @@
   }
   
   function renderVideo(videoUrl, downloadUrl) {
+    // レポートの「00.」セクションを作成
     const sec = sectionWrap("00. 骨格ライン動画（解析結果）");
     const box = document.createElement("div");
     box.className = "card mt-3";
+
+    // 1. まず動画プレイヤーを表示
     box.innerHTML = `
       <div class="muted mb-2">前傾ズレなどの検知箇所は色で表示されます（緑→黄→赤）。</div>
       <video controls playsinline class="w-full rounded-lg" preload="metadata">
@@ -144,24 +147,27 @@
       <div class="muted mt-2">※再生できない場合は、Wi-Fi環境で再読み込みしてください。</div>
     `;
 
-    if (downloadUrl) {
+    // 2. 保存ボタンの作成
+    // サーバーの downloadUrl が万が一空でも、videoUrl を使ってボタンを強制表示します
+    const finalUrl = downloadUrl || videoUrl;
+
+    if (finalUrl) {
       const saveWrap = document.createElement("div");
       saveWrap.className = "mt-3";
 
       const saveLink = document.createElement("a");
-      saveLink.href = downloadUrl;
+      saveLink.href = finalUrl;
       
-      // 【修正】保存用属性を追加
+      // 保存設定（ファイル名を指定）
       saveLink.setAttribute("download", "swing_analysis.mp4");
-      // 【修正】iPhone等で「長押し保存」をしやすくするため別タブで開く設定に
+      // iPhone等で別のタブで開いて保存メニューを出しやすくする
       saveLink.setAttribute("target", "_blank");
-      // 【修正】セキュリティ対策
       saveLink.setAttribute("rel", "noopener noreferrer");
       
       saveLink.textContent = "📥 動画を保存";
       saveLink.style.cssText = "display:inline-block;padding:10px 16px;background:#00b900;color:#fff;border-radius:8px;text-decoration:none;font-weight:bold;";
 
-      // 【追加】スマホユーザー向けのガイドテキスト
+      // 保存できない場合のヒント（注釈）
       const saveHint = document.createElement("div");
       saveHint.className = "muted mt-1 text-xs";
       saveHint.style.lineHeight = "1.4";
