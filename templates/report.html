@@ -166,8 +166,9 @@
       const saveHint = document.createElement("div");
       saveHint.className = "muted mt-1 text-xs";
       saveHint.style.lineHeight = "1.4";
-      saveHint.textContent ="※LINE内では動画を保存できない場合があります。動画を保存するには、まずレポートをブラウザで開いてください。その後、保存ボタンを押すか、うまくいかない場合は長押しして保存してください。";
-
+      saveHint.textContent =
+      "※LINE内では動画を保存できない場合があります。動画を保存するには、まずレポートをブラウザで開いてください。その後、保存ボタンを押すか、うまくいかない場合は長押しして保存してください。";
+      
       saveWrap.appendChild(saveLink);
       saveWrap.appendChild(saveHint);
       box.appendChild(saveWrap);
