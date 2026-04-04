@@ -157,13 +157,8 @@
 
       const saveLink = document.createElement("a");
       saveLink.href = finalUrl;
-      
-      // 保存設定（ファイル名を指定）
       saveLink.setAttribute("download", "swing_analysis.mp4");
-      // iPhone等で別のタブで開いて保存メニューを出しやすくする
-      saveLink.setAttribute("target", "_blank");
-      saveLink.setAttribute("rel", "noopener noreferrer");
-      
+            
       saveLink.textContent = "📥 動画を保存";
       saveLink.style.cssText = "display:inline-block;padding:10px 16px;background:#00b900;color:#fff;border-radius:8px;text-decoration:none;font-weight:bold;";
 
