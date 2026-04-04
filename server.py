@@ -2708,6 +2708,7 @@ def api_report_data(report_id: str):
         "is_premium": bool(r.get("is_premium", False)),
         "analysis": r.get("analysis") or {},
         "overlay_video_url": r.get("overlay_video_url"),
+        "overlay_video_download_url": r.get("overlay_video_download_url"),  
     })
 
 def upload_video_to_gcs(local_path: str, report_id: str) -> dict:
