@@ -1422,21 +1422,20 @@ def build_paid_03_hip(raw: Dict[str, Any], seed: str) -> Dict[str, Any]:
         "bad": bad[:3],
         "pro_comment": pro_comment,
     }
+    
 def judge_wrist(raw: Dict[str, Any]) -> Dict[str, Any]:
-    # --- 【重要】バックエンドで反転済みのため、そのままの数値を使用 ---
-    # raw["wrist"]["mean"] が既に 21.0 などの「コック角」になっています
+    # バックエンドで反転済みの数値をそのまま使用
     w_mean = float(raw["wrist"]["mean"])
     xf_mean = float(raw["x_factor"]["mean"])
 
     main = "mid"
-    # 3D計測基準：45度未満を不足（浅い）、75度超を過多（深い）と判定
-    if w_mean < 45:      
+    if w_mean < 40:
         main = "low"
-    elif w_mean > 75:    
+    elif w_mean > 80:
         main = "high"
 
     rel = "mid"
-    if xf_mean < 35:
+    if xf_mean < 30:
         rel = "low"
 
     tags: List[str] = []
@@ -1446,6 +1445,7 @@ def judge_wrist(raw: Dict[str, Any]) -> Dict[str, Any]:
         tags.append("コック過多")
     if rel == "low":
         tags.append("捻転差不足")
+
     return {"main": main, "related": rel, "tags": tags}
 
 
