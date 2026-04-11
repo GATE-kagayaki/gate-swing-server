@@ -1170,21 +1170,19 @@ def judge_shoulder(raw: Dict[str, Any]) -> Dict[str, Any]:
     sh = raw["shoulder"]
     xf = raw["x_factor"]
 
-    # 【整合性】3D解析により数値が適正化（0-110度）されるため、判定は「最大値(max)」を基準にします
-    # スイング全体の平均(mean)だとアドレス等が含まれ数値が低く出るため、最大捻転（max）で評価します
-    sh_val = sh["max"]
-    xf_val = xf["max"]
+    sh_val = float(sh["max"])
+    xf_val = float(xf["max"])
 
     main = "mid"
-    if sh_val < 85:
+    if sh_val < 80:
         main = "low"
-    elif sh_val > 110:
+    elif sh_val > 115:
         main = "high"
 
     rel = "mid"
-    if xf_val < 35:
+    if xf_val < 30:
         rel = "low"
-    elif xf_val > 60:
+    elif xf_val > 70:
         rel = "high"
 
     tags: List[str] = []
@@ -1196,7 +1194,7 @@ def judge_shoulder(raw: Dict[str, Any]) -> Dict[str, Any]:
         tags.append("捻転差不足")
     if rel == "high":
         tags.append("捻転差過多")
-    
+
     return {"main": main, "related": rel, "tags": tags}
 
 def _range_ideal(lo: float, hi: float, unit: str) -> dict:
