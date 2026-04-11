@@ -1382,71 +1382,69 @@ def judge_wrist(raw: Dict[str, Any]) -> Dict[str, Any]:
 
 def build_paid_04_wrist(raw: Dict[str, Any], seed: str) -> Dict[str, Any]:
     w_raw = raw["wrist"]
-    
-    # 【修正】解析側で反転済み（180.0 - angle_3d）のため、ここではそのまま代入
+
+    # 解析側で反転済み
     w_mean = float(w_raw["mean"])
-    # 反転済みデータでは w_raw["max"] が「最も深く曲がった角度」を示します
-    w_max  = float(w_raw["max"]) 
+    w_max  = float(w_raw["max"])
     w_std  = float(w_raw["std"])
-    
+
     j = judge_wrist(raw)
     conf = _conf(raw)
 
     good: List[str] = []
     bad: List[str] = []
 
-    # --- 良い点（プロの視点）：既存ロジックを省略せず維持 ---
-    if w_std <= 8:
-        good.append("手首の角度変化が非常に一定しており、インパクトでのフェース管理能力が極めて高いです。")
-    if 45 <= w_mean <= 75:
-        good.append("理想的なタメ（L字）が形成されており、効率的にヘッドを加速させる準備ができています。")
-    if w_max > 80:
-        good.append("トップでの深いコックを許容する柔軟性があり、爆発的な飛距離を生む潜在能力があります。")
-    
-    if not good: 
+    # 良い点（やや緩和）
+    if w_std <= 10:
+        good.append("手首の角度変化は比較的一定しており、インパクトでのフェース管理は概ね安定しています。")
+    if 40 <= w_mean <= 80:
+        good.append("タメは基準レンジに収まっており、ヘッドを加速させる準備ができています。")
+    if w_max > 75:
+        good.append("トップで十分なコックが作れており、ヘッドスピードを高める土台があります。")
+
+    if not good:
         good = ["基本的な手首の可動域は確保されており、スイングの土台はできています。"]
 
-    # --- 改善点（プロの指摘）：既存ロジックを省略せず維持 ---
-    if w_mean < 45:
-        bad.append(f"平均コック角 {w_mean:.1f}° は浅く、アーリーリリースの傾向があります。")
-    if w_std > 15:
-        bad.append(f"手首の挙動（σ {w_std:.1f}）が不安定で、インパクトの打点がバラつきやすい状態です。")
-    if w_max < 40:
-        bad.append("バックスイングでのコックが完了する前に切り返しており、パワーロスが生じています。")
+    # 改善点（やや緩和）
+    if w_mean < 40:
+        bad.append(f"平均コック角 {w_mean:.1f}° はやや浅く、リリースが早くなる傾向があります。")
+    if w_mean > 85:
+        bad.append(f"平均コック角 {w_mean:.1f}° はやや大きく、リリースのタイミングがシビアになりやすい状態です。")
+    if w_std > 18:
+        bad.append(f"手首の挙動（σ {w_std:.1f}）にばらつきがあり、打点の再現性に影響しています。")
+    if w_max < 35:
+        bad.append("バックスイングでのコック量がやや不足しており、力を溜める余地があります。")
 
-    if not bad: 
+    if not bad:
         bad = ["現在、手首の使い方において大きな修正ポイントは見当たりません。"]
 
-    # --- プロ目線の詳細な言語化：既存の分岐構造をすべて維持 ---
+    # プロ目線（やや柔らかく）
     pro_lines: List[str] = []
-    
-    # 状態別の深い解説
-    if w_mean < 45:
-        pro_lines.append(f"本動画では手首の角度が {w_mean:.1f}° と浅いため、ヘッドを“運ぶ”動きが強く、飛距離がロスしやすい傾向です。")
-        pro_lines.append("本来あるべき『タメ』が解けるのが早いため、インパクトで合わせる動きが必要になっています。")
-    elif w_mean > 80:
-        pro_lines.append(f"最大 {w_max:.1f}° という非常に深いタメを作れていますが、その分、リリースのタイミングがシビアです。")
-        pro_lines.append("手元の操作に頼りすぎると、急激なフックやプッシュアウトの原因となります。")
-    else:
-        pro_lines.append(f"手首のコック角（{w_mean:.1f}°）はプロの基準値に近く、効率的なパワー伝達が行われています。")
 
-    # 安定性に関する洞察
-    if w_std > 12:
-        pro_lines.append("特に気になるのは再現性です。手首の動きが一定でないため、フェース向きの管理が困難になっています。")
+    if w_mean < 40:
+        pro_lines.append(f"本動画では手首の角度が {w_mean:.1f}° とやや浅く、ヘッドを運ぶ動きが出やすい傾向です。")
+        pro_lines.append("タメを保つ時間が短くなりやすいため、インパクトで合わせる動きにつながることがあります。")
+    elif w_mean > 85:
+        pro_lines.append(f"平均 {w_mean:.1f}° とタメは深めですが、その分リリースのタイミング管理が重要になります。")
+        pro_lines.append("手元の操作が増えると、左右のミスにつながりやすくなります。")
     else:
-        pro_lines.append("手首の挙動が安定しているため、シャフトのしなりを一定に使いこなせる状態です。")
+        pro_lines.append(f"手首のコック角（{w_mean:.1f}°）は基準レンジに近く、効率的なパワー伝達ができています。")
+
+    if w_std > 15:
+        pro_lines.append("手首の動きにややばらつきがあり、フェース向きの再現性に影響しています。")
+    else:
+        pro_lines.append("手首の挙動は比較的安定しており、シャフトのしなりを再現しやすい状態です。")
 
     pro_comment = " ".join(pro_lines)
-    bench = [
-        _bench_line("手首コック(°)", "°", "mean", _range_ideal(45, 75, "°"), current=float(w_mean)),
-        _bench_line("手首コックの上限(°)", "°", "max", _ge_ideal(80.0, "°"), current=float(w_max)),
-        _bench_line("手首の再現性(°)", "°", "σ", _le_ideal(12.0, "°"), current=float(w_std)),
-    ]
 
+    bench = [
+        _bench_line("手首コック(°)", "°", "mean", _range_ideal(40, 80, "°"), current=float(w_mean)),
+        _bench_line("手首コックの上限(°)", "°", "max", _ge_ideal(75.0, "°"), current=float(w_max)),
+        _bench_line("手首の再現性(°)", "°", "σ", _le_ideal(15.0, "°"), current=float(w_std)),
+    ]
 
     return {
         "title": "04. Wrist Cock（手首コック）",
-        # 数値表記（value）の構造も維持
         "value": f"Max Cock {w_max:.1f}° / Mean {w_mean:.1f}° (σ {w_std:.1f})",
         "tags": j["tags"],
         "bench": bench,
@@ -1454,7 +1452,6 @@ def build_paid_04_wrist(raw: Dict[str, Any], seed: str) -> Dict[str, Any]:
         "bad": bad[:3],
         "pro_comment": pro_comment,
     }
-
 def judge_head(raw: Dict[str, Any]) -> Dict[str, Any]:
     h = raw["head"]
     k = raw["knee"]
