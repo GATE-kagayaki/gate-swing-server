@@ -1478,66 +1478,64 @@ def build_paid_05_head(raw: Dict[str, Any], seed: str) -> Dict[str, Any]:
 
     spine_flag = judge_spine_flag(raw)
 
-    # --- 良い点（最低1行） --- ％基準に数値を書き換え ---
+    # 良い点（やや緩和）
+    if h["mean"] <= 4.5:
+        good.append("頭の左右ブレは小さく抑えられており、軸の安定感は概ね良好です。")
 
-    if h["mean"] <= 3.5:  # 0.10相当
-        good.append("頭の左右ブレは最小限に抑えられており、理想的な軸の安定感があります。")
-    
-    # バッファ：許容範囲内の動き
-    if 3.5 < h["mean"] <= 5.0:  # 0.10〜0.15相当
-        good.append("多少の左右移動はありますが、許容範囲内でダイナミックな動きができています。")
-    # バッファ：下半身との連動
-    if h["mean"] <= 4.0 and k["mean"] <= 5.0:  # 0.12 / 0.15相当
-        good.append("上下の軸が連動して安定しており、ミート率を支える良い土台があります。")
+    if 4.5 < h["mean"] <= 6.5:
+        good.append("多少の左右移動はありますが、許容範囲内でスイングできています。")
+
+    if h["mean"] <= 5.0 and k["mean"] <= 6.5:
+        good.append("上下の軸が比較的連動して安定しており、ミート率を支える土台があります。")
 
     if not good:
-        good = ["良い点は特にありません。"]
+        good = ["頭部位置は大きく崩れてはいませんが、さらに安定性を高める余地があります。"]
 
-    # --- 改善点 --- ％基準に数値を書き換え ---
-    if h["mean"] > 5.0:  # 0.15相当
-        bad.append(f"頭部ブレは mean {h['mean']:.1f}% で大きく、軸が崩れています。")
+    # 改善点（やや緩和）
+    if h["mean"] > 6.5:
+        bad.append(f"頭部ブレは mean {h['mean']:.1f}% でやや大きく、軸の再現性に影響しています。")
 
-    if k["mean"] > 8.0:  # 0.20相当
-        bad.append(f"膝ブレは mean {k['mean']:.1f}% で大きく、頭部ブレを増幅させています。")
-    
+    if h["std"] > 3.5:
+        bad.append(f"頭部位置のばらつき（σ {h['std']:.1f}%）がやや大きく、場面ごとの再現性にムラがあります。")
+
+    if k["mean"] > 10.0:
+        bad.append(f"膝ブレは mean {k['mean']:.1f}% と大きめで、頭部の安定性にも影響している可能性があります。")
+
     if not bad:
-        bad = ["改善点は特にありません。"]
+        bad = ["大きな改善点は特にありません。"]
 
-    # --- プロ目線（言語化）：既存の構成を維持 ---
+    # プロ目線（やや柔らかく）
     pro_lines: List[str] = []
-    pro_lines.append("頭部は「動いたかどうか」より、動いても同じ場所に戻れるか（軸の再現性）が評価軸です。")
-    
-    if h["mean"] > 5.0:
-        pro_lines.append("本動画では頭部の左右移動が大きく出ています。")
+    pro_lines.append("頭部は「まったく動かないこと」より、動いても同じ位置関係に戻れるかが評価軸です。")
+
+    if h["mean"] > 6.5:
+        pro_lines.append("本動画では頭部の左右移動がやや大きく出ており、軸の再現性に影響しています。")
     else:
         pro_lines.append("本動画では頭部の位置は比較的安定しています。")
 
-    if h["std"] > 2.5:
-        pro_lines.append("場面によって頭の位置にややばらつきがあり、再現性に少しムラがあります。")
+    if h["std"] > 3.5:
+        pro_lines.append("場面によって頭の位置にばらつきがあり、再現性にややムラがあります。")
     else:
-        pro_lines.append("頭の位置は全体として揃っており、再現性は比較的保たれています。")
+        pro_lines.append("頭の位置は全体として揃っており、再現性は概ね保たれています。")
 
-    pro_lines.append("このスイングでは、主因は上半身の軸管理です。")
-
+    # 前傾維持との連動
     if spine_flag == "bad":
-        pro_lines.append("加えて前傾変化も大きく、頭部の軸管理を難しくしています。")
+        pro_lines.append("加えて前傾維持の崩れが大きく、頭部の軸管理を難しくしています。")
     elif spine_flag == "warn":
-        pro_lines.append("加えて前傾は大きく崩れてはいませんが、場面によって少しズレが見られます。")
+        pro_lines.append("加えて前傾維持にややばらつきがあり、頭部安定性にも影響している可能性があります。")
     else:
-        pro_lines.append("前傾は全体として比較的保たれており、頭部の軸安定を支えています。")
+        pro_lines.append("前傾維持は概ね安定しており、頭部の軸安定を支えています。")
 
     pro_comment = " ".join(pro_lines[:3])
-       
-    bench = [
-        _bench_line("頭部ブレ(%)", "%", "mean", _le_ideal(5.0, "%"), current=float(h["mean"])),
-        _bench_line("頭部ブレの再現性(%)", "%", "σ", _le_ideal(1.5, "%"), current=float(h["std"])),
-        _bench_line("頭部ブレの許容(%)", "%", "mean", _le_ideal(3.5, "%"), current=float(h["mean"])),
-    ]
 
+    bench = [
+        _bench_line("頭部ブレ(%)", "%", "mean", _le_ideal(6.5, "%"), current=float(h["mean"])),
+        _bench_line("頭部ブレの再現性(%)", "%", "σ", _le_ideal(2.5, "%"), current=float(h["std"])),
+        _bench_line("頭部ブレの安定目安(%)", "%", "mean", _le_ideal(4.5, "%"), current=float(h["mean"])),
+    ]
 
     return {
         "title": "05. Head Stability（頭部）",
-        # 【整合性】単位に % を追加
         "value": f'max {h["max"]:.1f} / mean {h["mean"]:.1f} / σ {h["std"]:.1f} (%) （conf {conf:.3f}）',
         "tags": j["tags"],
         "bench": bench,
