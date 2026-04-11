@@ -2583,17 +2583,17 @@ def build_analysis(raw: Dict[str, Any], premium: bool, report_id: str, user_inpu
     analysis["05"] = build_paid_05_head(raw, seed=report_id)
     analysis["06"] = build_paid_06_knee(raw, seed=report_id)
 
-   # 05 Head Stability に前傾維持を補足反映
+    # 05 Head Stability に前傾維持を補足反映
     if spine_flag == "ok":
         analysis["05"].setdefault("good", []).append(
             "前傾維持は安定しており、頭部位置の再現性を支えています。"
         )
     elif spine_flag == "warn":
-        analysis["05"].setdefault("note", []).append(
+        analysis["05"].setdefault("text", []).append(
             "前傾維持にややばらつきがあり、頭部安定性にも影響している可能性があります。"
         )
     elif spine_flag == "bad":
-        analysis["05"].setdefault("note", []).append(
+        analysis["05"].setdefault("text", []).append(
             "前傾維持の崩れが大きく、頭部位置の再現性に影響している可能性があります。"
         )
 
@@ -2603,17 +2603,16 @@ def build_analysis(raw: Dict[str, Any], premium: bool, report_id: str, user_inpu
             "前傾維持は概ね安定しており、下半身の安定性を支えています。"
         )
     elif spine_flag == "warn":
-        analysis["06"].setdefault("note", []).append(
+        analysis["06"].setdefault("text", []).append(
             "前傾維持にややばらつきがあり、下半身の再現性にも影響している可能性があります。"
         )
     elif spine_flag == "bad":
-        analysis["06"].setdefault("note", []).append(
+        analysis["06"].setdefault("text", []).append(
             "前傾維持の崩れが大きく、膝の安定性に影響している可能性があります。"
         )
 
     analysis["07"] = build_paid_07_from_analysis(analysis, raw)
 
-    # 07 総合評価にも反映
     if spine_flag == "ok":
         analysis["07"].setdefault("text", []).append(
             "【前傾維持】アドレスで作った姿勢をスイング中も概ね安定して保てています。"
@@ -2629,7 +2628,6 @@ def build_analysis(raw: Dict[str, Any], premium: bool, report_id: str, user_inpu
 
     analysis["08"] = build_paid_08(analysis, raw)
 
-    # 前傾維持の課題が大きい時だけドリル追加
     if spine_flag == "bad":
         analysis["08"].setdefault("drills", [])
         analysis["08"]["drills"].insert(0, {
@@ -2637,7 +2635,7 @@ def build_analysis(raw: Dict[str, Any], premium: bool, report_id: str, user_inpu
             "purpose": "アドレスで作った姿勢を保ったまま回転する感覚を身につけ、頭部と下半身の再現性を高める",
             "how": "アドレスで作った前傾を保ちながら、肩と腰をゆっくり回すハーフスイングを10回×2セット行う"
         })
-
+        
     # 09は入力がある場合のみ出力する
     ui = user_inputs or {}
     if ui.get("head_speed") is not None or ui.get("miss_tendency") or ui.get("gender"):
