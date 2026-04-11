@@ -1837,13 +1837,13 @@ def build_free_07(raw: Dict[str, Any]) -> Dict[str, Any]:
     """
 
     # --- 数値取得 ---
-    sh = raw.get("shoulder", {})  # degrees
-    hip = raw.get("hip", {})      # degrees
-    w = raw.get("wrist", {})      # degrees
-    head = raw.get("head", {})    # %
-    knee = raw.get("knee", {})    # %
-    xf = raw.get("x_factor", {})  # degrees
-    spine = raw.get("spine", {})  # degrees
+    sh = raw.get("shoulder", {})   # degrees
+    hip = raw.get("hip", {})       # degrees
+    w = raw.get("wrist", {})       # degrees
+    head = raw.get("head", {})     # %
+    knee = raw.get("knee", {})     # %
+    xf = raw.get("x_factor", {})   # degrees
+    spine = raw.get("spine", {})   # degrees
 
     conf = float(raw.get("confidence", 0.0))
     frames = int(raw.get("valid_frames", 0))
@@ -1868,41 +1868,41 @@ def build_free_07(raw: Dict[str, Any]) -> Dict[str, Any]:
     # --- 前傾評価 ---
     spine_flag = judge_spine_flag(raw)
 
-    # --- 無料版用タグ推定 ---
+    # --- 無料版用タグ推定（やや緩和） ---
     tags: List[str] = []
 
     # 肩回転
-    if sh_mean < 85:
+    if sh_mean < 80:
         tags.append("肩回転不足")
-    elif sh_mean > 105:
+    elif sh_mean > 110:
         tags.append("肩回転過多")
 
     # 腰回転
-    if hip_mean < 36:
+    if hip_mean < 30:
         tags.append("腰回転不足")
-    elif hip_mean > 55:
+    elif hip_mean > 60:
         tags.append("腰回転過多")
 
     # 手首コック
-    if w_mean < 45:
+    if w_mean < 40:
         tags.append("コック不足")
-    elif w_mean > 75:
+    elif w_mean > 80:
         tags.append("コック過多")
 
     # 捻転差
-    if xf_mean < 35:
+    if xf_mean < 30:
         tags.append("捻転差不足")
-    elif xf_mean > 60:
+    elif xf_mean > 70:
         tags.append("捻転差過多")
 
-    # 安定性（%基準に統一）
-    if head_mean > 5.0:
+    # 安定性
+    if head_mean > 6.5:
         tags.append("頭部ブレ大")
-    if knee_mean > 8.0:
+    if knee_mean > 10.0:
         tags.append("膝ブレ大")
         tags.append("下半身不安定")
 
-    # 前傾
+    # 前傾維持
     if spine_flag == "warn":
         tags.append("前傾維持にばらつき")
     elif spine_flag == "bad":
@@ -1927,53 +1927,59 @@ def build_free_07(raw: Dict[str, Any]) -> Dict[str, Any]:
 
     lines.append("")
 
-    # --- 優先テーマの根拠 ---
+    # --- 優先テーマの根拠（やや柔らかく） ---
     if "頭部ブレ大" in priorities or ("頭部ブレ大" in c and len(priorities) == 0):
-        lines.append(f"本動画では頭部ブレが mean {head_mean:.1f}% で大きく、軸が安定しにくい状態です。")
+        lines.append(f"本動画では頭部ブレが mean {head_mean:.1f}% でやや大きく、軸の再現性に影響しています。")
 
     if "膝ブレ大" in priorities or ("膝ブレ大" in c and len(priorities) == 0):
-        lines.append(f"本動画では膝ブレが mean {knee_mean:.1f}% で大きく、下半身の土台が崩れています。")
+        lines.append(f"本動画では膝ブレが mean {knee_mean:.1f}% でやや大きく、下半身の土台の再現性に影響しています。")
 
     if "捻転差不足" in priorities:
-        lines.append(f"本動画では捻転差が mean {xf_mean:.1f}°で小さく、切り返しの準備が不足しています。")
+        lines.append(f"本動画では捻転差が mean {xf_mean:.1f}° でやや小さく、切り返しで力を溜める余地があります。")
+
+    if "捻転差過多" in priorities:
+        lines.append(f"本動画では捻転差が mean {xf_mean:.1f}° で大きめで、肩と腰の連動を整える余地があります。")
 
     if "腰回転過多" in priorities:
-        lines.append(f"本動画では腰回転が mean {hip_mean:.1f}°で大きく、下半身の主張が強い状態です。")
+        lines.append(f"本動画では腰回転が mean {hip_mean:.1f}° で大きめで、下半身主導が強く出ています。")
 
     if "肩回転過多" in priorities:
-        lines.append(f"本動画では肩回転が mean {sh_mean:.1f}°で大きく、上半身が回り過ぎています。")
+        lines.append(f"本動画では肩回転が mean {sh_mean:.1f}° で大きめで、上半身主導が強く出ています。")
 
     if "コック過多" in priorities:
-        lines.append(f"本動画では手首コックが mean {w_mean:.1f}°で大きく、手元の介入が強い状態です。")
+        lines.append(f"本動画では手首コックが mean {w_mean:.1f}° で大きめで、手元の操作量が増えやすい状態です。")
+
+    if "コック不足" in priorities:
+        lines.append(f"本動画では手首コックが mean {w_mean:.1f}° でやや小さく、力を溜める余地があります。")
 
     if "前傾維持不安定" in priorities or ("前傾維持不安定" in c and len(priorities) == 0):
-        lines.append(f"本動画では前傾変化が大きく、上体の起き上がりがスイング軸の安定性に影響しています。（mean {spine_mean:.1f}°）。")
+        lines.append(f"本動画では前傾維持の崩れが大きく、上体の起き上がりがスイング軸の安定性に影響しています。（mean {spine_mean:.1f}°）")
 
     elif "前傾維持にばらつき" in priorities or ("前傾維持にばらつき" in c and len(priorities) == 0):
-        lines.append(f"本動画では前傾は大きく崩れてはいませんが、場面によって少しズレが見られます。（mean {spine_mean:.1f}°）。")
+        lines.append(f"本動画では前傾維持にややばらつきがあり、場面ごとに少しズレが見られます。（mean {spine_mean:.1f}°）")
 
     lines.append("")
 
-    # --- 良い点 ---
+    # --- 良い点（やや緩和） ---
     good_points: List[str] = []
 
-    if 85 <= sh_mean <= 105:
+    if 80 <= sh_mean <= 110:
         good_points.append("肩の回旋量は基準レンジに収まっています。")
 
-    if sh_std <= 15:
-        good_points.append("肩の回し幅は大きく崩れておらず、上半身の再現性の土台はあります。")
+    if sh_std <= 18:
+        good_points.append("肩の回し幅は大きく崩れておらず、上半身の再現性の土台があります。")
 
-    if head_mean <= 5.0:
-        good_points.append("頭部ブレは大きくはなく、軸は破綻していません。")
+    if head_mean <= 6.5:
+        good_points.append("頭部ブレは比較的抑えられており、軸は大きく崩れていません。")
 
-    if knee_mean <= 8.0:
-        good_points.append("膝ブレは大きくはなく、下半身は大きく流れていません。")
+    if knee_mean <= 10.0:
+        good_points.append("膝ブレは比較的抑えられており、下半身は大きく流れていません。")
 
-    if xf_mean >= 35:
+    if xf_mean >= 30:
         good_points.append("捻転差は確保できており、切り返しの準備はできています。")
 
     if spine_flag == "ok":
-        good_points.append("前傾は全体として比較的保たれており、動きはおおむね安定しています。")
+        good_points.append("前傾維持は概ね安定しており、動きはおおむね再現できています。")
 
     if good_points:
         lines.append("良い点： " + " ".join(good_points[:2]))
@@ -1995,7 +2001,6 @@ def build_free_07(raw: Dict[str, Any]) -> Dict[str, Any]:
             "spine_flag": spine_flag,
         },
     }
-
 
 # ==================================================
 # 08 ドリル（07の優先順位連動 ＋ バリエーション拡充版）
