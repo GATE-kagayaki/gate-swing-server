@@ -2560,10 +2560,10 @@ def judge_spine_flag(raw: Dict[str, Any]) -> str:
 
     worst = max(delta_mean, delta_top, delta_impact)
 
-    if worst <= 3:
+    if worst <= 5:
         return "ok"
 
-    if worst <= 6:
+    if worst <= 9:
         return "warn"
 
     return "bad"
