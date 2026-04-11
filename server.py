@@ -798,20 +798,6 @@ def analyze_swing_with_mediapipe(video_path, overlay_out_path=None):
             curr_lwrist = xyz_stable(LW)
             nose_y = lm[NO].y
 
-            # --- A. ベース確保 ---
-            if base_nose is None:
-                base_nose = curr_nose
-            if base_lknee is None:
-                base_lknee = curr_lknee
-
-            # --- B. 打ち終わり（フィニッシュ）判定 ---
-            if curr_lwrist[1] < nose_y:
-                has_reached_top = True
-
-            if has_reached_top and curr_lwrist[1] > (nose_y + 0.1):
-                swing_ended = True
-                end_frame = total_frames
-
             # --- C. 角度計算（前傾はここで1回だけ） ---
             sh = angle_3d(xyz_stable(LS), xyz_stable(RS), xyz_stable(RH))
             hip = angle_3d(xyz_stable(LH), xyz_stable(RH), xyz_stable(LK))
@@ -852,10 +838,92 @@ def analyze_swing_with_mediapipe(video_path, overlay_out_path=None):
                 smooth_hip_mid = avg_point(spine_hip_history)
 
                 if smooth_shoulder_mid is not None and smooth_hip_mid is not None:
-                    dx = smooth_shoulder_mid[0] - smooth_hip_mid[0]  # 正規化座標 (0~1)
-                    dy = smooth_shoulder_mid[1] - smooth_hip_mid[1]  # 正規化座標 (0~1)
+                    dx = smooth_shoulder_mid[0] - smooth_hip_mid[0]
+                    dy = smooth_shoulder_mid[1] - smooth_hip_mid[1]
                     spine_angle = math.degrees(math.atan2(abs(dx), abs(dy) + 1e-6))
 
+            # --- A. アドレス安定区間を検出してベース確保 ---
+            is_pose_visible = (
+                lm[LS].visibility >= 0.7 and
+                lm[RS].visibility >= 0.7 and
+                lm[LH].visibility >= 0.7 and
+                lm[RH].visibility >= 0.7 and
+                lm[NO].visibility >= 0.7 and
+                lm[LK].visibility >= 0.7
+            )
+
+            if not analysis_started and is_pose_visible and spine_angle > 10:
+                address_buffer.append({
+                    "nose": curr_nose,
+                    "lknee": curr_lknee,
+                    "spine": spine_angle,
+                    "lwrist_y": curr_lwrist[1],
+                })
+                if len(address_buffer) > 8:
+                    address_buffer.pop(0)
+
+            if not analysis_started and len(address_buffer) >= 5:
+                wrist_move = abs(address_buffer[-1]["lwrist_y"] - address_buffer[0]["lwrist_y"])
+
+                # アドレス後に手元が動き始めたら解析開始
+                if wrist_move > 0.03:
+                    base_nose = (
+                        sum(f["nose"][0] for f in address_buffer) / len(address_buffer),
+                        sum(f["nose"][1] for f in address_buffer) / len(address_buffer),
+                        sum(f["nose"][2] for f in address_buffer) / len(address_buffer),
+                    )
+                    base_lknee = (
+                        sum(f["lknee"][0] for f in address_buffer) / len(address_buffer),
+                        sum(f["lknee"][1] for f in address_buffer) / len(address_buffer),
+                        sum(f["lknee"][2] for f in address_buffer) / len(address_buffer),
+                    )
+                    base_spine_angle = sum(f["spine"] for f in address_buffer) / len(address_buffer)
+
+                    analysis_started = True
+                    start_frame = total_frames
+
+            # 解析開始前はスキップ
+            if not analysis_started:
+                if writer is not None and frame is not None:
+                    writer.write(frame)
+                continue
+
+            # --- B. トップ・終了候補判定 ---
+            if curr_lwrist[1] < nose_y:
+                has_reached_top = True
+
+            is_finish_candidate = has_reached_top and curr_lwrist[1] > (nose_y + 0.1)
+
+            # --- B2. フィニッシュ安定判定 ---
+            if analysis_started and not analysis_finished:
+                if is_finish_candidate:
+                    finish_buffer.append({
+                        "nose": curr_nose,
+                        "lknee": curr_lknee,
+                        "lwrist_y": curr_lwrist[1],
+                    })
+                    if len(finish_buffer) > 6:
+                        finish_buffer.pop(0)
+
+                    if len(finish_buffer) >= 4:
+                        nose_move = abs(finish_buffer[-1]["nose"][1] - finish_buffer[0]["nose"][1])
+                        knee_move = abs(finish_buffer[-1]["lknee"][1] - finish_buffer[0]["lknee"][1])
+                        wrist_move = abs(finish_buffer[-1]["lwrist_y"] - finish_buffer[0]["lwrist_y"])
+
+                        # フィニッシュ後の動きが小さくなったら終了
+                        if nose_move < 0.015 and knee_move < 0.02 and wrist_move < 0.03:
+                            analysis_finished = True
+                            swing_ended = True
+                            end_frame = total_frames
+                else:
+                    finish_buffer.clear()
+
+            # 終了後はループを抜ける
+            if analysis_finished:
+                if writer is not None and frame is not None:
+                    writer.write(frame)
+                break
+                
             # --- D. データ保存 ---
             hd = dist_3d(curr_nose, base_nose) * 100
             kn = dist_3d(curr_lknee, base_lknee) * 100
