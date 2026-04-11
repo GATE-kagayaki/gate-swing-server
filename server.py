@@ -1318,20 +1318,20 @@ def judge_hip(raw: Dict[str, Any]) -> Dict[str, Any]:
     hip = raw["hip"]
     xf = raw["x_factor"]
 
-    # 【整合性】3D解析に合わせ、スイング中の最大回旋量（max）で評価します
+    # 最大回旋量ベースで判定
     hip_val = hip["max"]
     xf_val = xf["max"]
 
     main = "mid"
-    if hip_val < 35:
+    if hip_val < 30:
         main = "low"
-    elif hip_val > 55:
+    elif hip_val > 60:
         main = "high"
 
     rel = "mid"
-    if xf_val < 35:
+    if xf_val < 30:
         rel = "low"
-    elif xf_val > 60:
+    elif xf_val > 70:
         rel = "high"
 
     tags: List[str] = []
@@ -1343,8 +1343,8 @@ def judge_hip(raw: Dict[str, Any]) -> Dict[str, Any]:
         tags.append("捻転差不足")
     if rel == "high":
         tags.append("捻転差過多")
-    return {"main": main, "related": rel, "tags": tags}
 
+    return {"main": main, "related": rel, "tags": tags}
 
 def build_paid_03_hip(raw: Dict[str, Any], seed: str) -> Dict[str, Any]:
     j = judge_hip(raw)
