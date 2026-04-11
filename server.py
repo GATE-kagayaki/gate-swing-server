@@ -2186,29 +2186,44 @@ def build_paid_08(analysis: Dict[str, Any], raw: Dict[str, Any]) -> Dict[str, An
 
     all_tags = collect_all_tags(analysis)
 
-    sh_std = raw.get("shoulder", {}).get("std", 0)
+    sh_std = float(raw.get("shoulder", {}).get("std", 0) or 0)
     spine_flag = judge_spine_flag(raw)
 
-    if sh_std > 15:
+    # ばらつきタグは強いケースだけ追加
+    if sh_std > 18:
         all_tags.append("ばらつき大")
         all_tags.append("肩回転のばらつき大")
 
-    if spine_flag == "warn":
-        all_tags.append("前傾維持にばらつき")
-    elif spine_flag == "bad":
+    # 前傾維持は bad の時だけドリル選定に強く反映
+    if spine_flag == "bad":
         all_tags.append("前傾維持不安定")
         all_tags.append("起き上がり傾向")
 
     selected_drills = select_drills_with_priority(all_tags, priorities, 3)
 
     for d in selected_drills:
-        if sh_std > 15:
-            d["how"] += f"\n\n● 【プロの特別指導】現在、動作に $\sigma$ {sh_std:.1f} という大きなばらつきが検出されています。回数よりも『ゆっくりとした正確な動き』による神経系への定着を最優先してください。"
+        extra_notes = []
+
+        if sh_std > 18:
+            extra_notes.append(
+                f"● 【再現性補足】現在、肩回転のばらつき（σ {sh_std:.1f}）がやや大きいため、"
+                "回数よりも『ゆっくり正確に同じ動きを繰り返すこと』を優先してください。"
+            )
 
         if spine_flag == "bad":
-            d["how"] += "\n\n● 【前傾補足】このスイングは前傾変化が大きいため、切り返しからインパクトまで胸の向きと上体角度を保つ意識を強めてください。"
-        elif spine_flag == "warn":
-            d["how"] += "\n\n● 【前傾補足】前傾は大きく崩れてはいませんが、場面によって少しズレが出ます。動作スピードを落として、上体角度を揃えることを優先してください。"
+            extra_notes.append(
+                "● 【前傾維持補足】このスイングは前傾維持の崩れが大きいため、"
+                "切り返しからインパクトまで胸の向きと上体角度を保つ意識を優先してください。"
+            )
+
+        elif spine_flag == "warn" and d["id"] in {"spine_posture_keep", "hip_depth_wall", "chest_turn_posture"}:
+            extra_notes.append(
+                "● 【前傾維持補足】前傾維持にややばらつきがあるため、"
+                "動作スピードを落として上体角度を揃える意識で行ってください。"
+            )
+
+        if extra_notes:
+            d["how"] += "\n\n" + "\n".join(extra_notes)
 
     return {
         "title": "08. Training Drills（練習ドリル）",
@@ -2221,7 +2236,7 @@ def build_paid_08(analysis: Dict[str, Any], raw: Dict[str, Any]) -> Dict[str, An
             for d in selected_drills
         ]
     }
-
+    
 # ==================================================
 # 09 フィッティング（解析数値による全身統合・逆転ロジック版）
 # ==================================================
