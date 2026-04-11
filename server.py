@@ -2579,41 +2579,39 @@ def build_paid_10(analysis: Dict[str, Any]) -> Dict[str, Any]:
 
     if priorities:
         p_str = "／".join(priorities)
-        summary_text.append(f"現在、スコアアップのために最も優先すべきテーマは『{p_str}』の改善です。")
+        summary_text.append(f"現在、優先して取り組みたいテーマは『{p_str}』です。")
 
         if drill_names:
-            summary_text.append(f"この課題を克服するために、まずは推奨ドリル筆頭の「{drill_names[0]}」に集中して取り組んでください。")
-            summary_text.append("複数の動きを同時に直すよりも、この一点を整えることで他の数値も連鎖的に向上します。")
+            summary_text.append(f"まずは推奨ドリルの中でも「{drill_names[0]}」を中心に取り組むことで、動きの再現性を整えやすくなります。")
+            summary_text.append("複数の動きを一度に変えようとするよりも、優先テーマを一つずつ整理していくことが改善につながります。")
     else:
-        summary_text.append("全体的に大きな破綻はなく、非常にバランスの良いスイングです。提示されたドリルでさらなる再現性の向上を目指しましょう。")
+        summary_text.append("全体として大きな破綻はなく、バランスよく振れています。提示されたドリルを活用しながら、さらに再現性を高めていきましょう。")
 
     if spine_flag == "bad":
-        summary_text.append("加えて前傾変化がやや大きいため、切り返しからインパクトまで上体の起き上がりを抑えることが、全体の安定性向上につながります。")
+        summary_text.append("加えて前傾維持の崩れが大きいため、切り返しからインパクトまで上体角度を保つ意識が全体の安定性向上につながります。")
     elif spine_flag == "warn":
-        summary_text.append("前傾は大きく崩れてはいませんが、場面によって少しズレが見られるため、上体角度の再現性も意識するとさらに安定しやすくなります。")
+        summary_text.append("前傾維持にややばらつきが見られるため、上体角度の再現性も意識するとさらに安定しやすくなります。")
     else:
-        summary_text.append("前傾は全体として比較的保たれており、スイング全体の再現性を支える要素になっています。")
+        summary_text.append("前傾維持は概ね安定しており、スイング全体の再現性を支える要素になっています。")
 
     summary_text.append("")
 
-    summary_text.append(f"道具の面では、AIの解析数値に基づき『{kp_guide}調子』のシャフトを提案しました。")
+    summary_text.append(f"道具の面では、今回のスイング特性に合わせて『{kp_guide}調子』のシャフトを提案しました。")
     if kp_reason:
         summary_text.append(f"【選定根拠】{kp_reason}")
 
     summary_text.append("")
 
-    summary_text.append("『練習による動作の最適化』と『シャフトによる挙動の補正』。")
-    summary_text.append("この両輪を回すことが、目標達成への最短距離となります。")
-    summary_text.append("次回の解析で、各数値がどのように進化しているかを楽しみにしています！")
+    summary_text.append("『練習による動きの整理』と『スイング特性に合ったシャフト選び』を組み合わせることで、より安定した結果につながりやすくなります。")
+    summary_text.append("次回の解析では、今回の優先テーマに対して数値がどのように変化したかを確認していきましょう。")
 
     summary_text.append("")
-    summary_text.append("あなたのゴルフライフが、より充実したものになることを願っています。")
+    summary_text.append("今後の練習とラウンドが、より良いものになることを願っています。")
 
     return {
         "title": "10. Summary（まとめ）",
         "text": summary_text,
     }
-
 # ==================================================
 # Analysis builder
 # ==================================================
