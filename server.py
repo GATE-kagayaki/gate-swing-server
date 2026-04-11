@@ -1177,67 +1177,68 @@ def build_paid_02_shoulder(raw: Dict[str, Any], seed: str) -> Dict[str, Any]:
     good: List[str] = []
     bad: List[str] = []
 
-    # 良い点（最低1行） --- 3D解析の数値に基づき判定 ---
-    if sh["std"] <= 10:
-        good.append("肩の回し幅は揃っており、上半身の再現性は確保されています。")
-    if 85 <= sh["max"] <= 110:
-        good.append("肩の最大回旋量は基準レンジに収まっており、効率的な捻転ができています。")
-    if xf["max"] >= 35:
+    # 良い点（やや緩和）
+    if sh["std"] <= 12:
+        good.append("肩の回し幅は比較的揃っており、上半身の再現性は概ね確保されています。")
+    if 80 <= sh["max"] <= 115:
+        good.append("肩の最大回旋量は基準レンジに収まっており、無理のない捻転ができています。")
+    if xf["max"] >= 30:
         good.append("肩と腰の差（捻転差）は確保できており、出力の準備が整っています。")
-    
+
     # バッファ：回転量が多い場合
-    if sh["max"] > 110:
+    if sh["max"] > 115:
         good.append("深い肩の回転を可能にする柔軟性があり、大きな飛距離を生む潜在能力があります。")
+
     # バッファ：数値は外れていても安定している場合
-    if sh["std"] <= 7 and not (85 <= sh["max"] <= 110):
-        good.append("角度自体は調整の余地がありますが、常に同じ深さまで回せる安定感は大きな武器です。")
+    if sh["std"] <= 8 and not (80 <= sh["max"] <= 115):
+        good.append("角度自体は調整の余地がありますが、同じ深さまで回せる安定感は大きな武器です。")
 
     if not good:
         good = ["基本的な上半身の柔軟性は備わっており、スイングの土台はできています。"]
 
-    # 改善点（max値を使って具体的に指摘）
-    if sh["max"] < 85:
-        bad.append(f"最大肩回転は {sh['max']:.1f}° で、捻転が浅い状態です。")
-    if sh["max"] > 110:
-        bad.append(f"肩回転が {sh['max']:.1f}° に達しており、オーバースイングの傾向があります。")
-    if xf["max"] < 35:
-        bad.append(f"最大捻転差は {xf['max']:.1f}° で、パワーが溜まりきっていません。")
-    if xf["max"] > 60:
-        bad.append(f"捻転差が {xf['max']:.1f}° と過大で、腰と肩の連動が崩れやすくなっています。")
-    if sh["std"] > 15:
-        bad.append(f"肩回転のばらつき（σ {sh['std']:.1f}°）が大きく、トップの位置が揃っていません。")
-    
+    # 改善点（やや緩和）
+    if sh["max"] < 80:
+        bad.append(f"最大肩回転は {sh['max']:.1f}° で、やや捻転が浅い傾向があります。")
+    if sh["max"] > 115:
+        bad.append(f"肩回転が {sh['max']:.1f}° に達しており、ややオーバースイング傾向が見られます。")
+    if xf["max"] < 30:
+        bad.append(f"最大捻転差は {xf['max']:.1f}° で、力を溜める余地がまだあります。")
+    if xf["max"] > 70:
+        bad.append(f"捻転差が {xf['max']:.1f}° と大きく、肩と腰の連動にばらつきが出やすくなっています。")
+    if sh["std"] > 18:
+        bad.append(f"肩回転のばらつき（σ {sh['std']:.1f}°）がやや大きく、トップ位置の再現性に影響しています。")
+
     if not bad:
-        bad = ["改善点は特にありません。"]
+        bad = ["大きな改善点は特にありません。"]
 
-    # プロ目線（言語化）
+    # プロ目線（やや柔らかく）
     pro_lines: List[str] = []
-    pro_lines.append("上半身は回り幅そのものより、回した量を同じ幅で再現できているかが評価軸です。")
-    
-    if sh["std"] <= 10:
-        pro_lines.append("本動画では肩の回旋は同じ幅で安定して再現できています。")
-    else:
-        pro_lines.append("本動画では肩の回旋幅が一定せず、トップの再現性が取れていません。")
+    pro_lines.append("上半身は回り幅そのものだけでなく、回した量を安定して再現できているかも評価軸です。")
 
-    if xf["max"] < 35:
-        pro_lines.append("捻転差が不足しているため、切り返しでエネルギーが溜まらない状態です。")
+    if sh["std"] <= 12:
+        pro_lines.append("本動画では肩の回旋は比較的安定して再現できています。")
+    else:
+        pro_lines.append("本動画では肩の回旋幅にややばらつきがあり、トップの再現性に影響しています。")
+
+    if xf["max"] < 30:
+        pro_lines.append("捻転差はやや小さめで、切り返しで力を溜める余地があります。")
+    elif xf["max"] > 70:
+        pro_lines.append("捻転差は大きめで、肩と腰の連動を整えるとさらに安定しやすくなります。")
     else:
         pro_lines.append("捻転差は確保されており、切り返しに必要な準備はできています。")
 
     pro_lines.append("このスイングでは、主因は肩と腰の役割分担です。")
 
     pro_comment = " ".join(pro_lines[:3])
-   
-    bench = [
-        _bench_line("肩回転(°)", "°", "max", _range_ideal(85, 110, "°"), current=float(sh["max"])),
-        _bench_line("肩回転の安定(°)", "°", "σ", _le_ideal(10.0, "°"), current=float(sh["std"])),
-        _bench_line("捻転差(°)", "°", "max", _ge_ideal(35.0, "°"), current=float(xf["max"])),
-    ]
 
+    bench = [
+        _bench_line("肩回転(°)", "°", "max", _range_ideal(80, 115, "°"), current=float(sh["max"])),
+        _bench_line("肩回転の安定(°)", "°", "σ", _le_ideal(12.0, "°"), current=float(sh["std"])),
+        _bench_line("捻転差(°)", "°", "max", _range_ideal(30, 70, "°"), current=float(xf["max"])),
+    ]
 
     return {
         "title": "02. Shoulder Rotation（肩回転）",
-        # 【整合性】_value_line の形式を維持しつつ、数値を3D実数に更新
         "value": _value_line(sh["max"], sh["mean"], sh["std"], conf),
         "tags": j["tags"],
         "bench": bench,
