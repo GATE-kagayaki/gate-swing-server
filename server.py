@@ -1367,7 +1367,7 @@ def build_paid_03_hip(raw: Dict[str, Any], seed: str) -> Dict[str, Any]:
 
     # バッファ：腰が控えめでも捻転差が作れている場合
     if hip["max"] < 30 and xf["max"] >= 35:
-        good.append("腰の回転は控えめですが、その分肩との捻転差を効率的に作れています。")
+        good.append("腰の回転は控えめですが、肩との捻転差は確保できており、一定の出力準備はできています。")
 
     if not good:
         good = ["基本的な下半身の可動域は確保されており、スイングの土台はできています。"]
