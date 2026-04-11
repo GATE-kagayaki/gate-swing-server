@@ -935,9 +935,7 @@ def analyze_swing_with_mediapipe(video_path, overlay_out_path=None):
             knees.append(float(kn))
             x_factors.append(float(sh - abs(hip)))
 
-            if spine_angle > 0 and base_spine_angle is None:
-                base_spine_angle = spine_angle
-
+            
             if spine_angle > 10:
                 spines.append(float(spine_angle))
 
