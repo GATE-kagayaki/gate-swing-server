@@ -2583,31 +2583,32 @@ def build_analysis(raw: Dict[str, Any], premium: bool, report_id: str, user_inpu
     analysis["05"] = build_paid_05_head(raw, seed=report_id)
     analysis["06"] = build_paid_06_knee(raw, seed=report_id)
 
-    # 05 Head Stability に前傾反映
+   # 05 Head Stability に前傾維持を補足反映
     if spine_flag == "ok":
         analysis["05"].setdefault("good", []).append(
-            "前傾姿勢は全体としては比較的安定しており、頭部位置の再現性を支えています。"
+            "前傾維持は安定しており、頭部位置の再現性を支えています。"
         )
     elif spine_flag == "warn":
-        analysis["05"].setdefault("bad", []).append(
-            "前傾姿勢にややばらつきが見られ、頭部の安定性にも影響しています。"
+        analysis["05"].setdefault("note", []).append(
+            "前傾維持にややばらつきがあり、頭部安定性にも影響している可能性があります。"
         )
     elif spine_flag == "bad":
-        analysis["05"].setdefault("bad", []).append(
-            "前傾姿勢の崩れが大きく、頭部位置の再現性を下げています。"
+        analysis["05"].setdefault("note", []).append(
+            "前傾維持の崩れが大きく、頭部位置の再現性に影響している可能性があります。"
         )
-    # 06 Knee Stability に前傾反映
+
+    # 06 Knee Stability に前傾維持を補足反映
     if spine_flag == "ok":
         analysis["06"].setdefault("good", []).append(
-            "前傾姿勢は概ね保たれており、下半身の安定性を支える要素になっています。"
-        )  
+            "前傾維持は概ね安定しており、下半身の安定性を支えています。"
+        )
     elif spine_flag == "warn":
-        analysis["06"].setdefault("bad", []).append(
-            "前傾維持にばらつきがあり、下半身の再現性にも影響しています。"
+        analysis["06"].setdefault("note", []).append(
+            "前傾維持にややばらつきがあり、下半身の再現性にも影響している可能性があります。"
         )
     elif spine_flag == "bad":
-        analysis["06"].setdefault("bad", []).append(
-            "前傾姿勢が起き上がりやすく、膝の安定性を損なっています。"
+        analysis["06"].setdefault("note", []).append(
+            "前傾維持の崩れが大きく、膝の安定性に影響している可能性があります。"
         )
 
     analysis["07"] = build_paid_07_from_analysis(analysis, raw)
@@ -2615,26 +2616,26 @@ def build_analysis(raw: Dict[str, Any], premium: bool, report_id: str, user_inpu
     # 07 総合評価にも反映
     if spine_flag == "ok":
         analysis["07"].setdefault("text", []).append(
-            "【前傾維持】前傾姿勢は全体としては比較的安定していますが、局面によって軽いズレが見られます。"
+            "【前傾維持】アドレスで作った姿勢をスイング中も概ね安定して保てています。"
         )
     elif spine_flag == "warn":
         analysis["07"].setdefault("text", []).append(
-            "【前傾維持】前傾姿勢は大きく崩れてはいませんが、局面によってズレが見られ、再現性に影響しています。"
+            "【前傾維持】スイング中に前傾維持のばらつきがやや見られ、再現性に影響しています。"
         )
     elif spine_flag == "bad":
         analysis["07"].setdefault("text", []).append(
-            "【前傾維持】前傾姿勢の崩れが大きく、スイング軸の安定性に影響しています。"
+            "【前傾維持】前傾維持の崩れが大きく、スイング軸の安定性に影響しています。"
         )
 
     analysis["08"] = build_paid_08(analysis, raw)
 
-    # 前傾が悪い時だけドリル追加
-    if spine_flag in ("warn", "bad"):
+    # 前傾維持の課題が大きい時だけドリル追加
+    if spine_flag == "bad":
         analysis["08"].setdefault("drills", [])
         analysis["08"]["drills"].insert(0, {
-            "name": "前傾キープドリル",
-            "purpose": "前傾姿勢を保ったまま回転する感覚を身につけ、頭部と下半身の安定性を高める",
-            "how": "アドレスの前傾角を保ったまま、肩と腰をゆっくり回すハーフスイングを10回×2セット行う"
+            "name": "前傾維持ドリル",
+            "purpose": "アドレスで作った姿勢を保ったまま回転する感覚を身につけ、頭部と下半身の再現性を高める",
+            "how": "アドレスで作った前傾を保ちながら、肩と腰をゆっくり回すハーフスイングを10回×2セット行う"
         })
 
     # 09は入力がある場合のみ出力する
