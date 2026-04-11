@@ -1567,55 +1567,61 @@ def build_paid_06_knee(raw: Dict[str, Any], seed: str) -> Dict[str, Any]:
     good: List[str] = []
     bad: List[str] = []
 
-    # --- 良い点 ---
-    if k["mean"] <= 4.5:
-        good.append("膝の左右ブレが抑えられており、エネルギーを逃がさない強い土台があります。")
+    # 良い点（やや緩和）
+    if k["mean"] <= 5.5:
+        good.append("膝の左右ブレは小さく抑えられており、下半身の土台は概ね安定しています。")
 
-    if 4.5 < k["mean"] <= 7.0:
-        good.append("下半身に粘りがあり、スイング中のパワーをしっかり受け止めています。")
+    if 5.5 < k["mean"] <= 8.5:
+        good.append("下半身に粘りがあり、スイング中の力を比較的しっかり受け止めています。")
+
+    if k["mean"] <= 6.5 and h["mean"] <= 5.5:
+        good.append("下半身と上半身の軸が比較的連動しており、全体の安定感につながっています。")
 
     if not good:
-        good = ["良い点は特にありません。"]
+        good = ["下半身の動きは大きく崩れてはいませんが、さらに安定性を高める余地があります。"]
 
-    # --- 改善点 ---
-    if k["mean"] > 8.0:
-        bad.append(f"膝ブレは mean {k['mean']:.1f}% で大きく、土台が崩れています。")
+    # 改善点（やや緩和）
+    if k["mean"] > 10.0:
+        bad.append(f"膝ブレは mean {k['mean']:.1f}% でやや大きく、土台の再現性に影響しています。")
 
-    if h["mean"] > 5.0:
-        bad.append(f"上半身の軸も不安定なため、膝ブレと合わさって全体の軸崩れが起きています。")
+    if k["std"] > 3.5:
+        bad.append(f"膝位置のばらつき（σ {k['std']:.1f}%）がやや大きく、場面ごとの安定感にムラがあります。")
+
+    if h["mean"] > 6.5:
+        bad.append(f"上半身の軸にも揺れが見られ、膝の動きと重なって全体の安定性に影響している可能性があります。")
 
     if not bad:
-        bad = ["改善点は特にありません。"]
+        bad = ["大きな改善点は特にありません。"]
 
-    # --- プロ目線 ---
+    # プロ目線（やや柔らかく）
     pro_lines: List[str] = []
-    pro_lines.append("下半身は「踏めているか」より、回転中も土台が横に流れないかが評価軸です。")
+    pro_lines.append("下半身は「踏めているか」だけでなく、回転中も土台が横に流れすぎないかが評価軸です。")
 
-    if k["mean"] > 8.0:
-        pro_lines.append("本動画では下半身の横方向の動きがやや大きく出ています。")
+    if k["mean"] > 10.0:
+        pro_lines.append("本動画では下半身の横方向の動きがやや大きく出ており、土台の再現性に影響しています。")
     else:
         pro_lines.append("本動画では下半身の動きは全体として比較的抑えられています。")
 
-    if k["std"] > 2.5:
-        pro_lines.append("場面によって膝の位置にややばらつきがあり、土台の再現性に少しムラがあります。")
+    if k["std"] > 3.5:
+        pro_lines.append("場面によって膝の位置にばらつきがあり、土台の再現性にややムラがあります。")
     else:
-        pro_lines.append("膝の位置は全体として揃っており、土台の再現性は比較的保たれています。")
+        pro_lines.append("膝の位置は全体として揃っており、土台の再現性は概ね保たれています。")
 
     if spine_flag == "bad":
-        pro_lines.append("加えて前傾変化も大きく、下半身の安定が上体側で受け切れていません。")
+        pro_lines.append("加えて前傾維持の崩れが大きく、下半身の安定を上体側で受け切りにくくなっています。")
     elif spine_flag == "warn":
-        pro_lines.append("加えて前傾は大きく崩れてはいませんが、場面によって少しズレが見られます。")
+        pro_lines.append("加えて前傾維持にややばらつきがあり、下半身の安定性にも影響している可能性があります。")
     else:
-        pro_lines.append("前傾は全体として比較的保たれており、下半身の安定も活かしやすい状態です。")
+        pro_lines.append("前傾維持は概ね安定しており、下半身の安定も活かしやすい状態です。")
 
     pro_lines.append("このスイングでは、主因は下半身の安定性です。")
 
     pro_comment = " ".join(pro_lines[:4])
 
     bench = [
-        _bench_line("膝ブレ(%)", "%", "mean", _le_ideal(8.0, "%"), current=float(k["mean"])),
-        _bench_line("膝ブレの再現性(%)", "%", "σ", _le_ideal(1.5, "%"), current=float(k["std"])),
-        _bench_line("膝ブレの理想(%)", "%", "mean", _le_ideal(4.5, "%"), current=float(k["mean"])),
+        _bench_line("膝ブレ(%)", "%", "mean", _le_ideal(10.0, "%"), current=float(k["mean"])),
+        _bench_line("膝ブレの再現性(%)", "%", "σ", _le_ideal(2.5, "%"), current=float(k["std"])),
+        _bench_line("膝ブレの安定目安(%)", "%", "mean", _le_ideal(5.5, "%"), current=float(k["mean"])),
     ]
 
     return {
