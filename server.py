@@ -1558,7 +1558,7 @@ def build_paid_05_head(raw: Dict[str, Any], seed: str) -> Dict[str, Any]:
         good.append("上下の軸が比較的連動して安定しており、ミート率を支える土台があります。")
 
     if not good and not bad:
-    good = ["頭部位置は大きく崩れておらず、基本的な軸の土台はあります。"]
+        good = ["頭部位置は大きく崩れておらず、基本的な軸の土台はあります。"]
 
     # 改善点（やや緩和）
     if h["mean"] > 6.5:
