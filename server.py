@@ -1745,25 +1745,61 @@ def build_paid_07_from_analysis(analysis: Dict[str, Any], raw: Dict[str, Any]) -
     h_mean = h.get("mean", 0)
     k_mean = k.get("mean", 0)
 
-    if h_mean > 5.0 or k_mean > 8.0 or spine_flag in ["warn", "bad"]:
+    # 軸の安定性（やや緩和）
+    if h_mean > 6.5 or k_mean > 10.0 or spine_flag == "bad":
         if spine_flag == "bad":
-            lines.append(f"【軸の安定性】頭部（{h_mean:.1f}%）や膝（{k_mean:.1f}%）の左右動に加え、前傾変化も大きく出ています。回転量よりも先に、まずはこの『土台と上体の揺れ』を抑えることが打点の再現性を高める最短ルートです。")
-        elif spine_flag == "warn":
-            lines.append(f"【軸の安定性】頭部（{h_mean:.1f}%）や膝（{k_mean:.1f}%）の左右動に加え、前傾にも場面ごとのズレが見られます。まずはこの『土台と上体のズレ』を抑えることが、打点の再現性を高める近道です。")
+            lines.append(
+                f"【軸の安定性】頭部（{h_mean:.1f}%）や膝（{k_mean:.1f}%）の左右動に加え、前傾維持の崩れも大きく見られます。"
+                " 回転量よりも先に、まずは『土台と上体の安定性』を高めることが、打点の再現性を整える近道です。"
+            )
         else:
-            lines.append(f"【軸の安定性】頭部（{h_mean:.1f}%）や膝（{k_mean:.1f}%）の左右動が基準を超えています。回転量よりも先に、まずはこの『土台の揺れ』を抑えることが打点の再現性を高める最短ルートです。")
+            lines.append(
+                f"【軸の安定性】頭部（{h_mean:.1f}%）や膝（{k_mean:.1f}%）の左右動がやや大きく、"
+                " スイング全体の安定性に影響しています。まずは『土台の安定』を整えることが重要です。"
+            )
+    elif h_mean > 5.0 or k_mean > 8.5 or spine_flag == "warn":
+        lines.append(
+            f"【軸の安定性】頭部（{h_mean:.1f}%）や膝（{k_mean:.1f}%）の動き、または前傾維持にややばらつきが見られます。"
+            " 大きな崩れではありませんが、土台と上体の再現性を高める余地があります。"
+        )
     else:
-        lines.append("【軸の安定性】頭部・下半身ともにブレが大きくはなく、前傾も全体として比較的保たれています。軸回転の土台はおおむね整っています。")
+        lines.append(
+            "【軸の安定性】頭部・下半身ともにブレは比較的抑えられており、前傾維持も概ね安定しています。"
+            " 軸回転の土台はおおむね整っています。"
+        )
 
     xf_max = xf.get("max", 0)
-    if xf_max < 35:
-        lines.append(f"【パワー効率】捻転差（max {xf_max:.1f}°）が不足しています。切り返しで上半身と下半身が一緒に動く傾向があり、ヘッドを加速させる『溜め』が作りにくい状態です。")
+
+    # パワー効率（やや緩和）
+    if xf_max < 30:
+        lines.append(
+            f"【パワー効率】捻転差（max {xf_max:.1f}°）はやや小さめで、"
+            " 切り返しで力を溜める余地があります。"
+        )
+    elif xf_max > 70:
+        lines.append(
+            f"【パワー効率】捻転差（max {xf_max:.1f}°）は大きめで、"
+            " 肩と腰の連動を整えるとさらに安定しやすくなります。"
+        )
     else:
-        lines.append(f"【パワー効率】捻転差（max {xf_max:.1f}°）は十分に確保されており、切り返しでエネルギーを爆発させる準備が整っています。")
+        lines.append(
+            f"【パワー効率】捻転差（max {xf_max:.1f}°）は十分に確保されており、"
+            " 切り返しに必要な準備はできています。"
+        )
 
     sh_std = sh.get("std", 0)
-    if sh_std > 12.0:
-        lines.append(f"【再現性】肩回転の深さにばらつき（$\sigma$ {sh_std:.1f}°）が見られます。トップの位置が毎スイング変わるため、ミート率を不安定にさせる要因となります。")
+
+    # 再現性（やや緩和）
+    if sh_std > 18.0:
+        lines.append(
+            f"【再現性】肩回転の深さにばらつき（σ {sh_std:.1f}°）が見られます。"
+            " トップ位置の再現性に影響しやすい状態です。"
+        )
+    elif sh_std > 12.0:
+        lines.append(
+            f"【再現性】肩回転の深さにややばらつき（σ {sh_std:.1f}°）があり、"
+            " ミート率の安定性を高める余地があります。"
+        )
 
     lines.append("")
 
@@ -1774,9 +1810,9 @@ def build_paid_07_from_analysis(analysis: Dict[str, Any], raw: Dict[str, Any]) -
         lines.append("数値上の優先テーマはありません。")
 
     if "前傾維持不安定" in priorities:
-        lines.append("特に前傾変化が大きいため、切り返しからインパクトまで上体の起き上がりを抑えることが重要です。")
+        lines.append("特に前傾維持の崩れが大きいため、切り返しからインパクトまで上体角度を保つ意識が重要です。")
     elif "前傾維持にばらつき" in priorities:
-        lines.append("特に前傾は大きく崩れてはいませんが、場面によって少しズレが出るため、上体角度の再現性を上げたい状態です。")
+        lines.append("特に前傾維持にややばらつきがあるため、場面ごとの上体角度の再現性を高めたい状態です。")
 
     lines.append("")
     lines.append("08では優先テーマに直結するドリルを選択し、09では動きを安定させやすいシャフト特性を提示します。")
@@ -1793,7 +1829,6 @@ def build_paid_07_from_analysis(analysis: Dict[str, Any], raw: Dict[str, Any]) -
             "spine_flag": spine_flag,
         },
     }
-
 
 def build_free_07(raw: Dict[str, Any]) -> Dict[str, Any]:
     """
