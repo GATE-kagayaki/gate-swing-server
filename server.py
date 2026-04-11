@@ -866,7 +866,7 @@ def analyze_swing_with_mediapipe(video_path, overlay_out_path=None):
                 wrist_move = abs(address_buffer[-1]["lwrist_y"] - address_buffer[0]["lwrist_y"])
 
                 # アドレス後に手元が動き始めたら解析開始
-                if wrist_move > 0.03:
+                if wrist_move > 0.0012:
                     base_nose = (
                         sum(f["nose"][0] for f in address_buffer) / len(address_buffer),
                         sum(f["nose"][1] for f in address_buffer) / len(address_buffer),
