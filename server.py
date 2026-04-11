@@ -1288,59 +1288,60 @@ def build_paid_03_hip(raw: Dict[str, Any], seed: str) -> Dict[str, Any]:
     good: List[str] = []
     bad: List[str] = []
 
-    # 良い点（最低1行） --- 3D解析の最大値（max）に基づき判定 ---
-    if hip["std"] <= 10:
-        good.append("腰の回し幅は揃っており、下半身の再現性は確保されています。")
-    if 35 <= hip["max"] <= 55:
+    # 良い点（やや緩和）
+    if hip["std"] <= 12:
+        good.append("腰の回し幅は比較的揃っており、下半身の再現性は概ね確保されています。")
+    if 30 <= hip["max"] <= 60:
         good.append("腰の回旋量は基準レンジに収まっており、安定した土台として機能しています。")
-    
+
     # バッファ：安定性
-    if hip["std"] <= 5:
-        good.append("下半身の動きが非常に一定しており、ミート率を高める基礎ができています。")
-    # バッファ：捻転の深さ（腰が止まっている分、肩が回っている場合）
-    if hip["max"] < 35 and xf["max"] >= 40:
+    if hip["std"] <= 6:
+        good.append("下半身の動きが安定しており、ミート率を高める基礎ができています。")
+
+    # バッファ：腰が控えめでも捻転差が作れている場合
+    if hip["max"] < 30 and xf["max"] >= 35:
         good.append("腰の回転は控えめですが、その分肩との捻転差を効率的に作れています。")
 
     if not good:
         good = ["基本的な下半身の可動域は確保されており、スイングの土台はできています。"]
 
-    # 改善点（max値を使って具体的に指摘）
-    if hip["max"] > 55:
-        bad.append(f"最大腰回転は {hip['max']:.1f}° で、回りすぎによりパワーが逃げています。")
-    if hip["max"] < 35:
-        bad.append(f"最大腰回転は {hip['max']:.1f}° で、下半身のリードが不足しています。")
-    if xf["max"] < 35:
-        bad.append(f"最大捻転差は {xf['max']:.1f}° で、上半身との連動が不十分です。")
-    if hip["std"] > 15:
-        bad.append(f"腰の回転幅のばらつき（σ {hip['std']:.1f}°）が大きく、インパクトが安定しません。")
-        
-    if not bad:
-        bad = ["改善点は特にありません。"]
+    # 改善点（やや緩和）
+    if hip["max"] > 60:
+        bad.append(f"最大腰回転は {hip['max']:.1f}° で、やや回りすぎの傾向が見られます。")
+    if hip["max"] < 30:
+        bad.append(f"最大腰回転は {hip['max']:.1f}° で、下半身主導を高める余地があります。")
+    if xf["max"] < 30:
+        bad.append(f"最大捻転差は {xf['max']:.1f}° で、上半身との連動をさらに高める余地があります。")
+    if hip["std"] > 18:
+        bad.append(f"腰の回転幅のばらつき（σ {hip['std']:.1f}°）がやや大きく、インパクトの再現性に影響しています。")
 
-    # プロ目線（言語化）
+    if not bad:
+        bad = ["大きな改善点は特にありません。"]
+
+    # プロ目線（やや柔らかく）
     pro_lines: List[str] = []
-    pro_lines.append("腰は「回す量」ではなく、「肩との順序」と「回し幅の揃い方」で質が決まります。")
-    
-    if hip["max"] > 55:
-        pro_lines.append("本動画では腰が回りすぎる傾向があり、軸が揺らぎやすくなっています。")
-    elif hip["max"] < 35:
-        pro_lines.append("本動画では下半身の回旋量が不足し、手打ちになりやすい状態です。")
+    pro_lines.append("腰は「回す量」だけでなく、「肩との順序」と「回し幅の揃い方」で質が決まります。")
+
+    if hip["max"] > 60:
+        pro_lines.append("本動画では腰の回転量がやや大きく、軸の安定性に影響しやすい状態です。")
+    elif hip["max"] < 30:
+        pro_lines.append("本動画では下半身の回旋量はやや控えめで、下半身主導を高める余地があります。")
     else:
         pro_lines.append("本動画では腰の回旋量は適正範囲で、安定した軸回転ができています。")
 
-    if hip["std"] > 12:
-        pro_lines.append("腰の回転角度が一定せず、下半身主導の再現性が課題となります。")
+    if hip["std"] > 15:
+        pro_lines.append("腰の回転角度にややばらつきがあり、下半身主導の再現性に影響しています。")
     else:
-        pro_lines.append("下半身の回転は安定しており、スイングの再現性を支える土台となっています。")
+        pro_lines.append("下半身の回転は比較的安定しており、スイングの再現性を支える土台となっています。")
 
     pro_lines.append("このスイングでは、主因は下半身主導のタイミングです。")
 
     pro_comment = " ".join(pro_lines[:3])
-    
+
     bench = [
-        _bench_line("腰回転(°)", "°", "max", _range_ideal(35, 55, "°"), current=float(hip["max"])),
-        _bench_line("腰回転の安定(°)", "°", "σ", _le_ideal(10.0, "°"), current=float(hip["std"])),
-        _bench_line("捻転差(°)", "°", "max", _ge_ideal(35.0, "°"), current=float(xf["max"])),
+        _bench_line("腰回転(°)", "°", "max", _range_ideal(30, 60, "°"), current=float(hip["max"])),
+        _bench_line("腰回転の安定(°)", "°", "σ", _le_ideal(12.0, "°"), current=float(hip["std"])),
+        _bench_line("捻転差(°)", "°", "max", _ge_ideal(30.0, "°"), current=float(xf["max"])),
     ]
 
     return {
@@ -1352,7 +1353,6 @@ def build_paid_03_hip(raw: Dict[str, Any], seed: str) -> Dict[str, Any]:
         "bad": bad[:3],
         "pro_comment": pro_comment,
     }
-
 def judge_wrist(raw: Dict[str, Any]) -> Dict[str, Any]:
     # --- 【重要】バックエンドで反転済みのため、そのままの数値を使用 ---
     # raw["wrist"]["mean"] が既に 21.0 などの「コック角」になっています
