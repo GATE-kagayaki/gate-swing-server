@@ -1356,7 +1356,9 @@ def build_paid_03_hip(raw: Dict[str, Any], seed: str) -> Dict[str, Any]:
     bad: List[str] = []
 
     # 良い点（やや緩和）
-    if hip["std"] <= 12:
+    if hip["std"] <= 6:
+        good.append("下半身の動きが安定しており、ミート率を高める基礎ができています。")
+    elif hip["std"] <= 12:
         good.append("腰の回し幅は比較的揃っており、下半身の再現性は概ね確保されています。")
     if 30 <= hip["max"] <= 60:
         good.append("腰の回旋量は基準レンジに収まっており、安定した土台として機能しています。")
