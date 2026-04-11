@@ -1468,8 +1468,10 @@ def build_paid_04_wrist(raw: Dict[str, Any], seed: str) -> Dict[str, Any]:
         good.append("手首の角度変化は比較的一定しており、インパクトでのフェース管理は概ね安定しています。")
     if 40 <= w_mean <= 80:
         good.append("タメは基準レンジに収まっており、ヘッドを加速させる準備ができています。")
-    if w_max > 75:
-        good.append("トップで十分なコックが作れており、ヘッドスピードを高める土台があります。")
+    if w_max >= 75 and w_std <= 15:
+        good.append("トップで十分なコックが作れており、その角度も比較的安定して再現できています。")
+    elif w_max >= 75:
+        good.append("トップでは十分なコックが入っており、ヘッドスピードにつながる土台があります。")
 
     if not good:
         good = ["基本的な手首の可動域は確保されており、スイングの土台はできています。"]
@@ -1477,8 +1479,8 @@ def build_paid_04_wrist(raw: Dict[str, Any], seed: str) -> Dict[str, Any]:
     # 改善点（やや緩和）
     if w_mean < 40:
         bad.append(f"平均コック角 {w_mean:.1f}° はやや浅く、リリースが早くなる傾向があります。")
-    if w_mean > 85:
-        bad.append(f"平均コック角 {w_mean:.1f}° はやや大きく、リリースのタイミングがシビアになりやすい状態です。")
+    if w_mean > 80:
+        bad.append(f"平均コック角 {w_mean:.1f}° はやや大きく、リリースのタイミング管理がややシビアになりやすい状態です。")
     if w_std > 18:
         bad.append(f"手首の挙動（σ {w_std:.1f}）にばらつきがあり、打点の再現性に影響しています。")
     if w_max < 35:
@@ -1493,7 +1495,7 @@ def build_paid_04_wrist(raw: Dict[str, Any], seed: str) -> Dict[str, Any]:
     if w_mean < 40:
         pro_lines.append(f"本動画では手首の角度が {w_mean:.1f}° とやや浅く、ヘッドを運ぶ動きが出やすい傾向です。")
         pro_lines.append("タメを保つ時間が短くなりやすいため、インパクトで合わせる動きにつながることがあります。")
-    elif w_mean > 85:
+    elif w_mean > 80:
         pro_lines.append(f"平均 {w_mean:.1f}° とタメは深めですが、その分リリースのタイミング管理が重要になります。")
         pro_lines.append("手元の操作が増えると、左右のミスにつながりやすくなります。")
     else:
