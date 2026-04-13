@@ -1528,15 +1528,17 @@ def judge_head(raw: Dict[str, Any]) -> Dict[str, Any]:
     k = raw["knee"]
 
     tags: List[str] = []
-    # 【整合性】数値が 0.15（座標）から 5.0（％）に変わったため、しきい値を調整
-    if h["mean"] > 5.0:
-        tags.append("頭部ブレ大")
-    if k["mean"] > 8.0:
-        tags.append("膝ブレ大")
-    if k["mean"] > 8.0:
-        tags.append("下半身不安定")
-    return {"tags": tags}
 
+    if h["mean"] > 6.0:
+        tags.append("頭部ブレ大")
+
+    if k["mean"] > 9.0:
+        tags.append("膝ブレ大")
+
+    if k["mean"] > 11.0:
+        tags.append("下半身不安定")
+
+    return {"tags": tags}
 
 def build_paid_05_head(raw: Dict[str, Any], seed: str) -> Dict[str, Any]:
     j = judge_head(raw)
