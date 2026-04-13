@@ -1551,22 +1551,21 @@ def build_paid_05_head(raw: Dict[str, Any], seed: str) -> Dict[str, Any]:
 
     spine_flag = judge_spine_flag(raw)
 
-    # 良い点（やや緩和）
+    # 良い点
     if h["mean"] <= 4.5:
-        good.append("頭の左右ブレは小さく抑えられており、軸の安定感は概ね良好です。")
-
-    if 4.5 < h["mean"] <= 6.5:
-        good.append("多少の左右移動はありますが、許容範囲内でスイングできています。")
+        good.append("頭部の位置は全体を通して安定しており、スイング軸の再現性は良好です。")
+    elif h["mean"] <= 6.0:
+        good.append("頭部の移動は一定範囲に収まっており、軸の安定性は概ね保たれています。")
 
     if h["mean"] <= 5.0 and k["mean"] <= 6.5:
-        good.append("上下の軸が比較的連動して安定しており、ミート率を支える土台があります。")
+        good.append("頭部と下半身の上下動が比較的整っており、ミート率を支える土台があります。")
 
-    if not good and not bad:
+    if not good:
         good = ["頭部位置は大きく崩れておらず、基本的な軸の土台はあります。"]
 
-    # 改善点（やや緩和）
-    if h["mean"] > 6.5:
-        bad.append(f"頭部ブレは mean {h['mean']:.1f}% でやや大きく、軸の再現性に影響しています。")
+    # 改善点
+    if h["mean"] > 6.0:
+        bad.append(f"頭部の移動量は {h['mean']:.1f}% とやや大きく、インパクト時の軸の再現性に影響しやすい状態です。")
 
     if h["std"] > 3.5:
         bad.append(f"頭部位置のばらつき（σ {h['std']:.1f}%）がやや大きく、場面ごとの再現性にムラがあります。")
@@ -1577,32 +1576,30 @@ def build_paid_05_head(raw: Dict[str, Any], seed: str) -> Dict[str, Any]:
     if not bad:
         bad = ["大きな改善点は特にありません。"]
 
-    # プロ目線（やや柔らかく）
+    # プロ目線
     pro_lines: List[str] = []
-    pro_lines.append("頭部は「まったく動かないこと」より、動いても同じ位置関係に戻れるかが評価軸です。")
+    pro_lines.append("頭部は完全に止めることよりも、動いても同じ位置関係に戻れるかが重要な評価ポイントです。")
 
-    if h["mean"] > 6.5:
-        pro_lines.append("本動画では頭部の左右移動がやや大きく出ており、軸の再現性に影響しています。")
+    if h["mean"] > 6.0:
+        pro_lines.append("本動画では頭部の移動がやや大きく、軸の再現性に影響しやすい状態です。")
     else:
-        pro_lines.append("本動画では頭部の位置は比較的安定しています。")
+        pro_lines.append("本動画では頭部の位置は比較的安定しており、軸の再現性は概ね保たれています。")
 
     if h["std"] > 3.5:
         pro_lines.append("場面によって頭の位置にばらつきがあり、再現性にややムラがあります。")
     else:
         pro_lines.append("頭の位置は全体として揃っており、再現性は概ね保たれています。")
 
-    # 前傾維持との連動
-    if spine_flag == "bad":
-        pro_lines.append("加えて前傾維持の崩れが大きく、頭部の軸管理を難しくしています。")
-    elif spine_flag == "warn":
-        pro_lines.append("加えて前傾維持にややばらつきがあり、頭部安定性にも影響している可能性があります。")
-    else:
-        pro_lines.append("前傾維持は概ね安定しており、頭部の軸安定を支えています。")
+    if h["mean"] > 6.0:
+        if spine_flag == "bad":
+            pro_lines.append("前傾姿勢の変化も重なり、頭部の安定性に影響している可能性があります。")
+        elif spine_flag == "warn":
+            pro_lines.append("前傾維持のばらつきが、頭部の安定性に一部影響している可能性があります。")
 
     pro_comment = " ".join(pro_lines[:3])
 
     bench = [
-        _bench_line("頭部ブレ(%)", "%", "mean", _le_ideal(6.5, "%"), current=float(h["mean"])),
+        _bench_line("頭部ブレ(%)", "%", "mean", _le_ideal(6.0, "%"), current=float(h["mean"])),
         _bench_line("頭部ブレの再現性(%)", "%", "σ", _le_ideal(2.5, "%"), current=float(h["std"])),
         _bench_line("頭部ブレの安定目安(%)", "%", "mean", _le_ideal(4.5, "%"), current=float(h["mean"])),
     ]
@@ -1616,7 +1613,6 @@ def build_paid_05_head(raw: Dict[str, Any], seed: str) -> Dict[str, Any]:
         "bad": bad[:3],
         "pro_comment": pro_comment,
     }
-
 def judge_knee(raw: Dict[str, Any]) -> Dict[str, Any]:
     k = raw["knee"]
     h = raw["head"]
