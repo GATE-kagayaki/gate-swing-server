@@ -2982,6 +2982,7 @@ def api_report_data(report_id: str):
         "status": status_out,
         "is_premium": bool(r.get("is_premium", False)),
         "analysis": r.get("analysis") or {},
+        "address_posture": r.get("address_posture"),
         "overlay_video_url": r.get("overlay_video_url"),
         "overlay_video_download_url": r.get("overlay_video_download_url"),  
     })
