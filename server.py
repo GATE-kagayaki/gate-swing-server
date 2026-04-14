@@ -2522,10 +2522,11 @@ def build_paid_09(raw: Dict[str, Any], user_inputs: Dict[str, Any]) -> Dict[str,
     k_mean = _f(["knee", "mean"], 10.0)
     stability_val = (h_mean + k_mean) / 2.0  # %相当
 
-    avg_xfactor = _f(["x_factor", "mean"], 0.0)
+    # 捻転差は 02 / 07 と整合するよう max 基準に統一
+    xf_max = _f(["x_factor", "max"], 0.0)
 
     # 手首の実測値（mean基準へ完全同期）
-    wrist_cock = _f(["wrist", "mean"], 0.0) 
+    wrist_cock = _f(["wrist", "mean"], 0.0)
     max_wrist = _f(["wrist", "max"], wrist_cock)
     wrist_std = _f(["wrist", "std"], 0.0)
 
@@ -2535,9 +2536,11 @@ def build_paid_09(raw: Dict[str, Any], user_inputs: Dict[str, Any]) -> Dict[str,
         if stability_val < 7.0: return "normal"
         return "unstable"
 
-    def _band_xfactor(avg_xfactor: float) -> str:
-        if avg_xfactor < 40.0: return "low"
-        if avg_xfactor < 45.0: return "mid"
+    def _band_xfactor(xf_max: float) -> str:
+        if xf_max < 30.0:
+            return "low"
+        if xf_max <= 70.0:
+            return "mid"
         return "high"
 
     def _band_tame(max_wrist: float, mean_wrist: float, std_wrist: float) -> str:
@@ -2551,8 +2554,9 @@ def build_paid_09(raw: Dict[str, Any], user_inputs: Dict[str, Any]) -> Dict[str,
 
     # バンド割り当て
     stab_band = _band_stability(stability_val)
-    xf_band = _band_xfactor(avg_xfactor)
+    xf_band = _band_xfactor(xf_max)
     tame_band = _band_tame(max_wrist, wrist_cock, wrist_std)
+    
 
     # 【2軸分析用レベル判定：mean基準 45°-75°】
     if hs is not None:
@@ -2573,7 +2577,7 @@ def build_paid_09(raw: Dict[str, Any], user_inputs: Dict[str, Any]) -> Dict[str,
         "guide": "今回の分析根拠",
         "reason": "\n".join([
             f"● 軸ブレ：{stability_val:.1f}%（{stab_band}）",
-            f"● 捻転差：{avg_xfactor:.1f}°（{xf_band}）",
+            f"● 捻転差：max {xf_max:.1f}°（{xf_band}）",
             f"● タメ平均：{wrist_cock:.1f}°（目安：45-75°に対して {cock_label}）",
         ])
     })
@@ -2609,15 +2613,15 @@ def build_paid_09(raw: Dict[str, Any], user_inputs: Dict[str, Any]) -> Dict[str,
     if hs is not None:
         flex_map = [(33, "L〜A"), (38, "A〜R"), (42, "R〜SR"), (46, "SR〜S"), (50, "S〜X")]
         flex = next((f for h, f in flex_map if hs < h), "X")
-        
+
         reason = f"● 2軸評価：HS {hs:.1f}m/s × タメ平均{wrist_cock:.1f}° に対する適正剛性"
-        
-        if avg_xfactor > 45.0 or cock_level == "deep":
+
+        if xf_max > 70.0 or cock_level == "deep":
             if flex in ["L〜A", "A〜R", "R〜SR"]:
                 flex = "SR〜S"
             else:
                 flex = "一ランク硬め"
-            reason += f"\n● 【補正】強い捻転差（{avg_xfactor:.1f}°）と深いタメによるシャフトへの高負荷を考慮"
+            reason += f"\n● 【補正】強い捻転差（max {xf_max:.1f}°）と深いタメによるシャフトへの高負荷を考慮"
     else:
         flex = {"low": "A〜R", "mid": "R〜SR", "high": "SR〜S"}[hs_level]
         reason = f"● 2軸評価：パワー指数に対する適正剛性（タメ{cock_label}を考慮）"
@@ -2704,7 +2708,7 @@ def build_paid_09(raw: Dict[str, Any], user_inputs: Dict[str, Any]) -> Dict[str,
             "wrist_cock": wrist_cock,
             "head_speed": hs,
             "stability_val": stability_val,
-            "avg_xfactor": avg_xfactor,
+            "xf_max": xf_max,
             "max_wrist": max_wrist,
         },
     }
