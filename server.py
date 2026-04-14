@@ -2799,6 +2799,41 @@ def judge_spine_flag(raw: Dict[str, Any]) -> str:
     if worst <= 10.0:
         return "warn"
     return "bad"
+
+def judge_address_posture(raw: Dict[str, Any]) -> Dict[str, str]:
+
+    angle = raw.get("base_spine_angle")
+
+    try:
+        angle = float(angle)
+    except Exception:
+        return {
+            "label": "判定保留",
+            "comment": "構えの静止区間が十分に確認できませんでした。"
+        }
+
+    if angle <= 0:
+        return {
+            "label": "判定保留",
+            "comment": "構えの静止区間が十分に確認できませんでした。"
+        }
+
+    if angle < 18:
+        return {
+            "label": "やや浅め",
+            "comment": "上体が立ちやすく、回転量が不足しやすい姿勢です。"
+        }
+
+    if angle > 38:
+        return {
+            "label": "やや深め",
+            "comment": "前傾量は確保されていますが、動作中に維持負荷がかかりやすい姿勢です。"
+        }
+
+    return {
+        "label": "適正",
+        "comment": "回転しやすい前傾角が作れています。"
+    }
     
 def build_analysis(raw: Dict[str, Any], premium: bool, report_id: str, user_inputs: Dict[str, Any]) -> Dict[str, Any]:
     analysis: Dict[str, Any] = {"01": build_section_01(raw)}
