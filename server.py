@@ -2682,17 +2682,17 @@ def build_paid_10(analysis: Dict[str, Any]) -> Dict[str, Any]:
 
     sec08 = analysis.get("08") or {}
     drills = sec08.get("drills", [])
-    drill_names = [d["name"] for d in drills]
+    drill_names = [d["name"] for d in drills if isinstance(d, dict) and d.get("name")]
 
     sec09 = analysis.get("09") or {}
     table = sec09.get("table", [])
-    meta09 = sec09.get("meta") or {}
+    has_shaft_section = bool(table)
 
-    kp_info = next((item for item in table if item["item"] == "キックポイント"), {})
+    kp_info = next((item for item in table if item.get("item") == "キックポイント"), {})
     kp_guide = kp_info.get("guide", "中")
     kp_reason = kp_info.get("reason", "")
 
-    summary_text = []
+    summary_text: List[str] = []
 
     summary_text.append(f"今回の解析結果、あなたのスイングは『{swing_type}』に分類されます。")
 
@@ -2701,27 +2701,49 @@ def build_paid_10(analysis: Dict[str, Any]) -> Dict[str, Any]:
         summary_text.append(f"現在、優先して取り組みたいテーマは『{p_str}』です。")
 
         if drill_names:
-            summary_text.append(f"まずは推奨ドリルの中でも「{drill_names[0]}」を中心に取り組むことで、動きの再現性を整えやすくなります。")
-            summary_text.append("複数の動きを一度に変えようとするよりも、優先テーマを一つずつ整理していくことが改善につながります。")
+            summary_text.append(
+                f"まずは推奨ドリルの中でも「{drill_names[0]}」を中心に取り組むことで、動きの再現性を整えやすくなります。"
+            )
+            summary_text.append(
+                "複数の動きを一度に変えようとするよりも、優先テーマを一つずつ整理していくことが改善につながります。"
+            )
     else:
-        summary_text.append("全体として大きな破綻はなく、バランスよく振れています。提示されたドリルを活用しながら、さらに再現性を高めていきましょう。")
+        summary_text.append(
+            "全体として大きな破綻はなく、バランスよく振れています。提示されたドリルを活用しながら、さらに再現性を高めていきましょう。"
+        )
 
+    # 前傾は補助要因として短めに記載
     if spine_flag == "bad":
-        summary_text.append("加えて前傾維持の崩れが大きいため、切り返しからインパクトまで上体角度を保つ意識が全体の安定性向上につながります。")
+        summary_text.append(
+            "前傾姿勢の変化にも注意しながら、上体角度の再現性を整えていくと全体の安定につながりやすくなります。"
+        )
     elif spine_flag == "warn":
-        summary_text.append("前傾維持にややばらつきが見られるため、上体角度の再現性も意識するとさらに安定しやすくなります。")
+        summary_text.append(
+            "前傾姿勢にややばらつきが見られるため、上体角度の再現性も意識するとさらに安定しやすくなります。"
+        )
     else:
-        summary_text.append("前傾維持は概ね安定しており、スイング全体の再現性を支える要素になっています。")
+        summary_text.append(
+            "前傾姿勢は概ね安定しており、スイング全体の再現性を支える要素になっています。"
+        )
 
     summary_text.append("")
 
-    summary_text.append(f"道具の面では、今回のスイング特性に合わせて『{kp_guide}調子』のシャフトを提案しました。")
-    if kp_reason:
-        summary_text.append(f"【選定根拠】{kp_reason}")
+    if has_shaft_section:
+        summary_text.append(
+            f"道具の面では、今回のスイング特性に合わせて『{kp_guide}調子』のシャフトを提案しました。"
+        )
+        if kp_reason:
+            summary_text.append(f"【選定根拠】{kp_reason}")
 
-    summary_text.append("")
+        summary_text.append("")
+        summary_text.append(
+            "『練習による動きの整理』と『スイング特性に合ったシャフト選び』を組み合わせることで、より安定した結果につながりやすくなります。"
+        )
+    else:
+        summary_text.append(
+            "まずは練習によって優先テーマを整理し、動きの再現性を高めていくことが安定した結果につながります。"
+        )
 
-    summary_text.append("『練習による動きの整理』と『スイング特性に合ったシャフト選び』を組み合わせることで、より安定した結果につながりやすくなります。")
     summary_text.append("次回の解析では、今回の優先テーマに対して数値がどのように変化したかを確認していきましょう。")
 
     summary_text.append("")
