@@ -2689,7 +2689,6 @@ def judge_spine_flag(raw: Dict[str, Any]) -> str:
         return "ok"
 
     base = float(spines[0])
-
     deltas = [abs(float(x) - base) for x in spines if x is not None]
 
     if not deltas:
@@ -2705,12 +2704,10 @@ def judge_spine_flag(raw: Dict[str, Any]) -> str:
 
     worst = max(delta_mean, delta_top, delta_impact)
 
-    if worst <= 5:
+    if worst <= 5.5:
         return "ok"
-
-    if worst <= 9:
+    if worst <= 10.0:
         return "warn"
-
     return "bad"
     
 def build_analysis(raw: Dict[str, Any], premium: bool, report_id: str, user_inputs: Dict[str, Any]) -> Dict[str, Any]:
