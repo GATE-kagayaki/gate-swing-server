@@ -890,16 +890,16 @@ def analyze_swing_with_mediapipe(video_path, overlay_out_path=None):
                         sum(f["lknee"][2] for f in address_buffer) / len(address_buffer),
                     )
 
-                    base_spine_angle = (
-                        sum(f["spine"] for f in address_buffer) / len(address_buffer)
-                    )
-                    
-                    for f in address_buffer:
+                   base_spine_angle = (
+                       sum(f["spine"] for f in address_buffer) / len(address_buffer)
+                   )
+
+                   for f in address_buffer:
                        if float(f["spine"]) > 0:
                            spines.append(float(f["spine"]))
 
-　　　　　　　　　　　analysis_started = True
-                    start_frame = total_frames
+                   analysis_started = True
+                   start_frame = total_frames
                    
             # 解析開始前はスキップ
             if not analysis_started:
