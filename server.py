@@ -2273,6 +2273,7 @@ def select_drills_with_priority(tags: List[str], priorities: List[str], max_dril
 
 
 def build_paid_08(analysis: Dict[str, Any], raw: Dict[str, Any]) -> Dict[str, Any]:
+
     sec07 = analysis.get("07") or {}
     meta07 = sec07.get("meta") or {}
     priorities = meta07.get("priorities", [])
@@ -2280,54 +2281,79 @@ def build_paid_08(analysis: Dict[str, Any], raw: Dict[str, Any]) -> Dict[str, An
     all_tags = collect_all_tags(analysis)
 
     sh_std = float(raw.get("shoulder", {}).get("std", 0) or 0)
+
     spine_flag = judge_spine_flag(raw)
 
-    # ばらつきタグは強いケースだけ追加
+    head_mean = float(raw.get("head", {}).get("mean", 0) or 0)
+    knee_mean = float(raw.get("knee", {}).get("mean", 0) or 0)
+
+    # ばらつきは強いケースのみ
     if sh_std > 18:
         all_tags.append("ばらつき大")
-        all_tags.append("肩回転のばらつき大")
 
-    # 前傾維持は bad の時だけドリル選定に強く反映
-    if spine_flag == "bad":
+    # 前傾は他要素にも影響がある場合のみ追加
+    if spine_flag == "bad" and (head_mean > 6.0 or knee_mean > 9.0):
+
         all_tags.append("前傾維持不安定")
-        all_tags.append("起き上がり傾向")
 
-    selected_drills = select_drills_with_priority(all_tags, priorities, 3)
+    selected_drills = select_drills_with_priority(
+        all_tags,
+        priorities,
+        3
+    )
 
     for d in selected_drills:
+
         extra_notes = []
 
         if sh_std > 18:
+
             extra_notes.append(
-                f"● 【再現性補足】現在、肩回転のばらつき（σ {sh_std:.1f}）がやや大きいため、"
-                "回数よりも『ゆっくり正確に同じ動きを繰り返すこと』を優先してください。"
+                f"● 【再現性補足】肩回転のばらつき（σ {sh_std:.1f}）がやや大きいため、"
+                "回数よりも『同じトップ位置をゆっくり再現すること』を優先してください。"
             )
 
-        if spine_flag == "bad":
+        if spine_flag == "bad" and d["id"] in {
+
+            "spine_posture_keep",
+            "hip_depth_wall"
+
+        }:
+
             extra_notes.append(
-                "● 【前傾維持補足】このスイングは前傾維持の崩れが大きいため、"
-                "切り返しからインパクトまで胸の向きと上体角度を保つ意識を優先してください。"
+                "● 【前傾維持補足】切り返しからインパクトまで胸の向きと上体角度を揃える意識を優先してください。"
             )
 
-        elif spine_flag == "warn" and d["id"] in {"spine_posture_keep", "hip_depth_wall", "chest_turn_posture"}:
+        elif spine_flag == "warn" and d["id"] == "spine_posture_keep":
+
             extra_notes.append(
-                "● 【前傾維持補足】前傾維持にややばらつきがあるため、"
-                "動作スピードを落として上体角度を揃える意識で行ってください。"
+                "● 【前傾維持補足】動作スピードを少し落とし、上体角度が大きく変わらない範囲で行ってください。"
             )
 
         if extra_notes:
+
             d["how"] += "\n\n" + "\n".join(extra_notes)
 
     return {
+
         "title": "08. Training Drills（練習ドリル）",
+
         "drills": [
+
             {
+
                 "name": d["name"],
+
                 "purpose": d["purpose"],
+
                 "how": d["how"]
+
             }
+
             for d in selected_drills
+
         ]
+
     }
     
 # ==================================================
