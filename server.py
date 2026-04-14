@@ -1778,7 +1778,7 @@ def _summary_template(swing_type: str) -> List[str]:
     if swing_type == "安定性不足型":
         return [
             "最大の課題は回転量ではなく、土台と軸が保てているかです。",
-            "軸が揺れる状態は、打点とフェース向きの再現性を同時に落とします。",
+            "軸が揺れると、打点やフェース向きの再現性に影響が出やすくなります。",
         ]
     if swing_type == "操作過多型":
         return [
