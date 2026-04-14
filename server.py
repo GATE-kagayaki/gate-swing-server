@@ -2860,15 +2860,17 @@ def build_analysis(raw: Dict[str, Any], premium: bool, report_id: str, user_inpu
     # 07 Summary では前傾を1回だけ補足
     if spine_flag == "ok":
         analysis["07"].setdefault("text", []).append(
-            "【前傾維持】アドレスで作った姿勢は、スイング中も概ね安定して保てています。"
+            "【前傾維持】前傾角の変化は小さく、回転動作の再現性は安定しています。"
         )
+
     elif spine_flag == "warn":
         analysis["07"].setdefault("text", []).append(
-            "【前傾維持】前傾姿勢にやや変化が見られ、再現性に一部影響している可能性があります。"
+            "【前傾維持】スイング中に前傾角の変化がやや見られ、動作の再現性に影響する可能性があります。"
         )
+
     elif spine_flag == "bad":
         analysis["07"].setdefault("text", []).append(
-            "【前傾維持】前傾姿勢の変化がやや大きく、インパクトの再現性に影響している可能性があります。"
+            "【前傾維持】スイング中の前傾角の変化がやや大きく、回転動作の安定性に影響しています。"
         )
 
     # 必要ならタグとして持たせる（ドリル選定用）
