@@ -1777,13 +1777,12 @@ def judge_swing_type(tag_counter: Counter) -> str:
 
 def extract_priorities(tag_counter: Counter, max_items: int = 2) -> List[str]:
     order = [
-        "捻転差不足",
         "膝ブレ大",
         "頭部ブレ大",
-        "コック過多",
-        "コック不足",
         "腰回転過多",
         "腰回転不足",
+        "コック過多",
+        "コック不足",
         "肩回転過多",
         "肩回転不足",
         "捻転差過多",
@@ -1791,14 +1790,18 @@ def extract_priorities(tag_counter: Counter, max_items: int = 2) -> List[str]:
 
     result: List[str] = []
 
+    # 捻転差不足は「複数箇所で一貫して不足」の時だけ優先課題にする
+    if tag_counter.get("捻転差不足", 0) >= 2:
+        result.append("捻転差不足")
+
     for t in order:
         if tag_counter.get(t, 0) > 0 and t not in result:
             result.append(t)
         if len(result) >= max_items:
             break
 
-    return result
-
+    return result[:max_items]
+    
 def _summary_template(swing_type: str) -> List[str]:
     # 07の「型」別テンプレ（短め・具体・余計な主張はしない）
     if swing_type == "体幹パワー不足型":
