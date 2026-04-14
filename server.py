@@ -876,7 +876,7 @@ def analyze_swing_with_mediapipe(video_path, overlay_out_path=None):
                 )
 
                 # 手元が動き始めたら開始
-                if wrist_move > 0.003:
+                if wrist_move > 0.0015:
 
                     base_nose = (
                         sum(f["nose"][0] for f in address_buffer) / len(address_buffer),
@@ -901,11 +901,22 @@ def analyze_swing_with_mediapipe(video_path, overlay_out_path=None):
                     analysis_started = True
                     start_frame = total_frames
                    
-            # 解析開始前はスキップ
+            # 解析開始前でも、姿勢が見えていればラインは表示する
             if not analysis_started:
                 if writer is not None and frame is not None:
-                    writer.write(frame)
+                    out = frame.copy()
+
+                    color = (0, 255, 0)
+
+                    draw_overlay_skeleton(out, lm, mp_pose, color)
+                    draw_spine_line(out, lm, mp_pose, color)
+
+                    if spine_angle > 0:
+                        draw_gaze_line(out, lm, mp_pose, spine_angle)
+
+                    writer.write(out)
                 continue
+            
 
             # --- B. トップ・終了候補判定 ---
             if curr_lwrist[1] < nose_y:
