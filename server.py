@@ -1116,6 +1116,7 @@ def analyze_swing_with_mediapipe(video_path, overlay_out_path=None):
         "spine_raw": [round(float(x), 2) for x in spines],
         "spine_top": round(float(top_spine_angle), 2) if top_spine_angle is not None else 0.0,
         "spine_impact": round(float(impact_spine_angle), 2) if impact_spine_angle is not None else 0.0,
+        "base_spine_angle": round(float(base_spine_angle), 2) if base_spine_angle is not None else 0.0,
         "snaps": snaps
     }
 
