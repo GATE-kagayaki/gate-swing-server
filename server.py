@@ -2390,8 +2390,8 @@ def calc_stability_idx(raw: Dict[str, Any]) -> int:
     head = float(raw["head"]["mean"])
     knee = float(raw["knee"]["mean"])
 
-    a = _norm_inverse(head, 0.06, 0.15)
-    b = _norm_inverse(knee, 0.10, 0.20)
+    a = _norm_inverse(head, 3.0, 8.0)
+    b = _norm_inverse(knee, 4.0, 10.0)
     return int(round((a + b) / 2.0 * 100))
 
 
