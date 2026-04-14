@@ -1995,7 +1995,8 @@ def build_free_07(raw: Dict[str, Any]) -> Dict[str, Any]:
     w_mean = float(w.get("mean", 0.0))
     w_std = float(w.get("std", 0.0))
 
-    xf_mean = float(xf.get("mean", 0.0))
+    # 捻転差は無料版も max 基準に統一
+    xf_max = float(xf.get("max", 0.0))
 
     head_mean = float(head.get("mean", 0.0))
     knee_mean = float(knee.get("mean", 0.0))
@@ -2026,10 +2027,10 @@ def build_free_07(raw: Dict[str, Any]) -> Dict[str, Any]:
     elif w_mean > 80:
         tags.append("コック過多")
 
-    # 捻転差
-    if xf_mean < 30:
+    # 捻転差（max基準）
+    if xf_max < 30:
         tags.append("捻転差不足")
-    elif xf_mean > 70:
+    elif xf_max > 70:
         tags.append("捻転差過多")
 
     # 安定性
@@ -2072,10 +2073,10 @@ def build_free_07(raw: Dict[str, Any]) -> Dict[str, Any]:
         lines.append(f"本動画では膝ブレが mean {knee_mean:.1f}% でやや大きく、下半身の土台の再現性に影響しています。")
 
     if "捻転差不足" in priorities:
-        lines.append(f"本動画では捻転差が mean {xf_mean:.1f}° でやや小さく、切り返しで力を溜める余地があります。")
+        lines.append(f"本動画では捻転差が max {xf_max:.1f}° でやや小さく、切り返しで力を溜める余地があります。")
 
     if "捻転差過多" in priorities:
-        lines.append(f"本動画では捻転差が mean {xf_mean:.1f}° で大きめで、肩と腰の連動を整える余地があります。")
+        lines.append(f"本動画では捻転差が max {xf_max:.1f}° で大きめで、肩と腰の連動を整える余地があります。")
 
     if "腰回転過多" in priorities:
         lines.append(f"本動画では腰回転が mean {hip_mean:.1f}° で大きめで、下半身主導が強く出ています。")
@@ -2112,7 +2113,7 @@ def build_free_07(raw: Dict[str, Any]) -> Dict[str, Any]:
     if knee_mean <= 10.0:
         good_points.append("膝ブレは比較的抑えられており、下半身は大きく流れていません。")
 
-    if xf_mean >= 30:
+    if xf_max >= 30:
         good_points.append("捻転差は確保できており、切り返しの準備はできています。")
 
     if spine_flag == "ok":
