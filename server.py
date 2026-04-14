@@ -842,46 +842,61 @@ def analyze_swing_with_mediapipe(video_path, overlay_out_path=None):
                     dy = smooth_shoulder_mid[1] - smooth_hip_mid[1]
                     spine_angle = math.degrees(math.atan2(abs(dx), abs(dy) + 1e-6))
 
-            # --- A. アドレス安定区間を検出してベース確保 ---
-            is_pose_visible = (
-                lm[LS].visibility >= 0.7 and
-                lm[RS].visibility >= 0.7 and
-                lm[LH].visibility >= 0.7 and
-                lm[RH].visibility >= 0.7 and
-                lm[NO].visibility >= 0.7 and
-                lm[LK].visibility >= 0.7
-            )
+           # --- A. アドレス安定区間を検出してベース確保 ---
 
-            if not analysis_started and is_pose_visible and spine_angle > 10:
-                address_buffer.append({
-                    "nose": curr_nose,
-                    "lknee": curr_lknee,
-                    "spine": spine_angle,
-                    "lwrist_y": curr_lwrist[1],
-                })
-                if len(address_buffer) > 8:
-                    address_buffer.pop(0)
+           is_pose_visible = (
+               lm[LS].visibility >= 0.7 and
+               lm[RS].visibility >= 0.7 and
+               lm[LH].visibility >= 0.7 and
+               lm[RH].visibility >= 0.7 and
+               lm[NO].visibility >= 0.7 and
+               lm[LK].visibility >= 0.7
+           )
 
-            if not analysis_started and len(address_buffer) >= 5:
-                wrist_move = abs(address_buffer[-1]["lwrist_y"] - address_buffer[0]["lwrist_y"])
+           # 前傾角に依存せず、姿勢が見えていればバッファ
+           if not analysis_started and is_pose_visible:
 
-                # アドレス後に手元が動き始めたら解析開始
-                if wrist_move > 0.0012:
-                    base_nose = (
-                        sum(f["nose"][0] for f in address_buffer) / len(address_buffer),
-                        sum(f["nose"][1] for f in address_buffer) / len(address_buffer),
-                        sum(f["nose"][2] for f in address_buffer) / len(address_buffer),
-                    )
-                    base_lknee = (
-                        sum(f["lknee"][0] for f in address_buffer) / len(address_buffer),
-                        sum(f["lknee"][1] for f in address_buffer) / len(address_buffer),
-                        sum(f["lknee"][2] for f in address_buffer) / len(address_buffer),
-                    )
-                    base_spine_angle = sum(f["spine"] for f in address_buffer) / len(address_buffer)
+               address_buffer.append({
+                   "nose": curr_nose,
+                   "lknee": curr_lknee,
+                   "spine": spine_angle,
+                   "lwrist_y": curr_lwrist[1],
+               })
 
-                    analysis_started = True
-                    start_frame = total_frames
+               if len(address_buffer) > 8:
+                   address_buffer.pop(0)
 
+
+           # バッファが溜まったら開始判定
+           if not analysis_started and len(address_buffer) >= 5:
+
+               wrist_move = abs(
+                   address_buffer[-1]["lwrist_y"]
+                    -address_buffer[0]["lwrist_y"]
+               )
+
+               # 手元が動き始めたら開始
+               if wrist_move > 0.003:
+
+                   base_nose = (
+                       sum(f["nose"][0] for f in address_buffer) / len(address_buffer),
+                       sum(f["nose"][1] for f in address_buffer) / len(address_buffer),
+                       sum(f["nose"][2] for f in address_buffer) / len(address_buffer),
+                   )
+
+                   base_lknee = (
+                       sum(f["lknee"][0] for f in address_buffer) / len(address_buffer),
+                       sum(f["lknee"][1] for f in address_buffer) / len(address_buffer),
+                       sum(f["lknee"][2] for f in address_buffer) / len(address_buffer),
+                   )
+
+                   base_spine_angle = (
+                       sum(f["spine"] for f in address_buffer) / len(address_buffer)
+                   )
+
+                   analysis_started = True
+                   start_frame = total_frames
+                   
             # 解析開始前はスキップ
             if not analysis_started:
                 if writer is not None and frame is not None:
