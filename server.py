@@ -3159,7 +3159,7 @@ def task_handler():
             "overlay_video_url": overlay_url,
             "overlay_video_download_url": overlay_download_url,
             "completed_at": datetime.now(timezone.utc).isoformat(),
-        }, merge=True)
+        }, merge=False)
 
         from linebot.models import FlexSendMessage
         from urllib.parse import quote
