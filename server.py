@@ -1713,22 +1713,32 @@ def collect_tag_counter(analysis: Dict[str, Any]) -> Counter:
 
 
 def judge_swing_type(tag_counter: Counter) -> str:
-    # 追加パターン（おすすめの2つ）
     hand = tag_counter["コック過多"] + tag_counter["コック不足"]
-    lower = tag_counter["腰回転過多"] + tag_counter["腰回転不足"] + tag_counter["膝ブレ大"] + tag_counter["下半身不安定"]
+    lower = (
+        tag_counter["腰回転過多"]
+        + tag_counter["腰回転不足"]
+        + tag_counter["膝ブレ大"]
+        + tag_counter["下半身不安定"]
+    )
+    stability = (
+        tag_counter["膝ブレ大"]
+        + tag_counter["頭部ブレ大"]
+        + tag_counter["上半身不安定"]
+    )
 
-    # 既存の主要パターン
     if tag_counter["捻転差不足"] >= 2:
         return "体幹パワー不足型"
-    if tag_counter["膝ブレ大"] + tag_counter["頭部ブレ大"] >= 2:
+
+    if stability >= 2:
         return "安定性不足型"
+
     if tag_counter["肩回転過多"] + tag_counter["コック過多"] >= 2:
         return "操作過多型"
 
-    # 新規（条件は控えめに）
-    if hand >= 1 and (tag_counter["捻転差不足"] == 0) and (lower == 0):
+    if hand >= 1 and tag_counter["捻転差不足"] == 0 and lower == 0:
         return "手元主因型"
-    if lower >= 2 and (tag_counter["捻転差不足"] == 0):
+
+    if lower >= 2 and tag_counter["捻転差不足"] == 0:
         return "下半身主因型"
 
     return "バランス型"
@@ -1747,15 +1757,16 @@ def extract_priorities(tag_counter: Counter, max_items: int = 2) -> List[str]:
         "肩回転不足",
         "捻転差過多",
     ]
+
     result: List[str] = []
+
     for t in order:
-        if tag_counter.get(t, 0) > 0:
-            if t not in result:
-                result.append(t)
+        if tag_counter.get(t, 0) > 0 and t not in result:
+            result.append(t)
         if len(result) >= max_items:
             break
-    return result
 
+    return result
 
 def _summary_template(swing_type: str) -> List[str]:
     # 07の「型」別テンプレ（短め・具体・余計な主張はしない）
