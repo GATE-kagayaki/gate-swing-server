@@ -352,6 +352,8 @@ function render09(secData) {
         reportContent.classList.remove("hidden");
 
         // ★ここ追加
+        window.reportAddressPosture = data.address_posture;
+
         if (data.overlay_video_url) {
           renderVideo(data.overlay_video_url, data.overlay_video_download_url);
         }
