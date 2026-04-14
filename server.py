@@ -2837,6 +2837,26 @@ def judge_address_posture(raw: Dict[str, Any]) -> Dict[str, str]:
         "label": "適正",
         "comment": "回転しやすい前傾角が作れています。"
     }
+
+def judge_spine_maintain_display(raw: Dict[str, Any]) -> Dict[str, str]:
+    flag = judge_spine_flag(raw)
+
+    if flag == "ok":
+        return {
+            "label": "安定",
+            "comment": "前傾角の変化は小さく、回転動作の再現性は安定しています。"
+        }
+
+    if flag == "warn":
+        return {
+            "label": "やや不安定",
+            "comment": "前傾角の変化がやや見られ、動作の再現性に影響する可能性があります。"
+        }
+
+    return {
+        "label": "不安定",
+        "comment": "前傾角の変化がやや大きく、回転動作の安定性に影響しています。"
+    }
     
 def build_analysis(raw: Dict[str, Any], premium: bool, report_id: str, user_inputs: Dict[str, Any]) -> Dict[str, Any]:
     analysis: Dict[str, Any] = {"01": build_section_01(raw)}
