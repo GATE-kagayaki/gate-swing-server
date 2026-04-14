@@ -3116,6 +3116,7 @@ def task_handler():
 
         analysis = build_analysis(raw=raw, premium=premium, report_id=report_id, user_inputs=user_inputs)
         address_posture = judge_address_posture(raw)
+        spine_maintain = judge_spine_maintain_display(raw)
         
        
         report_ref.set({
