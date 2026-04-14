@@ -3096,6 +3096,7 @@ def task_handler():
             "status": "DONE",
             "raw": raw,
             "analysis": analysis,
+            "address_posture": address_posture,
             "overlay_video_url": overlay_url,
             "overlay_video_download_url": overlay_download_url,
             "completed_at": datetime.now(timezone.utc).isoformat(),
