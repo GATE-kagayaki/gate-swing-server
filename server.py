@@ -32,7 +32,6 @@ from google.cloud import tasks_v2
 from google.api_core.exceptions import NotFound, PermissionDenied
 
 from google.cloud import storage   # ★追加（動画アップロード用）
-from datetime import timedelta     # ★追加（URL期限用）
 import google.auth
 from google.auth.transport.requests import Request
 
