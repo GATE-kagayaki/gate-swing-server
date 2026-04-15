@@ -1826,38 +1826,33 @@ def extract_priorities(tag_counter: Counter, max_items: int = 2) -> List[str]:
     
     
 def generate_llm_comment_07(payload: Dict[str, Any]) -> str:
+
     prompt = f"""
 あなたはプロのゴルフコーチです。
-スタイルは「寄り添い型」です。
+初心者にも分かる言葉で説明してください。
 
-以下はスイング解析の結果です。
-
-【最優先テーマ】
+最優先テーマ:
 {payload["priority"]}
 
-【スイングタイプ】
-{payload["swing_type"]}
+数値:
+腰回転 {payload["hip"]}
+捻転差 {payload["x_factor"]}
+前傾 {payload.get("spine", "unknown")}
+頭部 {payload["head"]}
+膝 {payload["knee"]}
 
-【計測データ】
-肩回転: {payload["shoulder"]}
-腰回転: {payload["hip"]}
-手首コック: {payload["wrist"]}
-頭部: {payload["head"]}
-膝: {payload["knee"]}
-捻転差: {payload["x_factor"]}
-前傾: {payload["spine_flag"]}
-
-【タグ】
-{payload["tags"]}
-
-【指示】
-・なぜこの課題が最優先なのか
-・なぜこのドリルにつながるのか（※ドリル名は出さなくてOK）
-・改善するとどうなるか
-・このままだとどうなるか
-
-を、自然な日本語で説明してください。
-専門用語は最小限にしてください。
+条件:
+・3文でまとめる
+・1文目は良い点
+・2文目は課題
+・3文目は「08のドリルを推奨します」で終える
+・120文字以内
+・専門用語は最小限
+・箇条書き禁止
+・記号禁止
+・自然な日本語
+・短く簡潔に
+・出力は文章のみ
 """
 
     return call_llm(prompt)
