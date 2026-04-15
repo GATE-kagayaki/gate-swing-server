@@ -25,7 +25,6 @@ from flask import Flask, request, jsonify, abort, render_template, render_templa
 
 from linebot import LineBotApi, WebhookHandler
 from linebot.exceptions import InvalidSignatureError, LineBotApiError
-from linebot.models import MessageEvent, VideoMessage, TextSendMessage
 
 from google.cloud import firestore
 from google.cloud import tasks_v2
