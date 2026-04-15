@@ -1823,7 +1823,7 @@ def generate_llm_comment_07(payload: Dict[str, Any]) -> str:
 頭部: {payload["head"]}
 膝: {payload["knee"]}
 捻転差: {payload["x_factor"]}
-前傾: {payload["spine"]}
+前傾: {payload["spine_flag"]}
 
 【タグ】
 {payload["tags"]}
