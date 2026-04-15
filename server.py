@@ -1903,6 +1903,8 @@ def build_paid_07_from_analysis(analysis: Dict[str, Any], raw: Dict[str, Any]) -
         p_str = "／".join(priorities)
         lines.append(f"数値上の最優先テーマは「{p_str}」です。")
 
+        print("### LLM BLOCK ENTERED ###")
+
         try:
             print("LLM CALL START")  # ←ここに追加（確認用）
 
