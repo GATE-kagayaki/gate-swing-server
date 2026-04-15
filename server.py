@@ -1835,6 +1835,14 @@ def _summary_template(swing_type: str) -> List[str]:
         "「最優先テーマ」だけに集中すると、変化が最も出やすくなります。",
     ]
 
+def generate_summary_07(priority, reason, drill_intent):
+    return (
+        f"{priority}の傾向が見られ、{reason}状態です。"
+        f"そのため、{drill_intent}ことが重要です。"
+        "この動きが整うとスイングの再現性が高まりやすくなります。"
+        "一方でこの状態が続くと、ミスのばらつきにつながる可能性があります。"
+    )
+
 
 def build_paid_07_from_analysis(analysis: Dict[str, Any], raw: Dict[str, Any]) -> Dict[str, Any]:
     c = collect_tag_counter(analysis)
