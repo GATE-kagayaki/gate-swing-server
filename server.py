@@ -1829,7 +1829,7 @@ def generate_llm_comment_07(payload: Dict[str, Any]) -> str:
 
     prompt = f"""
 あなたはプロのゴルフコーチです。
-初心者にも分かる言葉で説明してください。
+寄り添い型で説明してください。
 
 最優先テーマ:
 {payload["priority"]}
@@ -1842,21 +1842,20 @@ def generate_llm_comment_07(payload: Dict[str, Any]) -> str:
 膝 {payload["knee"]}
 
 条件:
-・3文でまとめる
+・4文でまとめる
 ・1文目は良い点
 ・2文目は課題
-・3文目は「08のドリルを推奨します」で終える
-・120文字以内
+・3文目はこのままだとどうなるか
+・4文目は08のドリルを推奨する理由
+・100〜150文字
 ・専門用語は最小限
 ・箇条書き禁止
 ・記号禁止
 ・自然な日本語
-・短く簡潔に
 ・出力は文章のみ
 """
 
     return call_llm(prompt)
-
 
 def build_paid_07_from_analysis(analysis: Dict[str, Any], raw: Dict[str, Any]) -> Dict[str, Any]:
     c = collect_tag_counter(analysis)
