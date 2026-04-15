@@ -1802,39 +1802,43 @@ def extract_priorities(tag_counter: Counter, max_items: int = 2) -> List[str]:
 
     return result[:max_items]
     
-def _summary_template(swing_type: str) -> List[str]:
-    # 07の「型」別テンプレ（短め・具体・余計な主張はしない）
-    if swing_type == "体幹パワー不足型":
-        return [
-            "回転量を増やすことではなく、肩と腰の動き出しの順序が結果を左右しています。",
-            "捻転差が小さい状態は、切り返しで“溜め”が残らず、加速が手元に寄りやすくなります。",
-        ]
-    if swing_type == "安定性不足型":
-        return [
-            "最大の課題は回転量ではなく、土台と軸が保てているかです。",
-            "軸が揺れると、打点やフェース向きの再現性に影響が出やすくなります。",
-        ]
-    if swing_type == "操作過多型":
-        return [
-            "スイングの主役が体幹よりも手元側に寄りやすい状態です。",
-            "操作が増えると、方向と打点のズレが連動して大きくなります。",
-        ]
-    if swing_type == "手元主因型":
-        return [
-            "体の回転よりも、手元の角度変化が結果に強く影響しています。",
-            "手元の介入度が高いほど、フェース管理が難しくなりミス幅が広がります。",
-        ]
-    if swing_type == "下半身主因型":
-        return [
-            "回転量そのものより、下半身がどの順序で動いているかが質を分けます。",
-            "下半身の土台が崩れると、上半身が補正に回り、操作が増えやすくなります。",
-        ]
-    # バランス型
-    return [
-        "大きな破綻が少なく、テーマを絞って改善を積み上げやすい状態です。",
-        "「最優先テーマ」だけに集中すると、変化が最も出やすくなります。",
-    ]
+    
+def generate_llm_comment_07(payload: Dict[str, Any]) -> str:
+    prompt = f"""
+あなたはプロのゴルフコーチです。
+スタイルは「寄り添い型」です。
 
+以下はスイング解析の結果です。
+
+【最優先テーマ】
+{payload["priority"]}
+
+【スイングタイプ】
+{payload["swing_type"]}
+
+【計測データ】
+肩回転: {payload["shoulder"]}
+腰回転: {payload["hip"]}
+手首コック: {payload["wrist"]}
+頭部: {payload["head"]}
+膝: {payload["knee"]}
+捻転差: {payload["x_factor"]}
+前傾: {payload["spine"]}
+
+【タグ】
+{payload["tags"]}
+
+【指示】
+・なぜこの課題が最優先なのか
+・なぜこのドリルにつながるのか（※ドリル名は出さなくてOK）
+・改善するとどうなるか
+・このままだとどうなるか
+
+を、自然な日本語で説明してください。
+専門用語は最小限にしてください。
+"""
+
+    return call_llm(prompt)
 
 
 def build_paid_07_from_analysis(analysis: Dict[str, Any], raw: Dict[str, Any]) -> Dict[str, Any]:
