@@ -1835,13 +1835,6 @@ def _summary_template(swing_type: str) -> List[str]:
         "「最優先テーマ」だけに集中すると、変化が最も出やすくなります。",
     ]
 
-def generate_summary_07(priority, reason, drill_intent):
-    return (
-        f"{priority}の傾向が見られ、{reason}状態です。"
-        f"そのため、{drill_intent}ことが重要です。"
-        "この動きが整うとスイングの再現性が高まりやすくなります。"
-        "一方でこの状態が続くと、ミスのばらつきにつながる可能性があります。"
-    )
 
 
 def build_paid_07_from_analysis(analysis: Dict[str, Any], raw: Dict[str, Any]) -> Dict[str, Any]:
@@ -1951,23 +1944,7 @@ def build_paid_07_from_analysis(analysis: Dict[str, Any], raw: Dict[str, Any]) -
     if priorities:
         p_str = "／".join(priorities)
         lines.append(f"数値上の最優先テーマは「{p_str}」です。")
-
-        # ★ここに追加
-        try:
-            priority = priorities[0]
-
-            # 仮でOK（後で精度上げる）
-            reason = "腰の回転量がやや大きく、上半身とのバランスが崩れやすい状態"
-            drill_intent = "下半身を安定させながら上半身を回す動き"
-
-            llm_text = generate_summary_07(priority, reason, drill_intent)
-
-            lines.append("")
-            lines.append(llm_text)
-
-        except Exception as e:
-            logging.exception("LLM summary failed: %s", e)
-        
+               
     else:
         lines.append("数値上の優先テーマはありません。")
 
