@@ -1941,8 +1941,25 @@ def build_paid_07_from_analysis(analysis: Dict[str, Any], raw: Dict[str, Any]) -
     lines.append("")
 
     if priorities:
-        p_str = "／".join(priorities)
-        lines.append(f"数値上の最優先テーマは「{p_str}」です。")
+    p_str = "／".join(priorities)
+    lines.append(f"数値上の最優先テーマは「{p_str}」です。")
+
+    # ★ここに追加
+    try:
+        priority = priorities[0]
+
+        # 仮でOK（後で精度上げる）
+        reason = "腰の回転量がやや大きく、上半身とのバランスが崩れやすい状態"
+        drill_intent = "下半身を安定させながら上半身を回す動き"
+
+        llm_text = generate_summary_07(priority, reason, drill_intent)
+
+        lines.append("")
+        lines.append(llm_text)
+
+    except Exception as e:
+        logging.exception("LLM summary failed: %s", e)
+        
     else:
         lines.append("数値上の優先テーマはありません。")
 
