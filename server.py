@@ -43,9 +43,6 @@ stripe.api_key = os.getenv("STRIPE_SECRET_KEY")
 
 from openai import OpenAI
 
-
-from openai import OpenAI
-
 def call_llm(prompt: str) -> str:
     client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
     res = client.chat.completions.create(
