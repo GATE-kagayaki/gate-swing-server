@@ -41,6 +41,22 @@ import stripe
 # 本番環境では環境変数から取得することを推奨します
 stripe.api_key = os.getenv("STRIPE_SECRET_KEY")
 
+from openai import OpenAI
+
+client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
+
+
+def call_llm(prompt: str) -> str:
+    res = client.chat.completions.create(
+        model="gpt-4o-mini",
+        messages=[
+            {"role": "system", "content": "あなたはプロのゴルフコーチです。寄り添い型で解説してください。"},
+            {"role": "user", "content": prompt}
+        ],
+        temperature=0.7,
+    )
+    return res.choices[0].message.content
+
 def get_cancel_portal_url(customer_id: str):
     """
     ユーザー専用の解約・管理ポータルURLを生成
