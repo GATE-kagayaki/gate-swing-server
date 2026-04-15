@@ -1850,108 +1850,48 @@ def build_paid_07_from_analysis(analysis: Dict[str, Any], raw: Dict[str, Any]) -
     frames = _frames(raw)
     spine_flag = judge_spine_flag(raw)
 
+    llm_payload = {
+        "priority": priorities[0] if priorities else "不明",
+        "swing_type": swing_type,
+
+        "shoulder": sh,
+        "head": h,
+        "knee": k,
+        "hip": raw.get("hip", {}),
+        "wrist": raw.get("wrist", {}),
+        "x_factor": xf,
+        "spine_flag": spine_flag,
+
+        "tags": dict(c),
+
+        "confidence": conf,
+        "frames": frames,
+
+        "raw_metrics": raw,
+
+        "coach_style": "empathetic"
+    }
+
     lines: List[str] = []
     lines.append(f"今回のスイングは「{swing_type}」です（confidence {conf:.3f} / 区間 {frames} frames）。")
     lines.append("※ 初回の方は、まずは「最優先テーマ」だけを確認してください。")
     lines.append("")
-
-    h_mean = h.get("mean", 0)
-    k_mean = k.get("mean", 0)
-
-    # 軸の安定性（やや緩和）
-    if h_mean > 6.5:
-
-        if spine_flag == "bad":
-            lines.append(
-                f"【軸の安定性】頭部の移動量（{h_mean:.1f}%）がやや大きく、"
-                "インパクト時の再現性に影響しやすい状態です。"
-                " また、前傾角の変化も重なり、回転動作の安定性に一部影響しています。"
-            )
-
-        elif spine_flag == "warn":
-            lines.append(
-                f"【軸の安定性】頭部の移動量（{h_mean:.1f}%）にややばらつきが見られます。"
-                " 前傾角にも軽微な変化があり、場面によって再現性に差が出ています。"
-            )
-
-        else:
-            lines.append(
-                f"【軸の安定性】頭部の移動量（{h_mean:.1f}%）がやや大きく、"
-                "スイング軸の再現性に影響しています。"
-            )
-
-    elif k_mean > 10.0:
-        lines.append(
-            f"【軸の安定性】膝の移動量（{k_mean:.1f}%）がやや大きく、"
-            "下半身の土台の再現性に影響しています。"
-        )
-
-    elif spine_flag == "bad":
-        lines.append(
-            "【軸の安定性】前傾角の変化がやや大きく、"
-            "回転動作の再現性に影響しています。"
-        )
-
-    elif spine_flag == "warn":
-        lines.append(
-            "【軸の安定性】前傾角に軽微な変化が見られますが、"
-            "大きな崩れではありません。"
-        )
-
-    else:
-        lines.append(
-            "【軸の安定性】頭部・下半身ともにブレは比較的抑えられており、"
-            "前傾維持も概ね安定しています。"
-        )
-
-    xf_max = xf.get("max", 0)
-
-    xf_max = xf.get("max", 0)
-
-    # パワー効率（やや緩和）
-    if xf_max < 30:
-        lines.append(
-            f"【パワー効率】捻転差（max {xf_max:.1f}°）はやや小さめで、"
-            " 切り返しで力を溜める余地があります。"
-        )
-    elif xf_max > 70:
-        lines.append(
-            f"【パワー効率】捻転差（max {xf_max:.1f}°）は大きめで、"
-            " 肩と腰の連動を整えるとさらに安定しやすくなります。"
-        )
-    else:
-        lines.append(
-            f"【パワー効率】捻転差（max {xf_max:.1f}°）は十分に確保されており、"
-            " 切り返しに必要な準備はできています。"
-        )
-
-    sh_std = sh.get("std", 0)
-
-    # 再現性（やや緩和）
-    if sh_std > 18.0:
-        lines.append(
-            f"【再現性】肩回転の深さにばらつき（σ {sh_std:.1f}°）が見られます。"
-            " トップ位置の再現性に影響しやすい状態です。"
-        )
-    elif sh_std > 12.0:
-        lines.append(
-            f"【再現性】肩回転の深さにややばらつき（σ {sh_std:.1f}°）があり、"
-            " ミート率の安定性を高める余地があります。"
-        )
-
-    lines.append("")
-
+    
     if priorities:
         p_str = "／".join(priorities)
         lines.append(f"数値上の最優先テーマは「{p_str}」です。")
+
+        try:
+            llm_text = generate_llm_comment_07(llm_payload)
+
+            lines.append("")
+            lines.append(llm_text)
+
+        except Exception as e:
+            logging.exception("LLM summary failed: %s", e)
                
     else:
         lines.append("数値上の優先テーマはありません。")
-
-    if "前傾維持不安定" in priorities:
-        lines.append("特に前傾維持の崩れが大きいため、切り返しからインパクトまで上体角度を保つ意識が重要です。")
-    elif "前傾維持にばらつき" in priorities:
-        lines.append("特に前傾維持にややばらつきがあるため、場面ごとの上体角度の再現性を高めたい状態です。")
 
     lines.append("")
     lines.append("08では優先テーマに直結するドリルを選択し、09では動きを安定させやすいシャフト特性を提示します。")
