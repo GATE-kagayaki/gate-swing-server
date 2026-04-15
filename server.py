@@ -40,24 +40,28 @@ import stripe
 stripe.api_key = os.getenv("STRIPE_SECRET_KEY")
 
 from openai import OpenAI
-
+client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
 def call_llm(prompt: str) -> str:
-    client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
-    res = client.chat.completions.create(
-        model="gpt-4o-mini",
-        messages=[
-            {
-                "role": "system",
-                "content": "あなたはプロのゴルフコーチです。寄り添い型で、初心者にも分かる言葉で説明してください。"
-            },
-            {
-                "role": "user",
-                "content": prompt
-            }
-        ],
-        temperature=0.7,
-    )
-    return res.choices[0].message.content
+    try:
+        res = client.chat.completions.create(
+            model="gpt-5.4-mini",
+            messages=[
+                {
+                    "role": "system",
+                    "content": "あなたはプロのゴルフコーチです。寄り添い型で、初心者にも分かる言葉で説明してください。"
+                },
+                {
+                    "role": "user",
+                    "content": prompt
+                }
+            ],
+            temperature=0.7,
+        )
+        return res.choices[0].message.content
+    except Exception as e:
+        # エラーが起きたらログに残し、ユーザーには定型文を返す
+        logging.error(f"LLM Error: {e}")
+        return "（現在、詳細なコメントを生成できません。ドリルを確認して練習を進めてみましょう！）"
 
 def get_cancel_portal_url(customer_id: str):
     """
