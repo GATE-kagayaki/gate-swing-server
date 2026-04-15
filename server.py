@@ -1886,14 +1886,18 @@ def build_paid_07_from_analysis(analysis: Dict[str, Any], raw: Dict[str, Any]) -
         lines.append(f"数値上の最優先テーマは「{p_str}」です。")
 
         try:
+            print("LLM CALL START")  # ←ここに追加（確認用）
+
             llm_text = generate_llm_comment_07(llm_payload)
+
+            print("LLM CALL END")    # ←ここに追加（確認用）
 
             lines.append("")
             lines.append(llm_text)
 
         except Exception as e:
             logging.exception("LLM summary failed: %s", e)
-               
+            
     else:
         lines.append("数値上の優先テーマはありません。")
 
