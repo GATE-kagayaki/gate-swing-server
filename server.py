@@ -1401,7 +1401,7 @@ def build_paid_02_shoulder(raw: Dict[str, Any], seed: str) -> Dict[str, Any]:
     # ==========================================================
     # 数値サマリーと戻り値の構築
     # ==========================================================
-    summary_text = f"{sh['max']:.1f}° / 平均{sh['mean']:.1f}° / ばらつき{sh['std']:.1f}° / 捻転差{xf['max']:.1f}°"
+    summary_text = f"最大{sh['max']:.1f}° / 平均{sh['mean']:.1f}° / ばらつき{sh['std']:.1f}° / 捻転差{xf['max']:.1f}°"
 
     # ★修正箇所：内訳の最後に総合評価（LLMコメント）を結合
     new_layout_text = (
@@ -1585,7 +1585,7 @@ def build_paid_03_hip(raw: Dict[str, Any], seed: str) -> Dict[str, Any]:
     # ==========================================================
     # 数値サマリーと戻り値の構築
     # ==========================================================
-    summary_text = f"{hip['max']:.1f}° / 平均{hip['mean']:.1f}° / ばらつき{hip['std']:.1f}° / 捻転差{xf['max']:.1f}°"
+    summary_text = f"最大{hip['max']:.1f}° / 平均{hip['mean']:.1f}° / ばらつき{hip['std']:.1f}° / 捻転差{xf['max']:.1f}°"
 
     new_layout_text = (
         f"回転量：{rotation_eval}\n"
@@ -1703,6 +1703,7 @@ def build_paid_04_wrist(raw: Dict[str, Any], seed: str) -> Dict[str, Any]:
         amount_comment = "バックスイングでのコック量がやや不足しており、力を溜める余地があります"
     elif w_max > 95:
         amount_eval = "深め"
+        amount_comment = "コックが深く入っており、飛距離のポテンシャルは高いですが、振り遅れに注意が必要です"
     else:
         amount_eval = "適正"
         amount_comment = "トップでは十分なコックが入っており、ヘッドスピードにつながる土台があります"
@@ -1768,7 +1769,7 @@ def build_paid_04_wrist(raw: Dict[str, Any], seed: str) -> Dict[str, Any]:
     # 数値サマリーと戻り値の構築
     # ==========================================================
     # ユーザー希望の数値サマリー形式：Max / Mean / ばらつき
-    summary_text = f"{w_max:.1f}° / 平均{w_mean:.1f}° / ばらつき{w_std:.1f}°"
+    summary_text = f"最大{w_max:.1f}° / 平均{w_mean:.1f}° / ばらつき{w_std:.1f}°"
 
     new_layout_text = (
         f"コック量：{amount_eval}\n"
@@ -1938,7 +1939,7 @@ def build_paid_05_head(raw: Dict[str, Any], seed: str) -> Dict[str, Any]:
     # ==========================================================
     # 数値サマリーと戻り値の構築
     # ==========================================================
-    summary_text = f"{h['max']:.1f}% / 平均{h['mean']:.1f}% / ばらつき{h['std']:.1f}%"
+    summary_text = f"最大{h['max']:.1f}% / 平均{h['mean']:.1f}% / ばらつき{h['std']:.1f}%"
 
     new_layout_text = (
         f"移動量：{move_eval}\n"
@@ -2105,7 +2106,7 @@ def build_paid_06_knee(raw: Dict[str, Any], seed: str) -> Dict[str, Any]:
     # ==========================================================
     # 数値サマリーと戻り値の構築
     # ==========================================================
-    summary_text = f"{k['max']:.1f}% / 平均{k['mean']:.1f}% / ばらつき{k['std']:.1f}%"
+    summary_text = f"最大{k['max']:.1f}% / 平均{k['mean']:.1f}% / ばらつき{k['std']:.1f}%"
 
     new_layout_text = (
         f"移動量：{move_eval}\n"
