@@ -1824,63 +1824,135 @@ def judge_head(raw: Dict[str, Any]) -> Dict[str, Any]:
 
     return {"tags": tags}
 
+import json
+import logging
+from typing import Dict, Any, List
+
+def generate_llm_comment_05(payload: Dict[str, Any]) -> str:
+    prompt = f"""
+あなたはプロのゴルフコーチです。
+寄り添い型で、前向きな文脈で説明してください。
+
+以下の頭部の安定性に関する計測データと個別評価を元に、ユーザーに対する「総合評価」を生成してください。
+
+【計測データと個別評価】
+・頭部の移動量(mean): {payload['h_mean']:.1f}% -> 評価: {payload['move_eval']} ({payload['move_comment']})
+・頭部位置の安定性(std): {payload['h_std']:.1f}% -> 評価: {payload['stability_eval']} ({payload['stability_comment']})
+・下半身・前傾の影響: 評価: {payload['connection_eval']} ({payload['connection_comment']})
+
+【意識すること】
+・良い点があるからこそ改善すると伸びる、という前向きな文脈にする
+・専門用語をそのまま使いすぎず、イメージしやすい言葉に言い換える
+・出力はJSON形式のみとする
+
+【出力形式】
+以下の2つのキーを持つJSON形式のテキストのみを出力してください。Markdownの```jsonなどの装飾は不要です。
+{{
+    "overall_eval": "良好 または やや改善余地あり または 改善余地あり",
+    "overall_comment": "上記のデータを踏まえた、ユーザーへの総合的なアドバイスを簡潔に（50文字〜80文字程度）"
+}}
+"""
+    return call_llm(prompt)
+
+
 def build_paid_05_head(raw: Dict[str, Any], seed: str) -> Dict[str, Any]:
     j = judge_head(raw)
     h = raw["head"]
     k = raw["knee"]
     conf = _conf(raw)
 
-    good: List[str] = []
-    bad: List[str] = []
-
     spine_flag = judge_spine_flag(raw)
 
-    # 良い点
+    # ==========================================================
+    # 新しい構成：評価の内訳ロジック（ルールベースで事実を確定）
+    # ==========================================================
+    # 1. 移動量（mean）
+    move_eval = ""
+    move_comment = ""
     if h["mean"] <= 4.5:
-        good.append("頭部の位置は全体を通して安定しており、スイング軸の再現性は良好です。")
+        move_eval = "良好"
+        move_comment = "頭部の位置は全体を通して安定しており、スイング軸の再現性は非常に良好です"
     elif h["mean"] <= 6.0:
-        good.append("頭部の移動は一定範囲に収まっており、軸の安定性は概ね保たれています。")
+        move_eval = "一定範囲内"
+        move_comment = "頭部の移動は一定範囲に収まっており、軸の安定性は概ね保たれています"
+    else:
+        move_eval = "大きめ"
+        move_comment = "頭部の移動量がやや大きく、インパクト時の軸の再現性に影響しやすい状態です"
 
-    if h["mean"] <= 5.0 and k["mean"] <= 6.5:
-        good.append("頭部と下半身の上下動が比較的整っており、ミート率を支える土台があります。")
+    # 2. 安定性（std / σ）
+    stability_eval = ""
+    stability_comment = ""
+    if h["std"] <= 3.5:
+        stability_eval = "安定"
+        stability_comment = "各場面での頭の位置が揃っており、スイング全体の再現性が確保されています"
+    else:
+        stability_eval = "やや不安定"
+        stability_comment = "場面によって頭の位置にばらつきがあり、スイングの再現性にムラが出やすい状態です"
 
-    if not good:
-        good = ["頭部位置は大きく崩れておらず、基本的な軸の土台はあります。"]
-
-    # 改善点
-    if h["mean"] > 6.0:
-        bad.append(f"頭部の移動量は {h['mean']:.1f}% とやや大きく、インパクト時の軸の再現性に影響しやすい状態です。")
-
-    if h["std"] > 3.5:
-        bad.append(f"頭部位置のばらつき（σ {h['std']:.1f}%）がやや大きく、場面ごとの再現性にムラがあります。")
-
+    # 3. 連動性（下半身・前傾の影響）
+    connection_eval = ""
+    connection_comment = ""
     if k["mean"] > 10.0:
-        bad.append(f"膝ブレは mean {k['mean']:.1f}% と大きめで、頭部の安定性にも影響している可能性があります。")
-
-    if not bad:
-        bad = ["大きな改善点は特にありません。"]
-
-    # プロ目線
-    pro_lines: List[str] = []
-    pro_lines.append("頭部は完全に止めることよりも、動いても同じ位置関係に戻れるかが重要な評価ポイントです。")
-
-    if h["mean"] > 6.0:
-        pro_lines.append("本動画では頭部の移動がやや大きく、軸の再現性に影響しやすい状態です。")
+        connection_eval = "下半身の影響あり"
+        connection_comment = "膝のブレが大きく、それが頭部の安定性（スイング軸）にも影響している可能性があります"
+    elif spine_flag == "bad" or spine_flag == "warn":
+        connection_eval = "前傾の影響あり"
+        connection_comment = "前傾姿勢の維持に課題があり、それが頭部の上下動やブレに繋がっています"
     else:
-        pro_lines.append("本動画では頭部の位置は比較的安定しており、軸の再現性は概ね保たれています。")
+        connection_eval = "良好"
+        connection_comment = "頭部と下半身の連動が整っており、ミート率を支える安定した土台ができています"
 
-    if h["std"] > 3.5:
-        pro_lines.append("場面によって頭の位置にばらつきがあり、再現性にややムラがあります。")
-    else:
-        pro_lines.append("頭の位置は全体として揃っており、再現性は概ね保たれています。")
+    # ==========================================================
+    # 4. 総合評価の判定（LLMを使用）
+    # ==========================================================
+    llm_payload = {
+        "h_mean": float(h["mean"]),
+        "h_std": float(h["std"]),
+        "move_eval": move_eval,
+        "move_comment": move_comment,
+        "stability_eval": stability_eval,
+        "stability_comment": stability_comment,
+        "connection_eval": connection_eval,
+        "connection_comment": connection_comment
+    }
 
-    if h["mean"] > 6.0:
-        if spine_flag == "bad":
-            pro_lines.append("前傾姿勢の変化も重なり、頭部の安定性に影響している可能性があります。")
-        elif spine_flag == "warn":
-            pro_lines.append("前傾維持のばらつきが、頭部の安定性に一部影響している可能性があります。")
+    overall_eval = "判定中"
+    overall_comment = "AIコーチが評価をまとめています…"
 
-    pro_comment = " ".join(pro_lines[:3])
+    try:
+        print("LLM CALL START (05_head)")
+        response_text = generate_llm_comment_05(llm_payload)
+        print("LLM CALL END (05_head)")
+
+        clean_text = response_text.replace("```json", "").replace("```", "").strip()
+        llm_data = json.loads(clean_text)
+        
+        overall_eval = llm_data.get("overall_eval", overall_eval)
+        overall_comment = llm_data.get("overall_comment", overall_comment)
+
+    except Exception as e:
+        logging.exception("LLM JSON parse error in 05_head: %s", e)
+        overall_eval = "やや改善余地あり"
+        overall_comment = "頭部の安定性は軸の再現性に直結します。下半身との連動を意識して軸を安定させましょう。"
+
+    # ==========================================================
+    # 数値サマリーと戻り値の構築
+    # ==========================================================
+    summary_text = f"{h['max']:.1f}% / 平均{h['mean']:.1f}% / ばらつき{h['std']:.1f}%"
+
+    new_layout_text = (
+        f"移動量：{move_eval}\n"
+        f"→ {move_comment}\n\n"
+        f"安定性：{stability_eval}\n"
+        f"→ {stability_comment}\n\n"
+        f"連動性：{connection_eval}\n"
+        f"→ {connection_comment}\n\n"
+        f"総合：{overall_eval}\n"
+        f"→ {overall_comment}"
+    )
+
+    good: List[str] = []
+    bad: List[str] = []
 
     bench = [
         _bench_line("頭部ブレ(%)", "%", "mean", _le_ideal(6.0, "%"), current=float(h["mean"])),
@@ -1890,13 +1962,21 @@ def build_paid_05_head(raw: Dict[str, Any], seed: str) -> Dict[str, Any]:
 
     return {
         "title": "05. Head Stability（頭部）",
-        "value": f'max {h["max"]:.1f} / mean {h["mean"]:.1f} / σ {h["std"]:.1f} (%) （conf {conf:.3f}）',
+        "value": summary_text,
         "tags": j["tags"],
         "bench": bench,
-        "good": good[:3],
-        "bad": bad[:3],
-        "pro_comment": pro_comment,
+        "good": good,
+        "bad": bad,
+        "pro_comment": new_layout_text,
+        "new_eval_data": {
+            "overall_eval": overall_eval,
+            "summary_text": summary_text,
+            "move": {"eval": move_eval, "comment": move_comment},
+            "stability": {"eval": stability_eval, "comment": stability_comment},
+            "connection": {"eval": connection_eval, "comment": connection_comment},
+        }
     }
+    
 def judge_knee(raw: Dict[str, Any]) -> Dict[str, Any]:
     k = raw["knee"]
     h = raw["head"]
@@ -1912,6 +1992,37 @@ def judge_knee(raw: Dict[str, Any]) -> Dict[str, Any]:
     return {"tags": tags}
 
 
+import json
+import logging
+from typing import Dict, Any, List
+
+def generate_llm_comment_06(payload: Dict[str, Any]) -> str:
+    prompt = f"""
+あなたはプロのゴルフコーチです。
+寄り添い型で、前向きな文脈で説明してください。
+
+以下の膝の安定性（スウェー防止）に関する計測データと個別評価を元に、ユーザーに対する「総合評価」を生成してください。
+
+【計測データと個別評価】
+・膝の移動量(mean): {payload['k_mean']:.1f}% -> 評価: {payload['move_eval']} ({payload['move_comment']})
+・膝位置の安定性(std): {payload['k_std']:.1f}% -> 評価: {payload['stability_eval']} ({payload['stability_comment']})
+・上下連動の影響: 評価: {payload['connection_eval']} ({payload['connection_comment']})
+
+【意識すること】
+・良い点があるからこそ改善すると伸びる、という前向きな文脈にする
+・専門用語をそのまま使いすぎず、イメージしやすい言葉に言い換える
+・出力はJSON形式のみとする
+
+【出力形式】
+以下の2つのキーを持つJSON形式のテキストのみを出力してください。Markdownの```jsonなどの装飾は不要です。
+{{
+    "overall_eval": "良好 または やや改善余地あり または 改善余地あり",
+    "overall_comment": "上記のデータを踏まえた、ユーザーへの総合的なアドバイスを簡潔に（50文字〜80文字程度）"
+}}
+"""
+    return call_llm(prompt)
+
+
 def build_paid_06_knee(raw: Dict[str, Any], seed: str) -> Dict[str, Any]:
     j = judge_knee(raw)
     k = raw["knee"]
@@ -1919,55 +2030,96 @@ def build_paid_06_knee(raw: Dict[str, Any], seed: str) -> Dict[str, Any]:
     conf = _conf(raw)
     spine_flag = judge_spine_flag(raw)
 
+    # ==========================================================
+    # 新しい構成：評価の内訳ロジック（ルールベースで事実を確定）
+    # ==========================================================
+    # 1. 移動量（mean）
+    move_eval = ""
+    move_comment = ""
+    if k["mean"] <= 5.5:
+        move_eval = "良好"
+        move_comment = "膝の左右ブレは小さく抑えられており、下半身の土台は非常に安定しています"
+    elif k["mean"] <= 8.5:
+        move_eval = "一定範囲内"
+        move_comment = "下半身の動きは許容範囲に収まっており、土台としての安定感は概ね保たれています"
+    else:
+        move_eval = "大きめ"
+        move_comment = "膝の左右への移動量がやや大きく、スイングの軸が流れやすい（スウェー）傾向があります"
+
+    # 2. 安定性（std / σ）
+    stability_eval = ""
+    stability_comment = ""
+    if k["std"] <= 3.5:
+        stability_eval = "安定"
+        stability_comment = "膝の位置が各場面で揃っており、土台の再現性は高く保たれています"
+    else:
+        stability_eval = "やや不安定"
+        stability_comment = "場面によって膝の位置にばらつきがあり、土台の安定感にムラが出やすい状態です"
+
+    # 3. 連動性（上半身・前傾の影響）
+    connection_eval = ""
+    connection_comment = ""
+    if h["mean"] > 6.5 and k["mean"] > 9.0:
+        connection_eval = "上下の連動不足"
+        connection_comment = "上半身（頭部）の揺れと連動して下半身も流れており、軸の安定性が活かしにくい状態です"
+    elif spine_flag == "bad" or spine_flag == "warn":
+        connection_eval = "前傾の影響あり"
+        connection_comment = "前傾姿勢の変化が、下半身の安定性や踏み込みの質に一部影響している可能性があります"
+    else:
+        connection_eval = "良好"
+        connection_comment = "下半身と上半身の軸が比較的連動しており、全体の安定感に繋がっています"
+
+    # ==========================================================
+    # 4. 総合評価の判定（LLMを使用）
+    # ==========================================================
+    llm_payload = {
+        "k_mean": float(k["mean"]),
+        "k_std": float(k["std"]),
+        "move_eval": move_eval,
+        "move_comment": move_comment,
+        "stability_eval": stability_eval,
+        "stability_comment": stability_comment,
+        "connection_eval": connection_eval,
+        "connection_comment": connection_comment
+    }
+
+    overall_eval = "判定中"
+    overall_comment = "AIコーチが評価をまとめています…"
+
+    try:
+        print("LLM CALL START (06_knee)")
+        response_text = generate_llm_comment_06(llm_payload)
+        print("LLM CALL END (06_knee)")
+
+        clean_text = response_text.replace("```json", "").replace("```", "").strip()
+        llm_data = json.loads(clean_text)
+        
+        overall_eval = llm_data.get("overall_eval", overall_eval)
+        overall_comment = llm_data.get("overall_comment", overall_comment)
+
+    except Exception as e:
+        logging.exception("LLM JSON parse error in 06_knee: %s", e)
+        overall_eval = "やや改善余地あり"
+        overall_comment = "下半身の安定は飛距離と方向に直結します。膝のブレを抑え、より強固な土台作りを目指しましょう。"
+
+    # ==========================================================
+    # 数値サマリーと戻り値の構築
+    # ==========================================================
+    summary_text = f"{k['max']:.1f}% / 平均{k['mean']:.1f}% / ばらつき{k['std']:.1f}%"
+
+    new_layout_text = (
+        f"移動量：{move_eval}\n"
+        f"→ {move_comment}\n\n"
+        f"安定性：{stability_eval}\n"
+        f"→ {stability_comment}\n\n"
+        f"連動性：{connection_eval}\n"
+        f"→ {connection_comment}\n\n"
+        f"総合：{overall_eval}\n"
+        f"→ {overall_comment}"
+    )
+
     good: List[str] = []
     bad: List[str] = []
-
-    # 良い点
-    if k["mean"] <= 5.5:
-        good.append("膝の左右ブレは小さく抑えられており、下半身の土台は概ね安定しています。")
-    elif k["mean"] <= 8.5:
-        good.append("下半身の動きは許容範囲に収まっており、土台としての安定感は概ね保たれています。")
-
-    if k["mean"] <= 6.5 and h["mean"] <= 5.5:
-        good.append("下半身と上半身の軸が比較的連動しており、全体の安定感につながっています。")
-
-    if not good:
-        good = ["下半身の動きは大きく崩れてはいませんが、さらに安定性を高める余地があります。"]
-
-    # 改善点
-    if k["mean"] > 9.0:
-        bad.append(f"膝の移動量は {k['mean']:.1f}% とやや大きく、土台の再現性に影響しやすい状態です。")
-
-    if k["std"] > 3.5:
-        bad.append(f"膝位置のばらつき（σ {k['std']:.1f}%）がやや大きく、場面ごとの安定感にムラがあります。")
-
-    if h["mean"] > 6.5 and k["mean"] > 9.0:
-        bad.append("上半身の揺れも重なり、下半身の安定性がやや活かしにくい状態です。")
-
-    if not bad:
-        bad = ["大きな改善点は特にありません。"]
-
-    # プロ目線
-    pro_lines: List[str] = []
-    pro_lines.append("下半身は踏めているかだけでなく、回転中も土台が横に流れすぎないかが重要な評価ポイントです。")
-
-    if k["mean"] > 9.0:
-        pro_lines.append("本動画では下半身の横方向の動きがやや大きく、土台の再現性に影響しやすい状態です。")
-    else:
-        pro_lines.append("本動画では下半身の動きは全体として比較的抑えられており、土台の安定性は概ね保たれています。")
-
-    if k["std"] > 3.5:
-        pro_lines.append("場面によって膝の位置にばらつきがあり、土台の再現性にややムラがあります。")
-    else:
-        pro_lines.append("膝の位置は全体として揃っており、土台の再現性は概ね保たれています。")
-
-    if k["mean"] > 9.0:
-        if spine_flag == "bad":
-            pro_lines.append("前傾姿勢の変化も重なり、下半身の安定性に影響している可能性があります。")
-        elif spine_flag == "warn":
-            pro_lines.append("前傾維持のばらつきが、下半身の安定性に一部影響している可能性があります。")
-
-    pro_comment = " ".join(pro_lines[:3])
 
     bench = [
         _bench_line("膝ブレ(%)", "%", "mean", _le_ideal(9.0, "%"), current=float(k["mean"])),
@@ -1977,12 +2129,19 @@ def build_paid_06_knee(raw: Dict[str, Any], seed: str) -> Dict[str, Any]:
 
     return {
         "title": "06. Knee Stability（膝）",
-        "value": f'max {k["max"]:.1f} / mean {k["mean"]:.1f} / σ {k["std"]:.1f} (%) （conf {conf:.3f}）',
+        "value": summary_text,
         "tags": j["tags"],
         "bench": bench,
-        "good": good[:3],
-        "bad": bad[:3],
-        "pro_comment": pro_comment,
+        "good": good,
+        "bad": bad,
+        "pro_comment": new_layout_text,
+        "new_eval_data": {
+            "overall_eval": overall_eval,
+            "summary_text": summary_text,
+            "move": {"eval": move_eval, "comment": move_comment},
+            "stability": {"eval": stability_eval, "comment": stability_comment},
+            "connection": {"eval": connection_eval, "comment": connection_comment},
+        }
     }
     
 # ==================================================
