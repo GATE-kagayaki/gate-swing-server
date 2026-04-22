@@ -3335,16 +3335,16 @@ def stripe_webhook():
         print(f"⚠️ Stripe webhook error: {e}", flush=True)
         return "Error", 400
 
-    event_type = event.get("type")
+    event_type = event.type
 
     # =========================================================
     # A) 購入完了（単発/回数券）
     # =========================================================
     if event_type == "checkout.session.completed":
         session = event["data"]["object"]
-        event_id = event.get("id")
-        session_id = session.get("id")
-        line_user_id = session.get("client_reference_id")
+        event_id = getattr(event, "id", None)
+        session_id = getattr(session, "id", None)
+        line_user_id = getattr(session, "client_reference_id", None)
 
         if not line_user_id:
             print("❌ client_reference_id missing", flush=True)
@@ -3352,8 +3352,8 @@ def stripe_webhook():
 
         try:
             li = stripe.checkout.Session.list_line_items(session_id, limit=1)
-            first = li["data"][0] if li and li.get("data") else None
-            price_id = first.get("price", {}).get("id") if first else None
+            first = li["data"][0] if li and getattr(li, "data", None) else None
+            price_id = getattr(getattr(first, "price", None), "id", None) if first else None
 
             add_tickets = 1
             ticket_price_id = (os.environ.get("STRIPE_PRICE_TICKET", "") or "").strip()
@@ -3412,7 +3412,7 @@ def stripe_webhook():
     elif event_type == "customer.subscription.deleted":
         try:
             subscription = event["data"]["object"]
-            customer_id = subscription.get("customer")
+            customer_id = getattr(subscription, "customer", None)
 
             users_ref = db.collection("users")
             docs = users_ref.where("stripe_customer_id", "==", customer_id).limit(1).get()
