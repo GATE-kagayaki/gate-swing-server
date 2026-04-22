@@ -1473,66 +1473,133 @@ def judge_hip(raw: Dict[str, Any]) -> Dict[str, Any]:
 
     return {"main": main, "related": rel, "tags": tags}
 
+import json
+import logging
+from typing import Dict, Any, List
+
+def generate_llm_comment_03(payload: Dict[str, Any]) -> str:
+    prompt = f"""
+あなたはプロのゴルフコーチです。
+寄り添い型で、前向きな文脈で説明してください。
+
+以下の腰の回転に関する計測データと個別評価を元に、ユーザーに対する「総合評価」を生成してください。
+
+【計測データと個別評価】
+・腰の回転量: {payload['hip_max']:.1f}° -> 評価: {payload['rotation_eval']} ({payload['rotation_comment']})
+・回転の安定性(ばらつき): {payload['hip_std']:.1f}° -> 評価: {payload['stability_eval']} ({payload['stability_comment']})
+・肩と腰の捻転差: {payload['xf_max']:.1f}° -> 評価: {payload['xfactor_eval']} ({payload['xfactor_comment']})
+
+【意識すること】
+・良い点があるからこそ改善すると伸びる、という前向きな文脈にする
+・専門用語をそのまま使いすぎず、イメージしやすい言葉に言い換える
+・出力はJSON形式のみとする
+
+【出力形式】
+以下の2つのキーを持つJSON形式のテキストのみを出力してください。Markdownの```jsonなどの装飾は不要です。
+{{
+    "overall_eval": "良好 または やや改善余地あり または 改善余地あり",
+    "overall_comment": "上記のデータを踏まえた、ユーザーへの総合的なアドバイスを簡潔に（50文字〜80文字程度）"
+}}
+"""
+    return call_llm(prompt)
+
+
 def build_paid_03_hip(raw: Dict[str, Any], seed: str) -> Dict[str, Any]:
     j = judge_hip(raw)
     hip = raw["hip"]
     xf = raw["x_factor"]
     conf = _conf(raw)
 
+    # ==========================================================
+    # 新しい構成：評価の内訳ロジック（ルールベースで事実を確定）
+    # ==========================================================
+    # 1. 回転量（max）
+    rotation_eval = ""
+    rotation_comment = ""
+    if hip["max"] < 30:
+        rotation_eval = "浅め"
+        rotation_comment = "下半身の回旋がやや控えめで、下半身主導の動きをさらに高める余地があります"
+    elif hip["max"] > 60:
+        rotation_eval = "大きめ"
+        rotation_comment = "腰の回転量がやや大きく、軸のブレに繋がりやすい状態です"
+    else:
+        rotation_eval = "適正"
+        rotation_comment = "腰の回旋量は適正範囲で、安定した軸回転とスイングの土台が作れています"
+
+    # 2. 安定性（std / σ）
+    stability_eval = ""
+    stability_comment = ""
+    if hip["std"] <= 12:
+        stability_eval = "安定"
+        stability_comment = "腰の回し幅が揃っており、インパクトの再現性を支える下半身の動きが安定しています"
+    else:
+        stability_eval = "やや不安定"
+        stability_comment = "腰の回転角度にばらつきがあり、ミート率の再現性に影響しやすい状態です"
+
+    # 3. 捻転差（x_factor max）
+    xfactor_eval = ""
+    xfactor_comment = ""
+    if xf["max"] < 30:
+        xfactor_eval = "小さめ"
+        xfactor_comment = "肩と腰の回転差が小さく、上半身との連動で出力を高める余地があります"
+    else:
+        xfactor_eval = "適正"
+        xfactor_comment = "肩と腰の捻転差が確保されており、力を逃さずインパクトへ繋げる準備ができています"
+
+    # ==========================================================
+    # 4. 総合評価の判定（LLMを使用）
+    # ==========================================================
+    llm_payload = {
+        "hip_max": float(hip["max"]),
+        "hip_std": float(hip["std"]),
+        "xf_max": float(xf["max"]),
+        "rotation_eval": rotation_eval,
+        "rotation_comment": rotation_comment,
+        "stability_eval": stability_eval,
+        "stability_comment": stability_comment,
+        "xfactor_eval": xfactor_eval,
+        "xfactor_comment": xfactor_comment
+    }
+
+    overall_eval = "判定中"
+    overall_comment = "AIコーチが評価をまとめています…"
+
+    try:
+        print("LLM CALL START (03_hip)")
+        response_text = generate_llm_comment_03(llm_payload)
+        print("LLM CALL END (03_hip)")
+
+        # 万が一LLMが ```json などのMarkdown記号をつけて返してきた場合の安全対策
+        clean_text = response_text.replace("```json", "").replace("```", "").strip()
+        llm_data = json.loads(clean_text)
+        
+        overall_eval = llm_data.get("overall_eval", overall_eval)
+        overall_comment = llm_data.get("overall_comment", overall_comment)
+
+    except Exception as e:
+        logging.exception("LLM JSON parse error in 03_hip: %s", e)
+        # エラー時は無難な総合評価をフォールバックとして設定
+        overall_eval = "やや改善余地あり"
+        overall_comment = "各項目の結果を参考に、下半身の安定感と上半身との連動性を意識した練習を行いましょう。"
+
+    # ==========================================================
+    # 数値サマリーと戻り値の構築
+    # ==========================================================
+    summary_text = f"{hip['max']:.1f}° / 平均{hip['mean']:.1f}° / ばらつき{hip['std']:.1f}° / 捻転差{xf['max']:.1f}°"
+
+    new_layout_text = (
+        f"回転量：{rotation_eval}\n"
+        f"→ {rotation_comment}\n\n"
+        f"安定性：{stability_eval}\n"
+        f"→ {stability_comment}\n\n"
+        f"捻転差：{xfactor_eval}\n"
+        f"→ {xfactor_comment}\n\n"
+        f"総合：{overall_eval}\n"
+        f"→ {overall_comment}"
+    )
+
     good: List[str] = []
     bad: List[str] = []
-
-    # 良い点（やや緩和）
-    if hip["std"] <= 6:
-        good.append("下半身の動きが安定しており、ミート率を高める基礎ができています。")
-    elif hip["std"] <= 12:
-        good.append("腰の回し幅は比較的揃っており、下半身の再現性は概ね確保されています。")
-    if 30 <= hip["max"] <= 60:
-        good.append("腰の回旋量は基準レンジに収まっており、安定した土台として機能しています。")
-
-    # バッファ：安定性
-    if hip["std"] <= 6:
-        good.append("下半身の動きが安定しており、ミート率を高める基礎ができています。")
-
-    # バッファ：腰が控えめでも捻転差が作れている場合
-    if hip["max"] < 30 and xf["max"] >= 35:
-        good.append("腰の回転は控えめですが、肩との捻転差は確保できており、一定の出力準備はできています。")
-
-    if not good:
-        good = ["基本的な下半身の可動域は確保されており、スイングの土台はできています。"]
-
-    # 改善点（やや緩和）
-    if hip["max"] > 60:
-        bad.append(f"最大腰回転は {hip['max']:.1f}° で、やや回りすぎの傾向が見られます。")
-    if hip["max"] < 30:
-        bad.append(f"最大腰回転は {hip['max']:.1f}° で、下半身主導を高める余地があります。")
-    if xf["max"] < 30:
-        bad.append(f"最大捻転差は {xf['max']:.1f}° で、上半身との連動をさらに高める余地があります。")
-    if hip["std"] > 18:
-        bad.append(f"腰の回転幅のばらつき（σ {hip['std']:.1f}°）がやや大きく、インパクトの再現性に影響しています。")
-
-    if not bad:
-        bad = ["大きな改善点は特にありません。"]
-
-    # プロ目線（やや柔らかく）
-    pro_lines: List[str] = []
-    pro_lines.append("腰は「回す量」だけでなく、「肩との順序」と「回し幅の揃い方」で質が決まります。")
-
-    if hip["max"] > 60:
-        pro_lines.append("本動画では腰の回転量がやや大きく、軸の安定性に影響しやすい状態です。")
-    elif hip["max"] < 30:
-        pro_lines.append("本動画では下半身の回旋量はやや控えめで、下半身主導を高める余地があります。")
-    else:
-        pro_lines.append("本動画では腰の回旋量は適正範囲で、安定した軸回転ができています。")
-
-    if hip["std"] > 15:
-        pro_lines.append("腰の回転角度にややばらつきがあり、下半身主導の再現性に影響しています。")
-    else:
-        pro_lines.append("下半身の回転は比較的安定しており、スイングの再現性を支える土台となっています。")
-
-    pro_lines.append("このスイングでは、主因は下半身主導のタイミングです。")
-
-    pro_comment = " ".join(pro_lines[:3])
 
     bench = [
         _bench_line("腰回転(°)", "°", "max", _range_ideal(30, 60, "°"), current=float(hip["max"])),
@@ -1542,12 +1609,19 @@ def build_paid_03_hip(raw: Dict[str, Any], seed: str) -> Dict[str, Any]:
 
     return {
         "title": "03. Hip Rotation（腰回転）",
-        "value": _value_line(hip["max"], hip["mean"], hip["std"], conf),
+        "value": summary_text,
         "tags": j["tags"],
         "bench": bench,
-        "good": good[:3],
-        "bad": bad[:3],
-        "pro_comment": pro_comment,
+        "good": good,
+        "bad": bad,
+        "pro_comment": new_layout_text,
+        "new_eval_data": {
+            "overall_eval": overall_eval,
+            "summary_text": summary_text,
+            "rotation": {"eval": rotation_eval, "comment": rotation_comment},
+            "stability": {"eval": stability_eval, "comment": stability_comment},
+            "xfactor": {"eval": xfactor_eval, "comment": xfactor_comment},
+        }
     }
     
 def judge_wrist(raw: Dict[str, Any]) -> Dict[str, Any]:
