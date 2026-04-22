@@ -1650,6 +1650,37 @@ def judge_wrist(raw: Dict[str, Any]) -> Dict[str, Any]:
     return {"main": main, "related": rel, "tags": tags}
 
 
+import json
+import logging
+from typing import Dict, Any, List
+
+def generate_llm_comment_04(payload: Dict[str, Any]) -> str:
+    prompt = f"""
+あなたはプロのゴルフコーチです。
+寄り添い型で、前向きな文脈で説明してください。
+
+以下の手首の挙動に関する計測データと個別評価を元に、ユーザーに対する「総合評価」を生成してください。
+
+【計測データと個別評価】
+・最大コック量: {payload['w_max']:.1f}° -> 評価: {payload['amount_eval']} ({payload['amount_comment']})
+・手首の安定性(ばらつき): {payload['w_std']:.1f}° -> 評価: {payload['stability_eval']} ({payload['stability_comment']})
+・タメの維持(平均値): {payload['w_mean']:.1f}° -> 評価: {payload['impact_eval']} ({payload['impact_comment']})
+
+【意識すること】
+・良い点があるからこそ改善すると伸びる、という前向きな文脈にする
+・専門用語をそのまま使いすぎず、イメージしやすい言葉に言い換える
+・出力はJSON形式のみとする
+
+【出力形式】
+以下の2つのキーを持つJSON形式のテキストのみを出力してください。Markdownの```jsonなどの装飾は不要です。
+{{
+    "overall_eval": "良好 または やや改善余地あり または 改善余地あり",
+    "overall_comment": "上記のデータを踏まえた、ユーザーへの総合的なアドバイスを簡潔に（50文字〜80文字程度）"
+}}
+"""
+    return call_llm(prompt)
+
+
 def build_paid_04_wrist(raw: Dict[str, Any], seed: str) -> Dict[str, Any]:
     w_raw = raw["wrist"]
 
@@ -1661,53 +1692,97 @@ def build_paid_04_wrist(raw: Dict[str, Any], seed: str) -> Dict[str, Any]:
     j = judge_wrist(raw)
     conf = _conf(raw)
 
+    # ==========================================================
+    # 新しい構成：評価の内訳ロジック（ルールベースで事実を確定）
+    # ==========================================================
+    # 1. コック量（max）
+    amount_eval = ""
+    amount_comment = ""
+    if w_max < 35:
+        amount_eval = "浅め"
+        amount_comment = "バックスイングでのコック量がやや不足しており、力を溜める余地があります"
+    elif w_max > 95:
+        amount_eval = "深め"
+    else:
+        amount_eval = "適正"
+        amount_comment = "トップでは十分なコックが入っており、ヘッドスピードにつながる土台があります"
+
+    # 2. 安定性（std / σ）
+    stability_eval = ""
+    stability_comment = ""
+    if w_std <= 12:
+        stability_eval = "安定"
+        stability_comment = "手首の角度変化は一定しており、インパクトでのフェース管理は概ね安定しています"
+    else:
+        stability_eval = "やや不安定"
+        stability_comment = "手首の挙動にばらつきがあり、打点の再現性に影響が出やすい状態です"
+
+    # 3. タメの維持（mean）
+    impact_eval = ""
+    impact_comment = ""
+    if w_mean < 40:
+        impact_eval = "早めのリリース"
+        impact_comment = "タメが解けるのが早く、インパクトで効率的にパワーを伝えきれていない可能性があります"
+    elif w_mean > 80:
+        impact_eval = "タメが深め"
+        impact_comment = "タメは深いですが、その分リリースのタイミング管理がシビアになりやすい状態です"
+    else:
+        impact_eval = "良好"
+        impact_comment = "手首のタメ（平均角度）は基準内で、効率的なパワー伝達ができています"
+
+    # ==========================================================
+    # 4. 総合評価の判定（LLMを使用）
+    # ==========================================================
+    llm_payload = {
+        "w_max": w_max,
+        "w_mean": w_mean,
+        "w_std": w_std,
+        "amount_eval": amount_eval,
+        "amount_comment": amount_comment,
+        "stability_eval": stability_eval,
+        "stability_comment": stability_comment,
+        "impact_eval": impact_eval,
+        "impact_comment": impact_comment
+    }
+
+    overall_eval = "判定中"
+    overall_comment = "AIコーチが評価をまとめています…"
+
+    try:
+        print("LLM CALL START (04_wrist)")
+        response_text = generate_llm_comment_04(llm_payload)
+        print("LLM CALL END (04_wrist)")
+
+        clean_text = response_text.replace("```json", "").replace("```", "").strip()
+        llm_data = json.loads(clean_text)
+        
+        overall_eval = llm_data.get("overall_eval", overall_eval)
+        overall_comment = llm_data.get("overall_comment", overall_comment)
+
+    except Exception as e:
+        logging.exception("LLM JSON parse error in 04_wrist: %s", e)
+        overall_eval = "やや改善余地あり"
+        overall_comment = "手首のタメとリリースのタイミングを整えることで、さらなる飛距離アップが期待できます。"
+
+    # ==========================================================
+    # 数値サマリーと戻り値の構築
+    # ==========================================================
+    # ユーザー希望の数値サマリー形式：Max / Mean / ばらつき
+    summary_text = f"{w_max:.1f}° / 平均{w_mean:.1f}° / ばらつき{w_std:.1f}°"
+
+    new_layout_text = (
+        f"コック量：{amount_eval}\n"
+        f"→ {amount_comment}\n\n"
+        f"安定性：{stability_eval}\n"
+        f"→ {stability_comment}\n\n"
+        f"タメの維持：{impact_eval}\n"
+        f"→ {impact_comment}\n\n"
+        f"総合：{overall_eval}\n"
+        f"→ {overall_comment}"
+    )
+
     good: List[str] = []
     bad: List[str] = []
-
-    # 良い点（やや緩和）
-    if w_std <= 10:
-        good.append("手首の角度変化は比較的一定しており、インパクトでのフェース管理は概ね安定しています。")
-    if 40 <= w_mean <= 80:
-        good.append("タメは基準レンジに収まっており、ヘッドを加速させる準備ができています。")
-    if w_max >= 75 and w_std <= 15:
-        good.append("トップで十分なコックが作れており、その角度も比較的安定して再現できています。")
-    elif w_max >= 75:
-        good.append("トップでは十分なコックが入っており、ヘッドスピードにつながる土台があります。")
-
-    if not good:
-        good = ["基本的な手首の可動域は確保されており、スイングの土台はできています。"]
-
-    # 改善点（やや緩和）
-    if w_mean < 40:
-        bad.append(f"平均コック角 {w_mean:.1f}° はやや浅く、リリースが早くなる傾向があります。")
-    if w_mean > 80:
-        bad.append(f"平均コック角 {w_mean:.1f}° はやや大きく、リリースのタイミング管理がややシビアになりやすい状態です。")
-    if w_std > 18:
-        bad.append(f"手首の挙動（σ {w_std:.1f}）にばらつきがあり、打点の再現性に影響しています。")
-    if w_max < 35:
-        bad.append("バックスイングでのコック量がやや不足しており、力を溜める余地があります。")
-
-    if not bad:
-        bad = ["現在、手首の使い方において大きな修正ポイントは見当たりません。"]
-
-    # プロ目線（やや柔らかく）
-    pro_lines: List[str] = []
-
-    if w_mean < 40:
-        pro_lines.append(f"本動画では手首の角度が {w_mean:.1f}° とやや浅く、ヘッドを運ぶ動きが出やすい傾向です。")
-        pro_lines.append("タメを保つ時間が短くなりやすいため、インパクトで合わせる動きにつながることがあります。")
-    elif w_mean > 80:
-        pro_lines.append(f"平均 {w_mean:.1f}° とタメは深めですが、その分リリースのタイミング管理が重要になります。")
-        pro_lines.append("手元の操作が増えると、左右のミスにつながりやすくなります。")
-    else:
-        pro_lines.append(f"手首のコック角（{w_mean:.1f}°）は基準レンジに近く、効率的なパワー伝達ができています。")
-
-    if w_std > 15:
-        pro_lines.append("手首の動きにややばらつきがあり、フェース向きの再現性に影響しています。")
-    else:
-        pro_lines.append("手首の挙動は比較的安定しており、シャフトのしなりを再現しやすい状態です。")
-
-    pro_comment = " ".join(pro_lines)
 
     bench = [
         _bench_line("手首コック(°)", "°", "mean", _range_ideal(40, 80, "°"), current=float(w_mean)),
@@ -1717,13 +1792,21 @@ def build_paid_04_wrist(raw: Dict[str, Any], seed: str) -> Dict[str, Any]:
 
     return {
         "title": "04. Wrist Cock（手首コック）",
-        "value": f"Max Cock {w_max:.1f}° / Mean {w_mean:.1f}° (σ {w_std:.1f})",
+        "value": summary_text,
         "tags": j["tags"],
         "bench": bench,
-        "good": good[:3],
-        "bad": bad[:3],
-        "pro_comment": pro_comment,
+        "good": good,
+        "bad": bad,
+        "pro_comment": new_layout_text,
+        "new_eval_data": {
+            "overall_eval": overall_eval,
+            "summary_text": summary_text,
+            "amount": {"eval": amount_eval, "comment": amount_comment},
+            "stability": {"eval": stability_eval, "comment": stability_comment},
+            "impact": {"eval": impact_eval, "comment": impact_comment},
+        }
     }
+    
 def judge_head(raw: Dict[str, Any]) -> Dict[str, Any]:
     h = raw["head"]
     k = raw["knee"]
