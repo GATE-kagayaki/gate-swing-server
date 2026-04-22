@@ -1387,7 +1387,6 @@ def build_paid_02_shoulder(raw: Dict[str, Any], seed: str) -> Dict[str, Any]:
         response_text = generate_llm_comment_02(llm_payload)
         print("LLM CALL END (02_shoulder)")
 
-        # 万が一LLMが ```json などのMarkdown記号をつけて返してきた場合の安全対策
         clean_text = response_text.replace("```json", "").replace("```", "").strip()
         llm_data = json.loads(clean_text)
         
@@ -1396,7 +1395,6 @@ def build_paid_02_shoulder(raw: Dict[str, Any], seed: str) -> Dict[str, Any]:
 
     except Exception as e:
         logging.exception("LLM JSON parse error in 02_shoulder: %s", e)
-        # エラー時は無難な総合評価をフォールバックとして設定
         overall_eval = "やや改善余地あり"
         overall_comment = "各項目の結果を参考に、連動性と安定性を高める練習を行いましょう。"
 
@@ -1405,6 +1403,7 @@ def build_paid_02_shoulder(raw: Dict[str, Any], seed: str) -> Dict[str, Any]:
     # ==========================================================
     summary_text = f"{sh['max']:.1f}° / 平均{sh['mean']:.1f}° / ばらつき{sh['std']:.1f}° / 捻転差{xf['max']:.1f}°"
 
+    # ★修正箇所：内訳の最後に総合評価（LLMコメント）を結合
     new_layout_text = (
         f"回転量：{rotation_eval}\n"
         f"→ {rotation_comment}\n\n"
