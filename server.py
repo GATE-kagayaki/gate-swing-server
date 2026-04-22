@@ -1288,68 +1288,136 @@ def _bench_line(label: str, unit: str, stat: str, ideal: dict, *, current) -> di
     }
 
 
+import json
+import logging
+from typing import Dict, Any, List
+
+def generate_llm_comment_02(payload: Dict[str, Any]) -> str:
+    prompt = f"""
+あなたはプロのゴルフコーチです。
+寄り添い型で、前向きな文脈で説明してください。
+
+以下の肩の回転に関する計測データと個別評価を元に、ユーザーに対する「総合評価」を生成してください。
+
+【計測データと個別評価】
+・肩の回転量: {payload['sh_max']:.1f}° -> 評価: {payload['rotation_eval']} ({payload['rotation_comment']})
+・回転の安定性(ばらつき): {payload['sh_std']:.1f}° -> 評価: {payload['stability_eval']} ({payload['stability_comment']})
+・肩と腰の捻転差: {payload['xf_max']:.1f}° -> 評価: {payload['xfactor_eval']} ({payload['xfactor_comment']})
+
+【意識すること】
+・良い点があるからこそ改善すると伸びる、という前向きな文脈にする
+・専門用語をそのまま使いすぎず、イメージしやすい言葉に言い換える
+・出力はJSON形式のみとする
+
+【出力形式】
+以下の2つのキーを持つJSON形式のテキストのみを出力してください。Markdownの```jsonなどの装飾は不要です。
+{{
+    "overall_eval": "良好 または やや改善余地あり または 改善余地あり",
+    "overall_comment": "上記のデータを踏まえた、ユーザーへの総合的なアドバイスを簡潔に（50文字〜80文字程度）"
+}}
+"""
+    return call_llm(prompt)
+
+
 def build_paid_02_shoulder(raw: Dict[str, Any], seed: str) -> Dict[str, Any]:
     j = judge_shoulder(raw)
     sh = raw["shoulder"]
     xf = raw["x_factor"]
     conf = _conf(raw)
 
+    # ==========================================================
+    # 新しい構成：評価の内訳ロジック（ルールベースで事実を確定）
+    # ==========================================================
+    # 1. 回転量（max）
+    rotation_eval = ""
+    rotation_comment = ""
+    if sh["max"] < 80:
+        rotation_eval = "浅め"
+        rotation_comment = "やや捻転が浅く、飛距離を生むためのエネルギーが不足しがちです"
+    elif sh["max"] > 115:
+        rotation_eval = "大きめ"
+        rotation_comment = "回転量が非常に大きく、オーバースイングによる打点のブレが出やすい傾向があります"
+    else:
+        rotation_eval = "適正"
+        rotation_comment = "十分な回転量があり、上半身のエネルギーは作れています"
+
+    # 2. 安定性（std / σ）
+    stability_eval = ""
+    stability_comment = ""
+    if sh["std"] <= 12:
+        stability_eval = "安定"
+        stability_comment = "トップの位置が揃っており、スイングの再現性が高く安定しています"
+    else:
+        stability_eval = "やや不安定"
+        stability_comment = "トップの位置にばらつきがあり、再現性にややムラがあります"
+
+    # 3. 捻転差（x_factor max）
+    xfactor_eval = ""
+    xfactor_comment = ""
+    if xf["max"] < 30:
+        xfactor_eval = "小さめ"
+        xfactor_comment = "肩と腰の回転差が小さく、ダウンスイングで力を溜める余地がまだあります"
+    elif xf["max"] > 70:
+        xfactor_eval = "大きめ"
+        xfactor_comment = "肩と腰の回転差が大きく、連動のタイミングがズレやすい状態です"
+    else:
+        xfactor_eval = "適正"
+        xfactor_comment = "適正な捻転差が確保されており、切り返しから出力への準備が整っています"
+
+    # ==========================================================
+    # 4. 総合評価の判定（LLMを使用）
+    # ==========================================================
+    llm_payload = {
+        "sh_max": float(sh["max"]),
+        "sh_std": float(sh["std"]),
+        "xf_max": float(xf["max"]),
+        "rotation_eval": rotation_eval,
+        "rotation_comment": rotation_comment,
+        "stability_eval": stability_eval,
+        "stability_comment": stability_comment,
+        "xfactor_eval": xfactor_eval,
+        "xfactor_comment": xfactor_comment
+    }
+
+    overall_eval = "判定中"
+    overall_comment = "AIコーチが評価をまとめています…"
+
+    try:
+        print("LLM CALL START (02_shoulder)")
+        response_text = generate_llm_comment_02(llm_payload)
+        print("LLM CALL END (02_shoulder)")
+
+        # 万が一LLMが ```json などのMarkdown記号をつけて返してきた場合の安全対策
+        clean_text = response_text.replace("```json", "").replace("```", "").strip()
+        llm_data = json.loads(clean_text)
+        
+        overall_eval = llm_data.get("overall_eval", overall_eval)
+        overall_comment = llm_data.get("overall_comment", overall_comment)
+
+    except Exception as e:
+        logging.exception("LLM JSON parse error in 02_shoulder: %s", e)
+        # エラー時は無難な総合評価をフォールバックとして設定
+        overall_eval = "やや改善余地あり"
+        overall_comment = "各項目の結果を参考に、連動性と安定性を高める練習を行いましょう。"
+
+    # ==========================================================
+    # 数値サマリーと戻り値の構築
+    # ==========================================================
+    summary_text = f"{sh['max']:.1f}° / 平均{sh['mean']:.1f}° / ばらつき{sh['std']:.1f}° / 捻転差{xf['max']:.1f}°"
+
+    new_layout_text = (
+        f"回転量：{rotation_eval}\n"
+        f"→ {rotation_comment}\n\n"
+        f"安定性：{stability_eval}\n"
+        f"→ {stability_comment}\n\n"
+        f"捻転差：{xfactor_eval}\n"
+        f"→ {xfactor_comment}\n\n"
+        f"総合：{overall_eval}\n"
+        f"→ {overall_comment}"
+    )
+
     good: List[str] = []
     bad: List[str] = []
-
-    # 良い点（やや緩和）
-    if sh["std"] <= 12:
-        good.append("肩の回し幅は比較的揃っており、上半身の再現性は概ね確保されています。")
-    if 80 <= sh["max"] <= 115:
-        good.append("肩の最大回旋量は基準レンジに収まっており、無理のない捻転ができています。")
-    if xf["max"] >= 30:
-        good.append("肩と腰の差（捻転差）は確保できており、出力の準備が整っています。")
-
-    # バッファ：回転量が多い場合
-    if sh["max"] > 115:
-        good.append("深い肩の回転を可能にする柔軟性があり、大きな飛距離を生む潜在能力があります。")
-
-    # バッファ：数値は外れていても安定している場合
-    if sh["std"] <= 8 and not (80 <= sh["max"] <= 115):
-        good.append("角度自体は調整の余地がありますが、同じ深さまで回せる安定感は大きな武器です。")
-
-    if not good:
-        good = ["基本的な上半身の柔軟性は備わっており、スイングの土台はできています。"]
-
-    # 改善点（やや緩和）
-    if sh["max"] < 80:
-        bad.append(f"最大肩回転は {sh['max']:.1f}° で、やや捻転が浅い傾向があります。")
-    if sh["max"] > 115:
-        bad.append(f"肩回転が {sh['max']:.1f}° に達しており、ややオーバースイング傾向が見られます。")
-    if xf["max"] < 30:
-        bad.append(f"最大捻転差は {xf['max']:.1f}° で、力を溜める余地がまだあります。")
-    if xf["max"] > 70:
-        bad.append(f"捻転差が {xf['max']:.1f}° と大きく、肩と腰の連動にばらつきが出やすくなっています。")
-    if sh["std"] > 18:
-        bad.append(f"肩回転のばらつき（σ {sh['std']:.1f}°）がやや大きく、トップ位置の再現性に影響しています。")
-
-    if not bad:
-        bad = ["大きな改善点は特にありません。"]
-
-    # プロ目線（やや柔らかく）
-    pro_lines: List[str] = []
-    pro_lines.append("上半身は回り幅そのものだけでなく、回した量を安定して再現できているかも評価軸です。")
-
-    if sh["std"] <= 12:
-        pro_lines.append("本動画では肩の回旋は比較的安定して再現できています。")
-    else:
-        pro_lines.append("本動画では肩の回旋幅にややばらつきがあり、トップの再現性に影響しています。")
-
-    if xf["max"] < 30:
-        pro_lines.append("捻転差はやや小さめで、切り返しで力を溜める余地があります。")
-    elif xf["max"] > 70:
-        pro_lines.append("捻転差は大きめで、肩と腰の連動を整えるとさらに安定しやすくなります。")
-    else:
-        pro_lines.append("捻転差は確保されており、切り返しに必要な準備はできています。")
-
-    pro_lines.append("このスイングでは、主因は肩と腰の役割分担です。")
-
-    pro_comment = " ".join(pro_lines[:3])
 
     bench = [
         _bench_line("肩回転(°)", "°", "max", _range_ideal(80, 115, "°"), current=float(sh["max"])),
@@ -1359,14 +1427,21 @@ def build_paid_02_shoulder(raw: Dict[str, Any], seed: str) -> Dict[str, Any]:
 
     return {
         "title": "02. Shoulder Rotation（肩回転）",
-        "value": _value_line(sh["max"], sh["mean"], sh["std"], conf),
+        "value": summary_text,
         "tags": j["tags"],
         "bench": bench,
-        "good": good[:3],
-        "bad": bad[:3],
-        "pro_comment": pro_comment,
+        "good": good,
+        "bad": bad,
+        "pro_comment": new_layout_text,
+        "new_eval_data": {
+            "overall_eval": overall_eval,
+            "summary_text": summary_text,
+            "rotation": {"eval": rotation_eval, "comment": rotation_comment},
+            "stability": {"eval": stability_eval, "comment": stability_comment},
+            "xfactor": {"eval": xfactor_eval, "comment": xfactor_comment},
+        }
     }
-
+    
 def judge_hip(raw: Dict[str, Any]) -> Dict[str, Any]:
     hip = raw["hip"]
     xf = raw["x_factor"]
