@@ -242,49 +242,97 @@
     reportContent.appendChild(sec);
   }
 
-  function render02to06(key, secData) {
-    const sec = sectionWrap(secData.title);
+function render02to06(key, secData) {
+  const sec = sectionWrap(secData.title);
 
-    const v = document.createElement("div");
-    v.className = "muted mt-2";
-    v.innerHTML = `解析結果：<span class="font-semibold text-gray-800">${secData.value}</span>`;
-    sec.appendChild(v);
+  // ==========================================
+  // ★【新規追加】新しいレイアウト構成（new_eval_dataがある場合）
+  // ==========================================
+  if (secData.new_eval_data) {
+    const evalData = secData.new_eval_data;
 
-    const grid = document.createElement("div");
-    grid.className = "grid grid-cols-1 md:grid-cols-2 gap-3 mt-3";
+    // 1. タイトル直下の結論表示
+    const topEval = document.createElement("div");
+    topEval.className = "mt-2 font-bold text-lg text-gray-800";
+    topEval.textContent = `評価：${evalData.overall_eval}`;
+    sec.appendChild(topEval);
 
-    const good = document.createElement("div");
-    good.className = "card";
-    good.innerHTML = `<div class="font-bold">良い点</div>
-      <ul class="list list-disc pl-5 mt-2">${(secData.good||[]).map(x=>`<li>${x}</li>`).join("")}</ul>`;
+    // 2. 数値サマリーの表示
+    const summary = document.createElement("div");
+    summary.className = "card mt-3 bg-gray-50 border border-gray-200";
+    summary.innerHTML = `
+      <div class="font-bold text-sm text-gray-500 mb-2 border-b border-gray-200 pb-1">数値サマリー</div>
+      <div class="lead font-bold tracking-wide">${evalData.summary_text}</div>
+    `;
+    sec.appendChild(summary);
 
-    const bad = document.createElement("div");
-    bad.className = "card";
-    bad.innerHTML = `<div class="font-bold">改善が期待できる点</div>
-      <ul class="list list-disc pl-5 mt-2">${(secData.bad||[]).map(x=>`<li>${x}</li>`).join("")}</ul>`;
-
-    grid.appendChild(good);
-    grid.appendChild(bad);
-    sec.appendChild(grid);
-
+    // 3. 評価の内訳（一番下にLLMコメントが含まれている）
     if (secData.pro_comment) {
-      const pc = document.createElement("div");
-      pc.className = "card mt-3";
-
-      let proHtml = "";
+      const breakdown = document.createElement("div");
+      breakdown.className = "card mt-3";
+        
+      let htmlText = "";
       if (Array.isArray(secData.pro_comment)) {
-        proHtml = secData.pro_comment.map(t => `<p class="lead">${t}</p>`).join("");
+        htmlText = secData.pro_comment.join("<br>");
       } else {
-        proHtml = `<p class="lead">${secData.pro_comment}</p>`;
+        // CSSの pre-wrap を使って改行をそのまま表示させます
+        htmlText = `<div style="white-space: pre-wrap; line-height: 1.8;">${secData.pro_comment}</div>`;
       }
 
-      pc.innerHTML = `<div class="font-bold">プロ目線</div><div class="mt-2">${proHtml}</div>`;
-      sec.appendChild(pc);
+      breakdown.innerHTML = `
+        <div class="font-bold text-sm text-gray-500 mb-2 border-b border-gray-100 pb-1">評価の内訳</div>
+        <div class="lead mt-2">${htmlText}</div>
+      `;
+      sec.appendChild(breakdown);
     }
 
     reportContent.appendChild(sec);
+    return; // 新レイアウトを描画したら、ここで処理を終了して旧レイアウトの処理をスキップ
   }
 
+  // ==========================================
+  // 以降は既存のレイアウト（後方互換性のため維持）
+  // ==========================================
+  const v = document.createElement("div");
+  v.className = "muted mt-2";
+  v.innerHTML = `解析結果：<span class="font-semibold text-gray-800">${secData.value}</span>`;
+  sec.appendChild(v);
+
+  const grid = document.createElement("div");
+  grid.className = "grid grid-cols-1 md:grid-cols-2 gap-3 mt-3";
+
+  const good = document.createElement("div");
+  good.className = "card";
+  good.innerHTML = `<div class="font-bold">良い点</div>
+    <ul class="list list-disc pl-5 mt-2">${(secData.good||[]).map(x=>`<li>${x}</li>`).join("")}</ul>`;
+
+  const bad = document.createElement("div");
+  bad.className = "card";
+  bad.innerHTML = `<div class="font-bold">改善が期待できる点</div>
+    <ul class="list list-disc pl-5 mt-2">${(secData.bad||[]).map(x=>`<li>${x}</li>`).join("")}</ul>`;
+
+  grid.appendChild(good);
+  grid.appendChild(bad);
+  sec.appendChild(grid);
+
+  if (secData.pro_comment) {
+    const pc = document.createElement("div");
+    pc.className = "card mt-3";
+
+    let proHtml = "";
+    if (Array.isArray(secData.pro_comment)) {
+      proHtml = secData.pro_comment.map(t => `<p class="lead">${t}</p>`).join("");
+    } else {
+      proHtml = `<p class="lead">${secData.pro_comment}</p>`;
+    }
+
+    pc.innerHTML = `<div class="font-bold">プロ目線</div><div class="mt-2">${proHtml}</div>`;
+    sec.appendChild(pc);
+  }
+
+  reportContent.appendChild(sec);
+}
+  
 function render08(secData) {
   const sec = sectionWrap(secData.title);
 
