@@ -4052,31 +4052,38 @@ def handle_text_message(event):
 
     logging.warning("[DEBUG] raw=%r normalized=%r user_id=%s", raw_text, text, user_id)
 
-    # ===== 1) 分析スタート → Quick Reply =====
+    # ===== 1) 分析スタート → クラブ選択 (Quick Reply) =====
     if text == "分析スタート":
         is_premium = is_premium_user(user_id)
+        # 最初のステップを 'club_type' に設定
         users_ref.document(user_id).set({
-            "prefill_step": "head_speed",
+            "prefill_step": "club_type",
             "updated_at": firestore.SERVER_TIMESTAMP,
         }, merge=True)
 
-        # 冒頭文を整理し、各セクションの間に空行（\n\n）を入れて視認性を向上
+        # 冒頭文とクラブ選択のクイックリプライ
         msg_text = (
             "ご利用ありがとうございます。\n\n"
             "無料版の方は、このまま動画を送ってください。\n\n"
             "有料版の方で、より正確なフィッティング分析レポート（09）をご希望の方は、分かる範囲で入力をお願いします。\n\n"
             "---------------------\n"
-            "【必須】ヘッドスピード／主なミスの傾向（1つ）\n"
+            "【選択】分析するクラブ種別\n"
+            "【必須】ヘッドスピード／主なミス（1つ）\n"
             "【任意】性別\n\n"
-            "このあと順番にご案内します。\n"
-            "まずはヘッドスピードを数字だけで送ってください（例：43）。\n\n"
-            "※フィッティング分析レポートを希望されない場合は、そのまま動画を送信してください。\n"
-            "※途中で入力をやめたい場合は「スキップ」と送ってください。"
+            "まずは、今回分析するクラブを下のボタンから選んでください。\n"
         )
+
+        # クイックリプライボタンの作成
+        quick_reply = QuickReply(items=[
+            QuickReplyButton(action=MessageAction(label="ドライバー", text="ドライバー")),
+            QuickReplyButton(action=MessageAction(label="ウッド・UT", text="ウッド・UT")),
+            QuickReplyButton(action=MessageAction(label="アイアン", text="アイアン")),
+            QuickReplyButton(action=MessageAction(label="スキップ", text="スキップ")),
+        ])
 
         line_bot_api.reply_message(
             event.reply_token,
-            TextSendMessage(text=msg_text)
+            TextSendMessage(text=msg_text, quick_reply=quick_reply)
         )
         return
 
@@ -4086,8 +4093,7 @@ def handle_text_message(event):
     step = user_data.get("prefill_step")
     logging.warning("[DEBUG] prefill_step=%r", step)
 
-    # 【修正箇所】性別判定を if step: の外に配置。
-    # ここに置くことで、stepがNoneになっても「男性/女性」という文字を最優先で捕まえます。
+    # 【既存ロジック維持】性別判定を if step: の外に配置。
     if text in ["男性", "女性"] or step == "gender":
         users_ref.document(user_id).set({
             "prefill_step": None,
@@ -4115,6 +4121,25 @@ def handle_text_message(event):
             )
             return
 
+        # --- 新設：クラブ種別の保存 ---
+        if step == "club_type":
+            # 入力されたテキストから内部用の種別を決定
+            club_map = {"ドライバー": "driver", "ウッド・UT": "wood_ut", "アイアン": "iron"}
+            selected_club = club_map.get(text, "iron") # 該当なしは暫定アイアン
+
+            users_ref.document(user_id).set({
+                "prefill_step": "head_speed",
+                "prefill": {"club_type": selected_club},
+                "updated_at": firestore.SERVER_TIMESTAMP,
+            }, merge=True)
+
+            line_bot_api.reply_message(
+                event.reply_token,
+                TextSendMessage(text=f"「{text}」で解析を承ります。\n\n次に、ヘッドスピードを数字だけで送ってください（例：43）。")
+            )
+            return
+
+        # --- 既存：ヘッドスピードの保存 ---
         if step == "head_speed":
             if not text.isdigit():
                 line_bot_api.reply_message(
@@ -4141,9 +4166,10 @@ def handle_text_message(event):
             )
             return
 
+        # --- 既存：ミスの傾向の保存 ---
         if step == "miss_tendency":
             users_ref.document(user_id).set({
-                "prefill_step": None,  # ここでリセットされるため、性別判定は上にないと動かない
+                "prefill_step": None,  # ここでリセットされる
                 "prefill": {"miss_tendency": text},
                 "updated_at": firestore.SERVER_TIMESTAMP,
             }, merge=True)
@@ -4160,7 +4186,7 @@ def handle_text_message(event):
                 )
             )
             return
-                   
+            
         # 想定外step保険
         users_ref.document(user_id).set({
             "prefill_step": None,
@@ -4175,12 +4201,17 @@ def handle_text_message(event):
     # ===== 4) stepがない場合：09希望/性別ボタンなど =====
     if text == "09希望":
         users_ref.document(user_id).set({
-            "prefill_step": "head_speed",
+            "prefill_step": "club_type", # 修正：ここもクラブ選択から始める
             "updated_at": firestore.SERVER_TIMESTAMP,
         }, merge=True)
         line_bot_api.reply_message(
             event.reply_token,
-            TextSendMessage(text="まずヘッドスピードを数字だけで送ってください（例：42）。")
+            TextSendMessage(text="まず、今回分析するクラブをボタンから選んでください。",
+                           quick_reply=QuickReply(items=[
+                               QuickReplyButton(action=MessageAction(label="ドライバー", text="ドライバー")),
+                               QuickReplyButton(action=MessageAction(label="ウッド・UT", text="ウッド・UT")),
+                               QuickReplyButton(action=MessageAction(label="アイアン", text="アイアン"))
+                           ]))
         )
         return
 
