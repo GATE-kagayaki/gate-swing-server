@@ -2290,15 +2290,25 @@ def extract_priorities(tag_counter: Counter, max_items: int = 2) -> List[str]:
     
     
 def generate_llm_comment_07(payload: Dict[str, Any]) -> str:
-    # payloadからclub_typeを取得（設定されていない場合は "unknown" として扱う）
-    club_type = payload.get("club_type", "unknown")
+    # payloadから取得。未設定の場合はデフォルトとして "アイアン" を設定し、
+    # LLMが「未知」という言葉に惑わされないようにする
+    raw_club = payload.get("club_type", "iron")
+    
+    # 表示・指示用の日本語名を定義
+    club_map = {
+        "driver": "ドライバー",
+        "iron": "アイアン",
+        "wood": "ウッド",
+        "utility": "ユーティリティ"
+    }
+    club_name = club_map.get(raw_club, "アイアン")
 
     prompt = f"""
 あなたはプロのゴルフコーチです。
 寄り添い型で説明してください。
 
 使用クラブ:
-{club_type}
+{club_name}
 
 最優先テーマ:
 {payload["priority"]}
@@ -2311,17 +2321,18 @@ def generate_llm_comment_07(payload: Dict[str, Any]) -> str:
 膝 {payload["knee"]}
 
 意識すること:
-・使用クラブ（{club_type}）の特性を踏まえ、なぜそのクラブでこの課題が影響するのか（例：アイアンならダフリ/トップ、ドライバーなら飛距離ロス/スライスなど）を文脈に含めること
-・良い点があるからこそ改善すると伸びる、という前向きな文脈にする
-・課題を「もったいないポイント」として伝える
-・ドリルの必要性を自然に説明する
-・専門用語をそのまま使いすぎず、イメージしやすい言葉に言い換える
+・必ず「{club_name}」のスイングであることを前提にアドバイスしてください。
+・アイアンなら「安定したミートやダフリの防止」、ドライバーなら「飛距離アップやスライスの抑制」など、そのクラブ特有の悩みに触れてください。
+・「{club_name}のスイングとしては〜」といった具体的な表現を使い、どっちつかずな表現を避けてください。
+・良い点があるからこそ改善すると伸びる、という前向きな文脈にする。
+・課題を「もったいないポイント」として伝える。
+・ドリルの必要性を自然に説明する。
 
 条件:
 ・4文でまとめる
 ・1文目は良い点
 ・2文目は課題（もったいないニュアンス）
-・3文目はこのままだとどうなるか（クラブの特性に絡めて具体的に）
+・3文目はこのままだとどうなるか（{club_name}特有のミスに具体的に触れる）
 ・4文目は08のドリルを推奨する理由
 ・100〜150文字
 ・箇条書き禁止
@@ -2331,7 +2342,7 @@ def generate_llm_comment_07(payload: Dict[str, Any]) -> str:
 """
 
     return call_llm(prompt)
-
+    
 def build_paid_07_from_analysis(analysis: Dict[str, Any], raw: Dict[str, Any]) -> Dict[str, Any]:
     c = collect_tag_counter(analysis)
     swing_type = judge_swing_type(c)
