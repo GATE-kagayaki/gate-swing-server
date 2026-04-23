@@ -578,6 +578,33 @@ def create_cloud_task(report_id: str, user_id: str, message_id: str) -> str:
 # MediaPipe analysis（max/mean/std/conf）
 # ==================================================
 def analyze_swing_with_mediapipe(video_path, overlay_out_path=None, user_id=None):
+    # --- [追加箇所] まず一番最初にデフォルト値を設定し、NameErrorを物理的に防ぎます ---
+    club_type = "iron"
+    spine_error_margin = 3.0
+
+    if user_id is None:
+        print("user_id が渡されていません。デフォルト値(iron)で解析を続行します。")
+    else:
+        try:
+            from google.cloud import firestore
+            db = firestore.Client()
+            user_doc = db.collection("users").document(user_id).get()
+            if user_doc.exists:
+                user_data = user_doc.to_dict() or {}
+                prefill = user_data.get("prefill", {})
+                club_type = prefill.get("club_type", "iron") # 未設定時はアイアン
+
+            # クラブ別の許容誤差を設定
+            if club_type == "driver":
+                spine_error_margin = 4.0
+            elif club_type == "wood_ut":
+                spine_error_margin = 3.5
+            else:
+                spine_error_margin = 3.0
+        except Exception as e:
+            print(f"Firestoreの取得に失敗しました。デフォルト値で続行します: {e}")
+    # ---------------------------------------------------------------------
+
     snaps = []
     import os
     os.environ["MP_DEVICE"] = "cpu"
@@ -613,14 +640,10 @@ def analyze_swing_with_mediapipe(video_path, overlay_out_path=None, user_id=None
         writer = cv2.VideoWriter(tmp_path, fourcc, fps, (w, h))  # ✅ tmp_pathに書き出し
         logging.warning(f"[DEBUG] overlay_writer_opened={writer.isOpened()} path={tmp_path} fps={fps} size=({w},{h})")
 
-
     total_frames = 0
     valid_frames = 0
     start_frame = None
     end_frame = None
-    # ここから下の「while cap.isOpened():」などは、以前のインデントのまま動くはずです
-
-     
 
     shoulders: List[float] = []
     hips: List[float] = []
@@ -648,6 +671,7 @@ def analyze_swing_with_mediapipe(video_path, overlay_out_path=None, user_id=None
         # 角度計算: cos(theta) = (A・B) / (|A|*|B|)
         c = max(-1.0, min(1.0, dot / (na * nb)))
         return math.degrees(math.acos(c))
+
     def draw_overlay_skeleton(frame, lm, mp_pose, color):
         import cv2
 
@@ -741,7 +765,6 @@ def analyze_swing_with_mediapipe(video_path, overlay_out_path=None, user_id=None
                     (sh_x + 10, sh_y - 10),
                      cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 1, cv2.LINE_AA)
 
-    
     # model_complexity=1 はCPU環境で速度と精度のバランスが最も良い設定です。
     with mp_pose.Pose(
         static_image_mode=False,
@@ -888,7 +911,6 @@ def analyze_swing_with_mediapipe(video_path, overlay_out_path=None, user_id=None
                 if len(address_buffer) > 8:
                     address_buffer.pop(0)
 
-
             # バッファが溜まったら開始判定
             if not analysis_started and len(address_buffer) >= 5:
 
@@ -922,7 +944,7 @@ def analyze_swing_with_mediapipe(video_path, overlay_out_path=None, user_id=None
 
                     analysis_started = True
                     start_frame = total_frames
-                   
+                    
             # 解析開始前でも、姿勢が見えていればラインは表示する
             if not analysis_started:
                 if writer is not None and frame is not None:
@@ -939,7 +961,6 @@ def analyze_swing_with_mediapipe(video_path, overlay_out_path=None, user_id=None
                     writer.write(out)
                 continue
             
-
             # --- B. トップ・終了候補判定 ---
             if curr_lwrist[1] < nose_y:
                 has_reached_top = True
@@ -987,7 +1008,6 @@ def analyze_swing_with_mediapipe(video_path, overlay_out_path=None, user_id=None
             knees.append(float(kn))
             x_factors.append(float(sh - abs(hip)))
 
-            
             if spine_angle > 10:
                 spines.append(float(spine_angle))
 
@@ -1023,40 +1043,7 @@ def analyze_swing_with_mediapipe(video_path, overlay_out_path=None, user_id=None
                     draw_gaze_line(out, lm, mp_pose, spine_angle)
                 
                 writer.write(out)
-    def analyze_swing_with_mediapipe(video_path, overlay_out_path=None, user_id=None):
-        # 1. まず一番最初にデフォルト値を設定し、NameErrorを物理的に防ぎます
-        club_type = "iron"
-        spine_error_margin = 3.0
 
-        if user_id is None:
-            print("user_id が渡されていません。デフォルト値(iron)で解析を続行します。")
-        else:
-            # --- [追加箇所] クラブ種別の取得と基準値の設定 ---
-            try:
-                from google.cloud import firestore
-                db = firestore.Client()
-                user_doc = db.collection("users").document(user_id).get()
-                if user_doc.exists:
-                    user_data = user_doc.to_dict() or {}
-                    prefill = user_data.get("prefill", {})
-                    club_type = prefill.get("club_type", "iron") # 未設定時はアイアン
-
-                # クラブ別の許容誤差を設定
-                if club_type == "driver":
-                    spine_error_margin = 4.0
-                elif club_type == "wood_ut":
-                    spine_error_margin = 3.5
-                else:
-                    spine_error_margin = 3.0
-            except Exception as e:
-                print(f"Firestoreの取得に失敗しました。デフォルト値で続行します: {e}")
-
-        snaps = []
-        import os
-        os.environ["MP_DEVICE"] = "cpu"
-        os.environ["MEDIAPIPE_DISABLE_GPU"] = "1"
-    
-            
     # whileループ終了後
     cap.release()
 
@@ -1116,7 +1103,7 @@ def analyze_swing_with_mediapipe(video_path, overlay_out_path=None, user_id=None
 
     if final_overlay_path:
         overlay_out_path = final_overlay_path
-   
+    
     # --- ヘルパー関数の定義 ---
     def _safe_mean(xs):
         return sum(xs) / len(xs) if xs else 0.0
@@ -1128,7 +1115,6 @@ def analyze_swing_with_mediapipe(video_path, overlay_out_path=None, user_id=None
 
     def _bench_delta(val, base_val):
         return float(val - base_val)
-
 
     def dist_3d(p, base):
         return math.sqrt(sum((a - b)**2 for a, b in zip(p, base)))
