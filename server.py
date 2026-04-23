@@ -2257,10 +2257,15 @@ def extract_priorities(tag_counter: Counter, max_items: int = 2) -> List[str]:
     
     
 def generate_llm_comment_07(payload: Dict[str, Any]) -> str:
+    # payloadからclub_typeを取得（設定されていない場合は "unknown" として扱う）
+    club_type = payload.get("club_type", "unknown")
 
     prompt = f"""
 あなたはプロのゴルフコーチです。
 寄り添い型で説明してください。
+
+使用クラブ:
+{club_type}
 
 最優先テーマ:
 {payload["priority"]}
@@ -2273,6 +2278,7 @@ def generate_llm_comment_07(payload: Dict[str, Any]) -> str:
 膝 {payload["knee"]}
 
 意識すること:
+・使用クラブ（{club_type}）の特性を踏まえ、なぜそのクラブでこの課題が影響するのか（例：アイアンならダフリ/トップ、ドライバーなら飛距離ロス/スライスなど）を文脈に含めること
 ・良い点があるからこそ改善すると伸びる、という前向きな文脈にする
 ・課題を「もったいないポイント」として伝える
 ・ドリルの必要性を自然に説明する
@@ -2282,7 +2288,7 @@ def generate_llm_comment_07(payload: Dict[str, Any]) -> str:
 ・4文でまとめる
 ・1文目は良い点
 ・2文目は課題（もったいないニュアンス）
-・3文目はこのままだとどうなるか
+・3文目はこのままだとどうなるか（クラブの特性に絡めて具体的に）
 ・4文目は08のドリルを推奨する理由
 ・100〜150文字
 ・箇条書き禁止
