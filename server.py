@@ -1024,23 +1024,37 @@ def analyze_swing_with_mediapipe(video_path, overlay_out_path=None, user_id=None
                 
                 writer.write(out)
     def analyze_swing_with_mediapipe(video_path, overlay_out_path=None, user_id=None):
-        if user_id is None:
-            raise ValueError("user_id が渡されていません")
-        # --- [追加箇所] クラブ種別の取得と基準値の設定 ---
-        from google.cloud import firestore
-        db = firestore.Client()
-        user_doc = db.collection("users").document(user_id).get()
-        user_data = user_doc.to_dict() or {}
-        prefill = user_data.get("prefill", {})
-        club_type = prefill.get("club_type", "iron") # 未設定時はアイアン
+        # 1. まず一番最初にデフォルト値を設定し、NameErrorを物理的に防ぎます
+        club_type = "iron"
+        spine_error_margin = 3.0
 
-        # クラブ別の許容誤差を設定
-        if club_type == "driver":
-            spine_error_margin = 4.0
-        elif club_type == "wood_ut":
-            spine_error_margin = 3.5
+        if user_id is None:
+            print("user_id が渡されていません。デフォルト値(iron)で解析を続行します。")
         else:
-            spine_error_margin = 3.0
+            # --- [追加箇所] クラブ種別の取得と基準値の設定 ---
+            try:
+                from google.cloud import firestore
+                db = firestore.Client()
+                user_doc = db.collection("users").document(user_id).get()
+                if user_doc.exists:
+                    user_data = user_doc.to_dict() or {}
+                    prefill = user_data.get("prefill", {})
+                    club_type = prefill.get("club_type", "iron") # 未設定時はアイアン
+
+                # クラブ別の許容誤差を設定
+                if club_type == "driver":
+                    spine_error_margin = 4.0
+                elif club_type == "wood_ut":
+                    spine_error_margin = 3.5
+                else:
+                    spine_error_margin = 3.0
+            except Exception as e:
+                print(f"Firestoreの取得に失敗しました。デフォルト値で続行します: {e}")
+
+        snaps = []
+        import os
+        os.environ["MP_DEVICE"] = "cpu"
+        os.environ["MEDIAPIPE_DISABLE_GPU"] = "1"
     
             
     # whileループ終了後
