@@ -3320,24 +3320,6 @@ def build_analysis(raw: Dict[str, Any], premium: bool, report_id: str, user_inpu
 
     analysis["08"] = build_paid_08(analysis, raw)
 
-    # 08 は無条件の前傾ドリル insert をやめる
-    # build_paid_08 内の通常ロジックに任せる
-    # どうしても補強するなら、head / knee も崩れている時だけ追加
-    if spine_flag == "bad":
-        head_mean = float(raw.get("head", {}).get("mean", 0.0))
-        knee_mean = float(raw.get("knee", {}).get("mean", 0.0))
-
-        if head_mean > 6.0 or knee_mean > 9.0:
-            analysis["08"].setdefault("drills", [])
-
-            existing_names = {d.get("name") for d in analysis["08"]["drills"] if isinstance(d, dict)}
-            if "前傾維持ドリル" not in existing_names:
-                analysis["08"]["drills"].append({
-                    "name": "前傾維持ドリル",
-                    "purpose": "アドレスで作った姿勢を保ちながら回転する感覚を身につけ、フォーム全体の再現性を高める",
-                    "how": "アドレスで作った前傾を保ちながら、肩と腰をゆっくり回すハーフスイングを10回×2セット行う"
-                })
-
     # 09は入力がある場合のみ出力
     ui = user_inputs or {}
     if ui.get("head_speed") is not None or ui.get("miss_tendency") or ui.get("gender"):
