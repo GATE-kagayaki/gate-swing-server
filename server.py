@@ -1190,12 +1190,26 @@ def analyze_swing_with_mediapipe(video_path, overlay_out_path=None, user_id=None
     return result
   
 # ==================================================
-# Section 01: 修正版（3D・％単位対応）
+# Section 01: 修正版（3D・％単位対応・診断クラブ追加）
 # ==================================================
-def build_section_01(raw: Dict[str, Any]) -> Dict[str, Any]:
+def build_section_01(raw: Dict[str, Any], club_type: str) -> Dict[str, Any]:
+    # クラブ名の日本語表示用マッピング
+    club_name_jp = {
+        "driver": "ドライバー",
+        "iron": "アイアン",
+        "wood": "ウッド",
+        "utility": "ユーティリティ"
+    }.get(club_type, club_type)
+
     return {
         "title": "01. 骨格計測データ（AIが測定）",
         "items": [
+            {
+                "name": "診断クラブ",
+                "value": club_name_jp,
+                "description": "今回解析を行ったクラブの種類です。",
+                "guide": "-",
+            },
             {
                 "name": "解析フレーム数",
                 "value": raw.get("frame_count", 0),
