@@ -2641,13 +2641,12 @@ DRILL_DEFINITIONS: List[Dict[str, Any]] = [
 ]
 def collect_all_tags(analysis: Dict[str, Any]) -> List[str]:
     tags: List[str] = []
-    # 02〜06の各セクションからタグを収集
-    for k in ["02", "03", "04", "05", "06"]:
+    # 02〜07の各セクションからタグを収集
+    for k in ["02", "03", "04", "05", "06", "07"]:
         sec = analysis.get(k)
         if sec and "tags" in sec:
             tags.extend(sec["tags"] or [])
     return tags
-
 
 def select_drills_with_priority(tags: List[str], priorities: List[str], max_drills: int = 3) -> List[Dict[str, Any]]:
     """
