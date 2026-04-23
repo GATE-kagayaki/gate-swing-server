@@ -3353,7 +3353,7 @@ def build_analysis(raw: Dict[str, Any], premium: bool, report_id: str, user_inpu
 
     # 09は入力がある場合のみ出力
     ui = user_inputs or {}
-    if ui.get("head_speed") is not None or ui.get("miss_tendency") or ui.get("gender"):
+    if club_type == "driver" and (ui.get("head_speed") is not None or ui.get("miss_tendency") or ui.get("gender")):
         analysis["09"] = build_paid_09(raw, ui)
 
     analysis["10"] = build_paid_10(analysis)
