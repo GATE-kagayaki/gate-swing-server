@@ -3267,7 +3267,11 @@ def judge_spine_flag(raw: Dict[str, Any]) -> str:
     delta_top = abs(spine_top - base) if spine_top else 0
     delta_impact = abs(spine_impact - base) if spine_impact else 0
 
-    worst = max(delta_mean, delta_top, delta_impact)
+    # --- [修正箇所] 評価の最適化 ---
+    # 動画の「ほぼ緑（平均値が良い）」という印象と合わせるため、
+    # トップ・インパクトの一瞬のズレには緩和係数（0.7など）を掛け、
+    # 一瞬のブレだけで極端にBad判定へ引っ張られないように調整します。
+    worst = max(delta_mean, delta_top * 0.7, delta_impact * 0.7)
 
     # --- [修正箇所] クラブ別のしきい値を参照するように変更 ---
     # rawの中に thresholds があればそこから取得、なければ初・中級者デフォルト(5.0)を使用
