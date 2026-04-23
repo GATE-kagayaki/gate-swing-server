@@ -578,9 +578,17 @@ def create_cloud_task(report_id: str, user_id: str, message_id: str) -> str:
 # MediaPipe analysis（max/mean/std/conf）
 # ==================================================
 def analyze_swing_with_mediapipe(video_path, overlay_out_path=None, user_id=None):
-    # --- [追加箇所] まず一番最初にデフォルト値を設定し、NameErrorを物理的に防ぎます ---
+    # --- [追加箇所] 初級者〜中級者向けの設定（厳しすぎず、上達を楽しめる基準） ---
+    
+    # 1. デフォルト設定（アイアン：初・中級者が「緑」を出しやすい広めの許容範囲）
+    config = {
+        "spine_limit": 5.0,           # 前傾維持：5度までは「安定」とみなす
+        "head_limit": 8.0,            # 頭のブレ：8cm程度までは許容（MediaPipeのノイズ対策込）
+        "knee_limit": 11.0,           # 膝の動き：11cm程度まで
+        "shoulder_std_limit": 22.0    # 肩回転のばらつき：初級者の再現性に合わせて広めに
+    }
     club_type = "iron"
-    spine_error_margin = 3.0
+    spine_error_margin = config["spine_limit"] # 既存の描画ロジック用
 
     if user_id is None:
         print("user_id が渡されていません。デフォルト値(iron)で解析を続行します。")
@@ -594,13 +602,25 @@ def analyze_swing_with_mediapipe(video_path, overlay_out_path=None, user_id=None
                 prefill = user_data.get("prefill", {})
                 club_type = prefill.get("club_type", "iron") # 未設定時はアイアン
 
-            # クラブ別の許容誤差を設定
+            # 2. クラブ別の許容誤差を設定（長いクラブほど遠心力で体が動くため、さらに基準を広げる）
             if club_type == "driver":
-                spine_error_margin = 4.0
+                config = {
+                    "spine_limit": 6.5,       # ドライバーは大きく振るため6.5度までOK
+                    "head_limit": 11.0,       # ビハインド・ザ・ボールを考慮し広めに
+                    "knee_limit": 15.0,       # 積極的な体重移動を許容
+                    "shoulder_std_limit": 26.0
+                }
             elif club_type == "wood_ut":
-                spine_error_margin = 3.5
-            else:
-                spine_error_margin = 3.0
+                config = {
+                    "spine_limit": 5.5,
+                    "head_limit": 9.5,
+                    "knee_limit": 13.0,
+                    "shoulder_std_limit": 24.0
+                }
+            
+            # 既存の変数 spine_error_margin を今回の設定値で更新
+            spine_error_margin = config["spine_limit"]
+
         except Exception as e:
             print(f"Firestoreの取得に失敗しました。デフォルト値で続行します: {e}")
     # ---------------------------------------------------------------------
