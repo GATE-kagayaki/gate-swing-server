@@ -2726,7 +2726,7 @@ def build_paid_08(analysis: Dict[str, Any], raw: Dict[str, Any]) -> Dict[str, An
     selected_drills = select_drills_with_priority(
         all_tags,
         priorities,
-        3
+        2
     )
 
     for d in selected_drills:
