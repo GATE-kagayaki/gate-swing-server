@@ -1142,6 +1142,7 @@ def analyze_swing_with_mediapipe(video_path, overlay_out_path=None):
 
     # (ここに必要な計算ロジックが入ります)
     result = {
+        "club_type": club_type,
         "frame_count": int(total_frames),
         "valid_frames": int(valid_frames),
         "confidence": round(conf, 3),
