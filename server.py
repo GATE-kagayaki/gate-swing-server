@@ -1161,8 +1161,12 @@ def analyze_swing_with_mediapipe(video_path, overlay_out_path=None, user_id=None
         spines.append(0.0)
 
     # (ここに必要な計算ロジックが入ります)
+    # (中略：解析処理)
+
+    # 最終的な結果を返す
     result = {
         "club_type": club_type,
+        "thresholds": config,  # この値を 08セクションのタグ判定に使う
         "frame_count": int(total_frames),
         "valid_frames": int(valid_frames),
         "confidence": round(conf, 3),
@@ -1180,12 +1184,10 @@ def analyze_swing_with_mediapipe(video_path, overlay_out_path=None, user_id=None
         "snaps": snaps
     }
 
-    # ★ overlay動画パスを返す
     if overlay_out_path:
         result["overlay_path"] = overlay_out_path
 
     return result
-
   
 # ==================================================
 # Section 01: 修正版（3D・％単位対応）
