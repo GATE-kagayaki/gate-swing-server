@@ -3230,10 +3230,20 @@ def judge_spine_flag(raw: Dict[str, Any]) -> str:
 
     worst = max(delta_mean, delta_top, delta_impact)
 
-    if worst <= 5.5:
+    # --- [修正箇所] クラブ別のしきい値を参照するように変更 ---
+    # rawの中に thresholds があればそこから取得、なければ初・中級者デフォルト(5.0)を使用
+    thresholds = raw.get("thresholds") or {}
+    spine_limit = float(thresholds.get("spine_limit", 5.0))
+
+    # OK基準：設定された spine_limit (5.0〜6.5) を使用
+    if worst <= spine_limit:
         return "ok"
-    if worst <= 10.0:
+    
+    # Warn基準：しきい値の約1.5倍〜2倍程度（ここでは1.8倍程度に設定）
+    # 例：アイアンなら 9.0度、ドライバーなら 12.0度くらいまでが Warn
+    if worst <= spine_limit * 1.8:
         return "warn"
+    
     return "bad"
 
 def judge_address_posture(raw: Dict[str, Any]) -> Dict[str, str]:
