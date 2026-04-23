@@ -1008,13 +1008,14 @@ def analyze_swing_with_mediapipe(video_path, overlay_out_path=None):
                 if base_spine_angle is not None and spine_angle > 0:
                     delta_spine = abs(spine_angle - base_spine_angle)
 
-                    if delta_spine <= 3:
+                    # 3 や 6 という固定値を、上記で設定した spine_error_margin に置き換え
+                    if delta_spine <= spine_error_margin:
                         color = (0, 255, 0)
-                    elif delta_spine <= 6:
+                    elif delta_spine <= (spine_error_margin * 2):
                         color = (0, 255, 255)
                     else:
                         color = (0, 0, 255)
-
+                        
                 draw_overlay_skeleton(out, lm, mp_pose, color)
                 draw_spine_line(out, lm, mp_pose, color)
                 
