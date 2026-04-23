@@ -3341,14 +3341,18 @@ def judge_spine_maintain_display(raw: Dict[str, Any]) -> Dict[str, str]:
     }
     
 def build_analysis(raw: Dict[str, Any], premium: bool, report_id: str, user_inputs: Dict[str, Any]) -> Dict[str, Any]:
-    analysis: Dict[str, Any] = {"01": build_section_01(raw)}
+    # user_inputsの安全な取得とclub_typeの抽出
+    ui = user_inputs or {}
+    club_type = raw.get("club_type") or ui.get("club_type", "unknown")
+
+    analysis: Dict[str, Any] = {"01": build_section_01(raw, club_type)}
 
     spine_flag = judge_spine_flag(raw)
 
     if not premium:
         analysis["07"] = build_free_07(raw)
         return analysis
-
+        
     analysis["02"] = build_paid_02_shoulder(raw, seed=report_id)
     analysis["03"] = build_paid_03_hip(raw, seed=report_id)
     analysis["04"] = build_paid_04_wrist(raw, seed=report_id)
