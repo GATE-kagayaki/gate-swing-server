@@ -1190,7 +1190,7 @@ def analyze_swing_with_mediapipe(video_path, overlay_out_path=None, user_id=None
     return result
   
 # ==================================================
-# Section 01: 修正版（3D・％単位対応・診断クラブ追加）
+# Section 01: 修正版（3D・％単位対応・診断クラブ追加・クラブ別目安対応）
 # ==================================================
 def build_section_01(raw: Dict[str, Any], club_type: str) -> Dict[str, Any]:
     # クラブ名の日本語表示用マッピング
@@ -1200,6 +1200,25 @@ def build_section_01(raw: Dict[str, Any], club_type: str) -> Dict[str, Any]:
         "wood": "ウッド",
         "utility": "ユーティリティ"
     }.get(club_type, club_type)
+
+    # クラブ別の目安（guide）設定
+    if club_type == "driver":
+        guides = {
+            "shoulder": "maxで90°〜120°",  # ドライバーは回旋が大きくなるため
+            "hip": "maxで35°〜65°",
+            "wrist": "meanで40°〜80°",
+            "head": "meanで8.0%以下",     # 頭のブレもアイアンより許容する
+            "knee": "meanで12.0%以下"     # 膝のブレもアイアンより許容する
+        }
+    else:
+        # アイアン等の基準（元の固定値をベースに設定）
+        guides = {
+            "shoulder": "maxで80°〜115°",
+            "hip": "maxで30°〜60°",
+            "wrist": "meanで40°〜80°",
+            "head": "meanで6.5%以下",
+            "knee": "meanで10.0%以下"
+        }
 
     return {
         "title": "01. 骨格計測データ（AIが測定）",
@@ -1226,31 +1245,31 @@ def build_section_01(raw: Dict[str, Any], club_type: str) -> Dict[str, Any]:
                 "name": "肩回転（°）",
                 "value": f'max {raw["shoulder"]["max"]:.1f} / mean {raw["shoulder"]["mean"]:.1f} / σ {raw["shoulder"]["std"]:.1f}',
                 "description": "3D空間での上半身の回旋量です。",
-                "guide": "maxで80°〜115°",
+                "guide": guides["shoulder"],
             },
             {
                 "name": "腰回転（°）",
                 "value": f'max {raw["hip"]["max"]:.1f} / mean {raw["hip"]["mean"]:.1f} / σ {raw["hip"]["std"]:.1f}',
                 "description": "3D空間での下半身の回旋量です。",
-                "guide": "maxで30°〜60°",
+                "guide": guides["hip"],
             },
             {
                 "name": "手首コック（°）",
                 "value": f'max {raw["wrist"]["max"]:.1f} / mean {raw["wrist"]["mean"]:.1f} / σ {raw["wrist"]["std"]:.1f}',
                 "description": "手首のタメの角度（3D）です。",
-                "guide": "meanで40°〜80°",
+                "guide": guides["wrist"],
             },
             {
                 "name": "頭部ブレ（%）",
                 "value": f'max {raw["head"]["max"]:.1f} / mean {raw["head"]["mean"]:.1f} / σ {raw["head"]["std"]:.1f}',
                 "description": "アドレス時からの頭部の移動量です（画面幅比）。",
-                "guide": "meanで6.5%以下",
+                "guide": guides["head"],
             },
             {
                 "name": "膝ブレ（%）",
                 "value": f'max {raw["knee"]["max"]:.1f} / mean {raw["knee"]["mean"]:.1f} / σ {raw["knee"]["std"]:.1f}',
                 "description": "アドレス時からの膝の移動量です（画面幅比）。",
-                "guide": "meanで10.0%以下",
+                "guide": guides["knee"],
             },
         ],
     }
