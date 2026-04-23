@@ -3500,6 +3500,7 @@ def task_handler():
             raw = analyze_swing_with_mediapipe(
                 video_path,
                 overlay_out_path=overlay_out
+                user_id=user_id
             )
 
             logging.warning(f"[DEBUG] raw_type={type(raw)}")
