@@ -3466,13 +3466,31 @@ def build_analysis(raw: Dict[str, Any], premium: bool, report_id: str, user_inpu
     ui = user_inputs or {}
     club_type = raw.get("club_type") or ui.get("club_type", "unknown")
 
-    analysis: Dict[str, Any] = {"01": build_section_01(raw, club_type)}
+    # --- [修正箇所] ここから ---
+    analysis: Dict[str, Any] = {}
+
+    # 1. プレミアムユーザー（monthly, single）の場合、まずスコアを生成
+    if premium:
+        try:
+            total_score = calculate_swing_score(raw, club_type)
+            analysis["00_score"] = build_paid_score_block(total_score)
+        except Exception as e:
+            # 計算エラー時も止まらないように安全策
+            import logging
+            logging.error(f"Score calculation failed: {e}")
+            analysis["00_score"] = build_paid_score_block(70) # デフォルト値
+
+    # 2. その後に既存の01セクションを追加
+    analysis["01"] = build_section_01(raw, club_type)
+    # --- [修正箇所] ここまで ---
 
     spine_flag = judge_spine_flag(raw)
 
     if not premium:
         analysis["07"] = build_free_07(raw)
         return analysis
+    
+    # ...この後に続く有料版用の処理（02〜10など）...
         
     analysis["02"] = build_paid_02_shoulder(raw, seed=report_id)
     analysis["03"] = build_paid_03_hip(raw, seed=report_id)
