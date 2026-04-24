@@ -3771,7 +3771,7 @@ def task_handler():
                         "style": "secondary",
                         "action": {
                             "type": "uri",
-                            "label": "🎬 動画をシェアする",
+                            "label": "🎬 レポートをシェアする",
                             "uri": share_uri
                         }
                     }
