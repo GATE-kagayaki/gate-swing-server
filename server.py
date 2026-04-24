@@ -2871,27 +2871,52 @@ def _norm_inverse(v: float, lo: float, hi: float) -> float:
     return 1.0 - _norm_range(v, lo, hi)
 
 
-def calc_power_idx(raw: Dict[str, Any]) -> int:
+def calc_power_idx(raw: Dict[str, Any], club_type: str) -> int:
     sh = float(raw["shoulder"]["mean"])
     hip = float(abs(raw["hip"]["mean"]))
     wrist = float(raw["wrist"]["mean"])
     xf = float(raw["x_factor"]["mean"])
 
-    a = _norm_range(sh, 85, 105)
-    b = _norm_range(hip, 36, 50)
-    c = _norm_range(wrist, 70, 90)
-    d = _norm_range(xf, 36, 55)
+    # クラブ別の分岐を追加
+    if club_type == "driver":
+        a = _norm_range(sh, 90, 120)
+        b = _norm_range(hip, 35, 65)
+        c = _norm_range(wrist, 70, 90)
+        d = _norm_range(xf, 36, 55)
+    else:
+        a = _norm_range(sh, 85, 105)
+        b = _norm_range(hip, 36, 50)
+        c = _norm_range(wrist, 70, 90)
+        d = _norm_range(xf, 36, 55)
+
     return int(round((a + b + c + d) / 4.0 * 100))
 
 
-def calc_stability_idx(raw: Dict[str, Any]) -> int:
+def calc_stability_idx(raw: Dict[str, Any], club_type: str) -> int:
     head = float(raw["head"]["mean"])
     knee = float(raw["knee"]["mean"])
 
-    a = _norm_inverse(head, 3.0, 8.0)
-    b = _norm_inverse(knee, 4.0, 10.0)
-    return int(round((a + b) / 2.0 * 100))
+    # 前傾姿勢（spine）のブレ幅算出を追加
+    spines = raw.get("spine_raw") or []
+    if spines:
+        base = float(spines[0])
+        deltas = [abs(float(x) - base) for x in spines if x is not None]
+        spine_mean = sum(deltas) / len(deltas) if deltas else 0.0
+    else:
+        spine_mean = 0.0
 
+    # クラブ別の分岐と前傾(c)の評価を追加
+    if club_type == "driver":
+        a = _norm_inverse(head, 4.0, 11.0)
+        b = _norm_inverse(knee, 5.0, 15.0)
+        c = _norm_inverse(spine_mean, 3.0, 8.0)
+    else:
+        a = _norm_inverse(head, 3.0, 8.0)
+        b = _norm_inverse(knee, 4.0, 10.0)
+        c = _norm_inverse(spine_mean, 2.0, 6.0)
+
+    # 評価項目が3つになったため、分母を 3.0 に変更
+    return int(round((a + b + c) / 3.0 * 100))
 
 def _to_float_or_none(x: Any) -> Optional[float]:
     try:
