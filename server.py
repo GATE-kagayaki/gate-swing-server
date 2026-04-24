@@ -2298,7 +2298,7 @@ def generate_llm_comment_07(payload: Dict[str, Any]) -> str:
         "wood": "ウッド",
         "utility": "ユーティリティ"
     }
-    club_name = club_map.get(raw_club, "アイアン")
+    club_name = club_map.get(raw_club, "ドライバー")
 
     # 性別が不明な場合でも自然な呼びかけにする設定
     gender_raw = payload.get("gender", "unknown")
