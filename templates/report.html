@@ -131,12 +131,42 @@
     return sec;
   }
   
+  // ==========================================
+  // ★【新規追加】総合スコア表示用関数
+  // ==========================================
+  function render00_score(secData) {
+    try {
+      // LINE Flex Message用に構築された辞書から、テキストと色を抽出
+      const scoreStr = secData.contents[1].contents[0].text;
+      const scoreColor = secData.contents[1].contents[0].color;
+      const evalText = secData.contents[2].text;
+
+      const sec = document.createElement("section");
+      sec.className = "mt-6 mb-2";
+
+      sec.innerHTML = `
+        <div style="background-color: #f8f9fa; border-radius: 16px; padding: 24px; text-align: center; border: 2px solid ${scoreColor}; box-shadow: 0 4px 6px rgba(0,0,0,0.05);">
+          <div style="font-size: 0.95rem; font-weight: bold; color: #666666; margin-bottom: 8px;">🎯 総合スイングスコア</div>
+          <div style="display: flex; justify-content: center; align-items: baseline; gap: 4px;">
+            <span style="font-size: 4rem; font-weight: 800; color: ${scoreColor}; line-height: 1;">${scoreStr}</span>
+            <span style="font-size: 1.25rem; font-weight: bold; color: #999999;">/ 100点</span>
+          </div>
+          <div style="font-size: 1rem; color: #555555; margin-top: 12px; font-weight: bold;">${evalText}</div>
+        </div>
+      `;
+      reportContent.appendChild(sec);
+    } catch(e) {
+      console.error("Score parsing error:", e);
+    }
+  }
+
+  // ↓ 見つけていただいた既存のコードがここから続きます ↓
   function renderVideo(videoUrl, downloadUrl) {
     // レポートの「00.」セクションを作成
     const sec = sectionWrap("00. 骨格ライン動画（解析結果）");
     const box = document.createElement("div");
     box.className = "card mt-3";
-
+    
     // 1. まず動画プレイヤーを表示
     box.innerHTML = `
       <div class="muted mb-2">
