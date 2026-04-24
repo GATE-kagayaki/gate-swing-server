@@ -2357,6 +2357,7 @@ def build_paid_07_from_analysis(analysis: Dict[str, Any], raw: Dict[str, Any]) -
     spine_flag = judge_spine_flag(raw)
 
     llm_payload = {
+        "club_type": raw.get("club_type", "iron"),
         "priority": priorities[0] if priorities else "不明",
         "swing_type": swing_type,
 
