@@ -2918,6 +2918,84 @@ def calc_stability_idx(raw: Dict[str, Any], club_type: str) -> int:
     # 評価項目が3つになったため、分母を 3.0 に変更
     return int(round((a + b + c) / 3.0 * 100))
 
+# ==================================================
+# 新規追加: 総合スコア計算
+# ==================================================
+def calculate_swing_score(raw: Dict[str, Any], club_type: str) -> int:
+    """
+    パワーと安定性のインデックスを合算し、100点満点の総合スコアを算出する
+    """
+    power = calc_power_idx(raw, club_type)
+    stability = calc_stability_idx(raw, club_type)
+    
+    # 双方を50%ずつの比率で総合スコアとする
+    total = (power + stability) / 2.0
+    return int(round(total))
+
+# ==================================================
+# 新規追加: 有料版向け 総合スコア表示ブロック
+# ==================================================
+def build_paid_score_block(score: int) -> Dict[str, Any]:
+    # スコアに応じたカラーとコメントの出し分け（ゲーム要素）
+    if score >= 80:
+        color = "#ff3344"  # 赤系（エクセレント）
+        eval_text = "素晴らしいスイングです！高い再現性が期待できます。"
+    elif score >= 60:
+        color = "#22bb55"  # 緑系（グッド）
+        eval_text = "安定感があります。さらなる高みを目指しましょう！"
+    else:
+        color = "#ffaa00"  # オレンジ系（伸びしろ）
+        eval_text = "ここから一気に成長できるチャンスです！"
+
+    return {
+        "type": "box",
+        "layout": "vertical",
+        "paddingAll": "lg",
+        "backgroundColor": "#f8f9fa",
+        "cornerRadius": "md",
+        "margin": "md",
+        "contents": [
+            {
+                "type": "text",
+                "text": "🎯 総合スイングスコア",
+                "weight": "bold",
+                "color": "#666666",
+                "size": "sm"
+            },
+            {
+                "type": "box",
+                "layout": "baseline",
+                "margin": "md",
+                "contents": [
+                    {
+                        "type": "text",
+                        "text": str(score),
+                        "weight": "bold",
+                        "size": "4xl",
+                        "color": color,
+                        "flex": 0
+                    },
+                    {
+                        "type": "text",
+                        "text": " / 100点",
+                        "weight": "bold",
+                        "size": "md",
+                        "color": "#999999",
+                        "margin": "sm",
+                        "flex": 0
+                    }
+                ]
+            },
+            {
+                "type": "text",
+                "text": eval_text,
+                "size": "xs",
+                "color": "#888888",
+                "margin": "sm"
+            }
+        ]
+    }
+
 def _to_float_or_none(x: Any) -> Optional[float]:
     try:
         if x is None:
