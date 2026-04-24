@@ -3049,13 +3049,15 @@ def build_paid_09(raw: Dict[str, Any], user_inputs: Dict[str, Any]) -> Dict[str,
 
     # 外部関数（KeyErrorガード）: 返り型に合わせて int fallback
     try:
-        power_idx = int(calc_power_idx(raw))
+        # 第2引数に club_type を追加
+        power_idx = int(calc_power_idx(raw, club_type))
     except Exception:
         logging.warning("[DEBUG] calc_power_idx failed; fallback")
         power_idx = 10
 
     try:
-        stability_idx = int(calc_stability_idx(raw))
+        # 第2引数に club_type を追加
+        stability_idx = int(calc_stability_idx(raw, club_type))
     except Exception:
         logging.warning("[DEBUG] calc_stability_idx failed; fallback")
         stability_idx = 10
