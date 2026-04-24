@@ -2915,28 +2915,35 @@ def calc_stability_idx(raw: Dict[str, Any], club_type: str) -> int:
 def calculate_swing_score(raw: Dict[str, Any], club_type: str) -> int:
     """
     パワーと安定性のインデックスを合算し、100点満点の総合スコアを算出する
+    (初心者でも40点程度からスタートできるよう底上げ調整済み)
     """
     power = calc_power_idx(raw, club_type)
     stability = calc_stability_idx(raw, club_type)
     
-    # 双方を50%ずつの比率で総合スコアとする
-    total = (power + stability) / 2.0
-    return int(round(total))
+    # 双方を50%ずつの比率で計算（これが内部的な「素点」）
+    raw_total = (power + stability) / 2.0
+    
+    # --- [修正] 優しさ補正ロジック ---
+    # 計算式: 40 + (素点 * 0.6)
+    # これにより、0点でも40点から始まり、100点満点は維持されます
+    kind_total = 40 + (raw_total * 0.6)
+    
+    return int(round(kind_total))
 
 # ==================================================
 # 新規追加: 有料版向け 総合スコア表示ブロック
 # ==================================================
 def build_paid_score_block(score: int) -> Dict[str, Any]:
-    # スコアに応じたカラーとコメントの出し分け（ゲーム要素）
-    if score >= 80:
-        color = "#ff3344"  # 赤系（エクセレント）
-        eval_text = "素晴らしいスイングです！高い再現性が期待できます。"
-    elif score >= 60:
-        color = "#22bb55"  # 緑系（グッド）
-        eval_text = "安定感があります。さらなる高みを目指しましょう！"
-    else:
-        color = "#ffaa00"  # オレンジ系（伸びしろ）
-        eval_text = "ここから一気に成長できるチャンスです！"
+    # スコアに応じたカラーとコメントの出し分け（プロレベルを90点以上に設定）
+    if score >= 90:
+        color = "#ff3344"  # 赤系（プロ・エクセレント）
+        eval_text = "素晴らしいスイングです！プロレベルの高い技術と再現性を兼ね備えています。"
+    elif score >= 75:
+        color = "#22bb55"  # 緑系（上級・グッド）
+        eval_text = "非常に安定感があります。さらなる高み（90点超え）を目指しましょう！"
+    elif score >= 55:
+        color = "#ffaa00"  # オレンジ系（中級・ステップアップ）
+        eval_text = "着実に基礎が身についています。まずは75点クリアを目指しましょう！"
 
     return {
         "type": "box",
