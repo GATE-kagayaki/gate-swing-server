@@ -451,11 +451,20 @@ function render09(secData) {
         window.reportAddressPosture = data.address_posture;
         window.reportSpineMaintain = data.spine_maintain;
 
+        if (data.is_premium) premiumBadge.classList.remove("hidden");
+
+        // analysisデータを取得
+        const a = data.analysis || {};
+
+        // ★【新規追加】一番上にスコアを描画
+        if (a["00_score"]) {
+            render00_score(a["00_score"]);
+        }
+
         if (data.overlay_video_url) {
           renderVideo(data.overlay_video_url, data.overlay_video_download_url);
         }
-        if (data.is_premium) premiumBadge.classList.remove("hidden");
-        const a = data.analysis || {};
+        
         if (a["01"]) render01(a["01"]);
         ["02","03","04","05","06"].forEach(k => a[k] && render02to06(k, a[k]));
         if (a["07"]) renderTextSection(a["07"]);
