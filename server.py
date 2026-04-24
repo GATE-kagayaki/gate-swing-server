@@ -2290,11 +2290,8 @@ def extract_priorities(tag_counter: Counter, max_items: int = 2) -> List[str]:
     
     
 def generate_llm_comment_07(payload: Dict[str, Any]) -> str:
-    # payloadから取得。未設定の場合はデフォルトとして "アイアン" を設定し、
-    # LLMが「未知」という言葉に惑わされないようにする
+    # 既存のクラブ名取得ロジック
     raw_club = payload.get("club_type", "iron")
-    
-    # 表示・指示用の日本語名を定義
     club_map = {
         "driver": "ドライバー",
         "iron": "アイアン",
@@ -2303,9 +2300,13 @@ def generate_llm_comment_07(payload: Dict[str, Any]) -> str:
     }
     club_name = club_map.get(raw_club, "アイアン")
 
+    # 性別が不明な場合でも自然な呼びかけにする設定
+    gender_raw = payload.get("gender", "unknown")
+    gender_context = "女性ゴルファー" if gender_raw == "female" else "男性ゴルファー" if gender_raw == "male" else "ゴルファー"
+
     prompt = f"""
 あなたはプロのゴルフコーチです。
-寄り添い型で説明してください。
+目の前の{gender_context}に寄り添い、解析データに基づいた「あなただけの分析」を伝えてください。
 
 使用クラブ:
 {club_name}
@@ -2313,32 +2314,21 @@ def generate_llm_comment_07(payload: Dict[str, Any]) -> str:
 最優先テーマ:
 {payload["priority"]}
 
-数値:
-腰回転 {payload["hip"]}
-捻転差 {payload["x_factor"]}
-前傾 {payload.get("spine", "unknown")}
-頭部 {payload["head"]}
-膝 {payload["knee"]}
+数値データ:
+腰回転 {payload["hip"]} / 捻転差 {payload["x_factor"]} / 前傾 {payload.get("spine", "unknown")} / 頭部 {payload["head"]} / 膝 {payload["knee"]}
 
-意識すること:
-・必ず「{club_name}」のスイングであることを前提にアドバイスしてください。
-・アイアンなら「安定したミートやダフリの防止」、ドライバーなら「飛距離アップやスライスの抑制」など、そのクラブ特有の悩みに触れてください。
-・「{club_name}のスイングとしては〜」といった具体的な表現を使い、どっちつかずな表現を避けてください。
-・良い点があるからこそ改善すると伸びる、という前向きな文脈にする。
-・課題を「もったいないポイント」として伝える。
-・ドリルの必要性を自然に説明する。
+アドバイス作成の指針:
+1. 【称賛】まずは数値から見える「素晴らしい点」を具体的に1つ褒めてください。
+2. 【課題】次に、最優先テーマに関連する「もったいないポイント」を指摘してください。
+3. 【影響】その課題が、{club_name}特有のミス（例:ドライバーの飛距離ロス、アイアンの打点不安等）にどう繋がっているか、論理的に説明してください。
+4. 【期待】最後に、08のドリルに取り組むことで、スイングがどう進化するかを伝え、期待感を高めてください。
 
-条件:
-・4文でまとめる
-・1文目は良い点
-・2文目は課題（もったいないニュアンス）
-・3文目はこのままだとどうなるか（{club_name}特有のミスに具体的に触れる）
-・4文目は08のドリルを推奨する理由
-・100〜150文字
-・箇条書き禁止
-・記号禁止
-・自然な日本語
-・出力は文章のみ
+文章ルール:
+・文字数は120〜180文字程度。
+・「1文目は〇〇」といった固定順序は不要です。自然な日本語の語り口を優先してください。
+・必ず「{club_name}」のスイングであることを前提とした、具体的かつ前向きな表現を使うこと。
+・「{gender_context}ならではの〜」といった視点も、可能であればエッセンスとして加えてください。
+・箇条書き、記号、絵文字は禁止。出力は文章のみ。
 """
 
     return call_llm(prompt)
