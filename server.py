@@ -2945,6 +2945,11 @@ def build_paid_score_block(score: int) -> Dict[str, Any]:
         color = "#ffaa00"  # オレンジ系（中級・ステップアップ）
         eval_text = "着実に基礎が身についています。まずは75点クリアを目指しましょう！"
 
+    else:
+        # ★ここを追加するだけです！★
+        color = "#3b82f6"  # 青系（初級・伸びしろ）
+        eval_text = "ここからがスタートです！まずは基本の姿勢を意識して、伸びしろを形にしていきましょう。"
+
     return {
         "type": "box",
         "layout": "vertical",
