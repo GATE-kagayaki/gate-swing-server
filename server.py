@@ -3561,6 +3561,62 @@ def build_analysis(raw: Dict[str, Any], premium: bool, report_id: str, user_inpu
             )
 
     return analysis
+
+# ==================================================
+# Helper Functions (追加する比較用関数)
+# ==================================================
+from google.cloud import firestore
+
+def get_past_reports(user_id: str, current_report_id: str, club_type: str, limit: int = 5):
+    """
+    月額会員用に、同じクラブの過去の完了済みレポートを取得
+    """
+    reports_ref = db.collection("reports")
+    query = (
+        reports_ref.where("user_id", "==", user_id)
+        .where("status", "==", "DONE")
+        .where("raw.club_type", "==", club_type) # 解析結果のクラブ種別でフィルタ
+        .order_by("completed_at", direction=firestore.Query.DESCENDING)
+    )
+    
+    docs = query.limit(limit + 1).get() # 今回分を含む可能性があるので+1
+    
+    past_data = []
+    for doc in docs:
+        if doc.id == current_report_id:
+            continue
+        past_data.append(doc.to_dict())
+        if len(past_data) >= limit:
+            break
+            
+    return past_data
+
+def calculate_full_comparison(current_raw: dict, past_reports: list):
+    """
+    全解析項目の過去平均との差分（Delta）を計算
+    """
+    metrics_keys = ["shoulder", "hip", "wrist", "head", "knee", "x_factor", "spine"]
+    deltas = {}
+    
+    past_raws = [r.get("raw", {}) for r in past_reports]
+    
+    for key in metrics_keys:
+        curr_val = current_raw.get(key, {}).get("mean", 0)
+        # 過去平均
+        avg_val = sum(r.get(key, {}).get("mean", 0) for r in past_raws) / len(past_raws)
+        deltas[f"{key}_mean"] = round(curr_val - avg_val, 2)
+        
+        # 安定度（std）も比較
+        curr_std = current_raw.get(key, {}).get("std", 0)
+        avg_std = sum(r.get(key, {}).get("std", 0) for r in past_raws) / len(past_raws)
+        deltas[f"{key}_std"] = round(curr_std - avg_std, 2)
+
+    return {
+        "past_sessions_count": len(past_reports),
+        "deltas": deltas,
+        "history": [{"date": r.get("completed_at"), "raw": r.get("raw")} for r in past_reports]
+    }
+    
 # ==================================================
 # Routes
 # ==================================================
