@@ -3799,7 +3799,8 @@ def task_handler():
             report_id=report_id, 
             user_inputs=user_inputs,
             comparison=comparison_data,
-            user_profile=user_profile
+            user_profile=user_profile,
+            user_plan=user_plan
         )
         # -------------------------------------------------------------
         address_posture = judge_address_posture(raw)
