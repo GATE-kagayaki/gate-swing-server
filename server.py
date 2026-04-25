@@ -3458,7 +3458,15 @@ def judge_spine_maintain_display(raw: Dict[str, Any]) -> Dict[str, str]:
         "comment": "前傾角の変化がやや大きく、回転動作の安定性に影響しています。"
     }
     
-def build_analysis(raw: Dict[str, Any], premium: bool, report_id: str, user_inputs: Dict[str, Any]) -> Dict[str, Any]:
+def build_analysis(
+    raw: Dict[str, Any], 
+    premium: bool, 
+    report_id: str, 
+    user_inputs: Dict[str, Any],
+    comparison: Dict[str, Any] = None,
+    user_profile: Dict[str, Any] = None,
+    user_plan: str = "free"
+) -> Dict[str, Any]:
     # user_inputsの安全な取得とclub_typeの抽出
     ui = user_inputs or {}
     club_type = raw.get("club_type") or ui.get("club_type", "unknown")
