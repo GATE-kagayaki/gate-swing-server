@@ -3731,6 +3731,13 @@ def task_handler():
         report = snap.to_dict() or {}
         premium = bool(report.get("is_premium", False))
         user_inputs = report.get("user_inputs") or {}
+        
+        # --- [追加] ユーザー情報の取得（プラン、目標スコアなど） ---
+        user_snap = db.collection("users").document(user_id).get()
+        user_data = user_snap.to_dict() or {}
+        user_plan = user_data.get("plan", "free") # free, single, monthly
+        user_profile = user_data.get("profile", {}) # {current_avg_score: 100, target_score: 90} 等
+        # --------------------------------------------------------
 
               # 動画DL → 解析（＋overlayアップロード）
         overlay_url = None
@@ -3775,22 +3782,42 @@ def task_handler():
         logging.warning(f"[DEBUG] overlay_url={overlay_url}")
         
         # --- ここまで ---
+        # --- [追加] 比較分析ロジックの実行 ---
+        comparison_data = None
+        club_type = raw.get("club_type") or user_inputs.get("club_type", "unknown")
+        
+        if user_plan == "monthly":
+            # 過去5回に限定して取得（要件定義に基づく）
+            past_reports = get_past_reports(user_id, report_id, club_type, limit=5)
+            if past_reports:
+                comparison_data = calculate_full_comparison(raw, past_reports)
+        # ------------------------------------
 
-        analysis = build_analysis(raw=raw, premium=premium, report_id=report_id, user_inputs=user_inputs)
+        analysis = build_analysis(
+            raw=raw, 
+            premium=premium, 
+            report_id=report_id, 
+            user_inputs=user_inputs,
+            comparison=comparison_data,
+            user_profile=user_profile
+        )
+        # -------------------------------------------------------------
         address_posture = judge_address_posture(raw)
         spine_maintain = judge_spine_maintain_display(raw)
         
-       
         report_ref.set({
             "status": "DONE",
             "raw": raw,
             "analysis": analysis,
+            "comparison": comparison_data, # 追加
+            "user_plan_at_analysis": user_plan, # 追加（後からプラン変更された時のため）
             "address_posture": address_posture,
             "spine_maintain": spine_maintain,
             "overlay_video_url": overlay_url,
             "overlay_video_download_url": overlay_download_url,
             "completed_at": datetime.now(timezone.utc).isoformat(),
         }, merge=False)
+        # -------------------------------------------------------------
 
         from linebot.models import FlexSendMessage
         from urllib.parse import quote
