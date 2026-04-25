@@ -3457,6 +3457,51 @@ def judge_spine_maintain_display(raw: Dict[str, Any]) -> Dict[str, str]:
         "label": "不安定",
         "comment": "前傾角の変化がやや大きく、回転動作の安定性に影響しています。"
     }
+
+# ==================================================
+# Helper Functions (追加する比較用関数)
+# ==================================================
+def build_comparison_block(comparison: Dict[str, Any]) -> Dict[str, Any]:
+    deltas = comparison.get("deltas", {})
+    count = comparison.get("past_sessions_count", 0)
+    
+    label_map = {
+        "shoulder": "肩の回転",
+        "hip": "腰の回転",
+        "wrist": "手首の角度",
+        "head": "頭のブレ",
+        "knee": "膝の動き",
+        "x_factor": "捻転差(X-Factor)",
+        "spine": "前傾角度(全体)",
+        "spine_top": "トップでの前傾",
+        "spine_impact": "インパクトでの前傾"
+    }
+
+    detailed_results = []
+    for key, label in label_map.items():
+        d_mean = deltas.get(f"{key}_mean") if f"{key}_mean" in deltas else deltas.get(key)
+        if d_mean is None: continue
+
+        is_positive_metric = key in ["shoulder", "hip", "x_factor"]
+        is_improved = (d_mean > 0) if is_positive_metric else (d_mean < 0)
+        
+        status_icon = "✅" if is_improved else "⚠️"
+        diff_text = f"+{d_mean}" if d_mean > 0 else f"{d_mean}"
+        
+        detailed_results.append({
+            "label": label,
+            "diff": diff_text,
+            "status": status_icon,
+            "is_improved": is_improved
+        })
+
+    return {
+        "title": "全項目・過去比較分析 (Premium)",
+        "subtitle": f"直近{count}回の平均データとの全指標比較",
+        "text": [f"過去{count}回のスイング傾向と比較し、すべてのバイオメカニクス指標の差異を算出しました。"],
+        "detailed_results": detailed_results,
+        "history": comparison.get("history", [])
+    }
     
 def build_analysis(
     raw: Dict[str, Any], 
@@ -3479,6 +3524,9 @@ def build_analysis(
         try:
             total_score = calculate_swing_score(raw, club_type)
             analysis["00_score"] = build_paid_score_block(total_score)
+            if comparison and "deltas" in comparison:
+                analysis["00_comparison"] = build_comparison_block(comparison)
+            # --------------------------------------------------------
         except Exception as e:
             # 計算エラー時も止まらないように安全策
             import logging
