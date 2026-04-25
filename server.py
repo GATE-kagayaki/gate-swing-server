@@ -3673,6 +3673,7 @@ def api_report_data(report_id: str):
         "status": status_out,
         "is_premium": bool(r.get("is_premium", False)),
         "analysis": r.get("analysis") or {},
+        "comparison": r.get("comparison"), # ★ここが追加されているか
         "address_posture": r.get("address_posture"),
         "spine_maintain": r.get("spine_maintain"),
         "overlay_video_url": r.get("overlay_video_url"),
