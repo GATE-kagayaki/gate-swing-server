@@ -192,7 +192,7 @@
 
       html += `</div></div>`;
       
-     // グラフ用のCanvasエリア（★高さを厳格に指定して「白紙」を防ぐ）
+      // グラフ用のCanvasエリア
       html += `
         <div class="card mt-4 p-4" style="position: relative; height: 250px; width: 100%;">
           <canvas id="historyChart"></canvas>
@@ -208,31 +208,38 @@
           if (!canvas) return;
           const ctx = canvas.getContext('2d');
           
-          // 画面上の「現在のスコア」を取得（エラー時は0点としてでも必ずグラフを引く）
+          // 【本物データ】画面上の「今回のスコア」を取得
           const scoreEl = document.getElementById('currentTotalScore');
           let currentScore = scoreEl ? parseInt(scoreEl.innerText) : 0;
           if (isNaN(currentScore)) currentScore = 0;
           
-          // 過去のラベルとスコアを古い順に反転
+          // 【本物データ】過去のラベル（日付）
           let labels = (secData.history || []).map(h => {
             if (!h.date) return "過去";
             const d = new Date(h.date);
             return `${d.getMonth() + 1}/${d.getDate()}`;
           }).reverse(); 
           
+          // 【本物データ】過去のスコア（考えられる全ての保存名から本物の点数を探す）
           let scores = (secData.history || []).map(h => {
-             return h.score || 0;
+             let realScore = h.score || h.total_score || h.overall_score;
+             return realScore ? parseInt(realScore) : 0; 
           }).reverse();
 
-          // グラフの最後に「今回」を必ず付け足す
-          labels.push("今回");
-          scores.push(currentScore);
-
-          // ★Chart.jsが読み込まれているかの最終チェック
-          if (typeof Chart === 'undefined') {
-             canvas.parentElement.innerHTML = '<p class="text-sm text-red-500 font-bold">グラフ描画ライブラリ(Chart.js)が読み込まれていません。ファイルの11行目付近を確認してください。</p>';
-             return;
+          // 今回のデータを追加
+          if (currentScore > 0) {
+            labels.push("今回");
+            scores.push(currentScore);
           }
+
+          // ★【原因特定用】プログラムが取得した「本物の点数」を画面に表示
+          const debugInfo = document.createElement("div");
+          debugInfo.style.fontSize = "12px";
+          debugInfo.style.color = "#0056b3";
+          debugInfo.style.marginBottom = "8px";
+          debugInfo.style.fontWeight = "bold";
+          debugInfo.innerHTML = `システムが取得した本物のデータ ➡ [ ${scores.join(", ")} ]<br><span style="font-size:10px; color:#666;">※もしここに「0」が並んでいる場合、過去データの保存場所にズレがあります。</span>`;
+          canvas.parentElement.insertBefore(debugInfo, canvas);
 
           new Chart(ctx, {
             type: 'line',
@@ -267,7 +274,6 @@
       console.error("Comparison rendering error:", e);
     }
   }
-
   // ↓ 見つけていただいた既存のコードがここから続きます ↓
   function renderVideo(videoUrl, downloadUrl) {
     // レポートの「00.」セクションを作成
