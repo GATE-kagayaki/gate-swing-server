@@ -3591,15 +3591,22 @@ def build_paid_07_from_analysis(analysis: Dict[str, Any], raw: Dict[str, Any], c
     conf = _conf(raw)
     frames = _frames(raw)
 
+    # ==========================================
+    # llm_payload を定義する直前に、以下の数行だけを追加
+    # ==========================================
+    if comparison and comparison.get("past_sessions_count", 0) > 0:
+        count = comparison["past_sessions_count"]
+        deltas = comparison.get("deltas", {})
+        # rawデータの中に、AIへの「絶対指示」を直接埋め込む
+        if raw is not None:
+            raw["LLM_INSTRUCTION_PAST_COMPARISON"] = f"過去{count}回平均との差分は【{deltas}】です。今回の評価に加え、この差分データを用いて「前回までと比べてどこが成長し、どこが新たな課題か」を必ず文章に含めて評価してください。"
+    # ==========================================
+
     llm_payload = {
         "club_type": raw.get("club_type", "iron"),
         "priority": priorities[0] if priorities else "不明",
         "swing_type": swing_type,
-        "raw_metrics": raw,
-        "comparison_data": {
-            "deltas": comparison.get("deltas", {}) if comparison else {},
-            "past_count": comparison.get("past_sessions_count", 0) if comparison else 0
-        },
+        "raw_metrics": raw,  # ← 直前で指示を埋め込んだデータがここに渡ります
         "tags": dict(c),
         "coach_style": "game-like"
     }
