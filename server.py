@@ -2333,7 +2333,11 @@ def generate_llm_comment_07(payload: Dict[str, Any]) -> str:
 
     return call_llm(prompt)
     
-def build_paid_07_from_analysis(analysis: Dict[str, Any], raw: Dict[str, Any]) -> Dict[str, Any]:
+def build_paid_07_from_analysis(
+    analysis: Dict[str, Any], 
+    raw: Dict[str, Any], 
+    comparison: Dict[str, Any] = None  # ←ここを引数に追加
+) -> Dict[str, Any]:
     c = collect_tag_counter(analysis)
     swing_type = judge_swing_type(c)
     priorities = extract_priorities(c, 2)
@@ -2346,6 +2350,7 @@ def build_paid_07_from_analysis(analysis: Dict[str, Any], raw: Dict[str, Any]) -
     frames = _frames(raw)
     spine_flag = judge_spine_flag(raw)
 
+    # LLMに渡すデータセット（比較データ deltas を追加）
     llm_payload = {
         "club_type": raw.get("club_type", "iron"),
         "priority": priorities[0] if priorities else "不明",
@@ -2366,12 +2371,24 @@ def build_paid_07_from_analysis(analysis: Dict[str, Any], raw: Dict[str, Any]) -
 
         "raw_metrics": raw,
 
+        # ★【重要】過去との比較データをペイロードに追加
+        "comparison_data": {
+            "deltas": comparison.get("deltas", {}) if comparison else {},
+            "past_count": comparison.get("past_sessions_count", 0) if comparison else 0
+        },
+
         "coach_style": "empathetic"
     }
 
     lines: List[str] = []
     lines.append(f"今回のスイングは「{swing_type}」です（confidence {conf:.3f} / 区間 {frames} frames）。")
-    lines.append("※ 初回の方は、まずは「最優先テーマ」だけを確認してください。")
+    
+    # 比較データがある場合の注釈
+    if comparison and comparison.get("past_sessions_count", 0) > 0:
+        lines.append(f"※ 過去{comparison['past_sessions_count']}回の平均データと比較した進捗を分析しました。")
+    else:
+        lines.append("※ 初回の方は、まずは「最優先テーマ」だけを確認してください。")
+    
     lines.append("")
     
     if priorities:
@@ -2383,6 +2400,7 @@ def build_paid_07_from_analysis(analysis: Dict[str, Any], raw: Dict[str, Any]) -
         try:
             print("LLM CALL START")  # ←ここに追加（確認用）
 
+            # ★ LLMへの命令（この llm_payload の中に deltas が入った状態で渡されます）
             llm_text = generate_llm_comment_07(llm_payload)
 
             print("LLM CALL END")    # ←ここに追加（確認用）
@@ -2391,6 +2409,7 @@ def build_paid_07_from_analysis(analysis: Dict[str, Any], raw: Dict[str, Any]) -
             lines.append(llm_text)
 
         except Exception as e:
+            import logging
             logging.exception("LLM summary failed: %s", e)
             
     else:
@@ -2409,6 +2428,7 @@ def build_paid_07_from_analysis(analysis: Dict[str, Any], raw: Dict[str, Any]) -
             "confidence": conf,
             "frames": frames,
             "spine_flag": spine_flag,
+            "comparison_info": comparison # メタデータにも含めておく
         },
     }
 
