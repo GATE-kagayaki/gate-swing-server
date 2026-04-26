@@ -2303,7 +2303,23 @@ def generate_llm_comment_07(payload: Dict[str, Any]) -> str:
     # 性別が不明な場合でも自然な呼びかけにする設定
     gender_raw = payload.get("gender", "unknown")
     gender_context = "女性ゴルファー" if gender_raw == "female" else "男性ゴルファー" if gender_raw == "male" else "ゴルファー"
-
+    
+    # ==================================================
+    # ここから追加：過去比較データ（ステータス差分）の生成
+    # ==================================================
+    comparison_text = ""
+    comp_data = payload.get("comparison_data", {})
+    if comp_data.get("past_count", 0) > 0 and comp_data.get("deltas"):
+        d = comp_data["deltas"]
+        diffs = []
+        if "shoulder_mean" in d: diffs.append(f"肩{d['shoulder_mean']:+.2f}")
+        if "hip_mean" in d: diffs.append(f"腰{d['hip_mean']:+.2f}")
+        if "head_mean" in d: diffs.append(f"頭{d['head_mean']:+.2f}")
+        if "knee_mean" in d: diffs.append(f"膝{d['knee_mean']:+.2f}")
+        if "x_factor_mean" in d: diffs.append(f"捻転差{d['x_factor_mean']:+.2f}")
+        
+        comparison_text = f"\n過去{comp_data['past_count']}回平均とのステータス差分: {'、'.join(diffs)}\n(※プラスは動き/ブレが拡大、マイナスは縮小を意味します。この数値を元に、ゲームのステータスが上がったような「成長点」と、次の「攻略課題」を必ず文章に含めて評価してください。)"
+    # ==================================================
     prompt = f"""
 あなたはプロのゴルフコーチです。
 目の前の{gender_context}に寄り添い、解析データに基づいた「あなただけの分析」を伝えてください。
