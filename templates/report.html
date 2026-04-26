@@ -192,64 +192,76 @@
 
       html += `</div></div>`;
       
-      // グラフ用のCanvasエリア
-      html += `<div class="card mt-4 p-4"><canvas id="historyChart" style="width: 100%; max-height: 200px;"></canvas></div>`;
+     // グラフ用のCanvasエリア（★高さを厳格に指定して「白紙」を防ぐ）
+      html += `
+        <div class="card mt-4 p-4" style="position: relative; height: 250px; width: 100%;">
+          <canvas id="historyChart"></canvas>
+        </div>`;
       
       sec.innerHTML += html;
       reportContent.appendChild(sec);
 
       // DOMが追加された後にグラフを描画
       setTimeout(() => {
-        const canvas = document.getElementById('historyChart');
-        if (!canvas) return;
-        const ctx = canvas.getContext('2d');
-        
-        // 画面上の「現在のスコア」を取得
-        const scoreEl = document.getElementById('currentTotalScore');
-        const currentScore = scoreEl ? parseInt(scoreEl.innerText) : 0;
-        
-        // 過去のラベルとスコアを古い順に反転
-        let labels = (secData.history || []).map(h => {
-          if (!h.date) return "過去";
-          const d = new Date(h.date);
-          return `${d.getMonth() + 1}/${d.getDate()}`;
-        }).reverse(); 
-        
-        let scores = (secData.history || []).map(h => {
-           return h.score || 0;
-        }).reverse();
+        try {
+          const canvas = document.getElementById('historyChart');
+          if (!canvas) return;
+          const ctx = canvas.getContext('2d');
+          
+          // 画面上の「現在のスコア」を取得（エラー時は0点としてでも必ずグラフを引く）
+          const scoreEl = document.getElementById('currentTotalScore');
+          let currentScore = scoreEl ? parseInt(scoreEl.innerText) : 0;
+          if (isNaN(currentScore)) currentScore = 0;
+          
+          // 過去のラベルとスコアを古い順に反転
+          let labels = (secData.history || []).map(h => {
+            if (!h.date) return "過去";
+            const d = new Date(h.date);
+            return `${d.getMonth() + 1}/${d.getDate()}`;
+          }).reverse(); 
+          
+          let scores = (secData.history || []).map(h => {
+             return h.score || 0;
+          }).reverse();
 
-        // グラフの最後に「今回」を付け足す
-        if (currentScore > 0) {
-            labels.push("今回");
-            scores.push(currentScore);
-        }
+          // グラフの最後に「今回」を必ず付け足す
+          labels.push("今回");
+          scores.push(currentScore);
 
-        new Chart(ctx, {
-          type: 'line',
-          data: {
-            labels: labels,
-            datasets: [{
-              label: 'スイングスコア推移',
-              data: scores,
-              borderColor: '#00b900',
-              backgroundColor: 'rgba(0, 185, 0, 0.1)',
-              borderWidth: 3,
-              fill: true,
-              tension: 0.3,
-              pointRadius: 4,
-              pointBackgroundColor: '#00b900'
-            }]
-          },
-          options: { 
-            responsive: true, 
-            maintainAspectRatio: false,
-            plugins: { legend: { display: false } },
-            scales: {
-              y: { min: 40, max: 100 }
-            }
+          // ★Chart.jsが読み込まれているかの最終チェック
+          if (typeof Chart === 'undefined') {
+             canvas.parentElement.innerHTML = '<p class="text-sm text-red-500 font-bold">グラフ描画ライブラリ(Chart.js)が読み込まれていません。ファイルの11行目付近を確認してください。</p>';
+             return;
           }
-        });
+
+          new Chart(ctx, {
+            type: 'line',
+            data: {
+              labels: labels,
+              datasets: [{
+                label: 'スイングスコア推移',
+                data: scores,
+                borderColor: '#00b900',
+                backgroundColor: 'rgba(0, 185, 0, 0.1)',
+                borderWidth: 3,
+                fill: true,
+                tension: 0.3,
+                pointRadius: 4,
+                pointBackgroundColor: '#00b900'
+              }]
+            },
+            options: { 
+              responsive: true, 
+              maintainAspectRatio: false,
+              plugins: { legend: { display: false } },
+              scales: {
+                y: { min: 40, max: 100 }
+              }
+            }
+          });
+        } catch(err) {
+          console.error("Chart draw error:", err);
+        }
       }, 500);
     } catch(e) {
       console.error("Comparison rendering error:", e);
