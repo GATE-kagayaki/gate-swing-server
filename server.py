@@ -3496,40 +3496,60 @@ def get_past_reports(user_id: str, current_report_id: str, club_type: str, limit
     Firestoreには「user_id」だけで問い合わせ、残りの仕分けはPythonで行います。
     """
     reports_ref = db.collection("reports")
+    
+    # 検索条件を「user_id」だけに絞る。
+    # これならデフォルトのインデックスだけで動くので、追加設定は一切不要です。
     docs = reports_ref.where("user_id", "==", user_id).get()
     
     past_data = []
     for doc in docs:
+        # 今回のレポート自身は除外
         if doc.id == current_report_id:
             continue
+            
         r = doc.to_dict()
+        
+        # フィルタ1: ステータスが完了(DONE)しているものだけ
         if r.get("status") != "DONE":
             continue
+            
+        # フィルタ2: クラブタイプが一致するものだけ（raw または user_inputs を確認）
         r_club = r.get("raw", {}).get("club_type") or r.get("user_inputs", {}).get("club_type")
         if r_club != club_type:
             continue
+            
         past_data.append(r)
             
+    # 新しい順(completed_at)に並び替える（Python側で実行）
     past_data.sort(key=lambda x: x.get("completed_at") or "", reverse=True)
+    
+    # 指定した件数（5件）だけを返す
     return past_data[:limit]
 
 def calculate_full_comparison(current_raw: dict, past_reports: list):
     """
-    全解析項目の過去平均との差分を計算し、グラフ用の履歴データを作成します。
+    全解析項目の過去平均との差分（Delta）を計算し、グラフ用の履歴データを作成します。
     """
     if not past_reports:
-        return {"past_sessions_count": 0, "deltas": {}, "history": []}
+        return {
+            "past_sessions_count": 0,
+            "deltas": {},
+            "history": []
+        }
 
     metrics_keys = ["shoulder", "hip", "wrist", "head", "knee", "x_factor", "spine"]
     deltas = {}
+    
     past_raws = [r.get("raw", {}) for r in past_reports]
     num_past = len(past_raws)
     
     for key in metrics_keys:
         curr_val = current_raw.get(key, {}).get("mean", 0)
+        # 過去平均
         avg_val = sum(r.get(key, {}).get("mean", 0) for r in past_raws) / num_past
         deltas[f"{key}_mean"] = round(curr_val - avg_val, 2)
         
+        # 安定度（std）も比較
         curr_std = current_raw.get(key, {}).get("std", 0)
         avg_std = sum(r.get(key, {}).get("std", 0) for r in past_raws) / num_past
         deltas[f"{key}_std"] = round(curr_std - avg_std, 2)
@@ -3537,7 +3557,7 @@ def calculate_full_comparison(current_raw: dict, past_reports: list):
     return {
         "past_sessions_count": num_past,
         "deltas": deltas,
-        # ★修正：JS側がグラフを描画できるように「score」を確実に含める
+        # ★重要修正：JS側がグラフを描画できるように「score」を確実に含める
         "history": [
             {
                 "date": r.get("completed_at"), 
@@ -3552,9 +3572,15 @@ def build_comparison_block(comparison: Dict[str, Any]) -> Dict[str, Any]:
     count = comparison.get("past_sessions_count", 0)
     
     label_map = {
-        "shoulder": "肩の回転", "hip": "腰の回転", "wrist": "手首の角度",
-        "head": "頭のブレ", "knee": "膝の動き", "x_factor": "捻転差(X-Factor)",
-        "spine": "前傾角度(全体)", "spine_top": "トップでの前傾", "spine_impact": "インパクトでの前傾"
+        "shoulder": "肩の回転",
+        "hip": "腰の回転",
+        "wrist": "手首の角度",
+        "head": "頭のブレ",
+        "knee": "膝の動き",
+        "x_factor": "捻転差(X-Factor)",
+        "spine": "前傾角度(全体)",
+        "spine_top": "トップでの前傾",
+        "spine_impact": "インパクトでの前傾"
     }
 
     detailed_results = []
@@ -3568,14 +3594,18 @@ def build_comparison_block(comparison: Dict[str, Any]) -> Dict[str, Any]:
         status_icon = "✅" if is_improved else "⚠️"
         diff_text = f"+{d_mean}" if d_mean > 0 else f"{d_mean}"
         
+        # --- 追加：ゲーム感覚で成長を実感できる1行コメントの自動生成 ---
         if is_positive_metric:
             comment = "前回より動きが深くなり、良い傾向です。" if is_improved else "前回より動きが浅くなっています。"
         else:
             comment = "前回よりブレが少なく、安定しています。" if is_improved else "前回よりブレが大きくなっています。"
         
         detailed_results.append({
-            "label": label, "diff": diff_text, "status": status_icon,
-            "is_improved": is_improved, "comment": comment
+            "label": label,
+            "diff": diff_text,
+            "status": status_icon,
+            "is_improved": is_improved,
+            "comment": comment  # フロントエンドに渡す
         })
 
     return {
@@ -3583,9 +3613,74 @@ def build_comparison_block(comparison: Dict[str, Any]) -> Dict[str, Any]:
         "subtitle": f"直近{count}回の平均データとの全指標比較",
         "text": [f"過去{count}回のスイング傾向と比較し、すべてのバイオメカニクス指標の差異を算出しました。"],
         "detailed_results": detailed_results,
+        "deltas": deltas, # レーダーチャート用にdeltasを直接渡す
         "history": comparison.get("history", [])
     }
+
+def build_paid_07_from_analysis(analysis: Dict[str, Any], raw: Dict[str, Any], comparison: Dict[str, Any] = None) -> Dict[str, Any]:
+    # 既存のロジック（タグ収集やスイングタイプ判定）を保持
+    c = collect_tag_counter(analysis)
+    swing_type = judge_swing_type(c)
+    priorities = extract_priorities(c, 2)
+    conf = _conf(raw)
+    frames = _frames(raw)
+
+    # LLMへのペイロード作成（comparisonデータを追加）
+    llm_payload = {
+        "club_type": raw.get("club_type", "iron"),
+        "priority": priorities[0] if priorities else "不明",
+        "swing_type": swing_type,
+        "raw_metrics": raw,
+        "comparison_data": {
+            "deltas": comparison.get("deltas", {}) if comparison else {},
+            "past_count": comparison.get("past_sessions_count", 0) if comparison else 0
+        },
+        "tags": dict(c),
+        "coach_style": "game-like"
+    }
+
+    lines: List[str] = []
+    lines.append(f"今回のスイングは「{swing_type}」です（confidence {conf:.3f} / 区間 {frames} frames）。")
     
+    if comparison and comparison.get("past_sessions_count", 0) > 0:
+        lines.append(f"※ 過去{comparison['past_sessions_count']}回の平均データと比較した進捗を分析しました。")
+    else:
+        lines.append("※ 初回の方は、まずは「最優先テーマ」だけを確認してください。")
+    
+    lines.append("")
+    
+    if priorities:
+        p_str = "／".join(priorities)
+        lines.append(f"数値上の最優先テーマは「{p_str}」です。")
+
+        try:
+            # 既存のデバッグプリントも維持
+            print("### LLM CALL START ###")
+            llm_text = generate_llm_comment_07(llm_payload)
+            print("### LLM CALL END ###")
+            lines.append("")
+            lines.append(llm_text)
+        except Exception as e:
+            logging.exception("LLM summary failed: %s", e)
+    else:
+        lines.append("数値上の優先テーマはありません。")
+
+    lines.append("")
+    lines.append("08では優先テーマに直結するドリルを選択し、09では動きを安定させやすいシャフト特性を提示します。")
+
+    return {
+        "title": "07. 総合評価（プロ要約）",
+        "text": lines,
+        "meta": {
+            "swing_type": swing_type,
+            "priorities": priorities,
+            "tag_summary": dict(c),
+            "confidence": conf,
+            "frames": frames,
+            "spine_flag": judge_spine_flag(raw)
+        },
+    }
+
 def build_analysis(
     raw: Dict[str, Any], 
     premium: bool, 
@@ -3595,11 +3690,13 @@ def build_analysis(
     user_profile: Dict[str, Any] = None,
     user_plan: str = "free"
 ) -> Dict[str, Any]:
+    # user_inputsの安全な取得とclub_typeの抽出
     ui = user_inputs or {}
     club_type = raw.get("club_type") or ui.get("club_type", "unknown")
 
     analysis: Dict[str, Any] = {}
 
+    # 1. プレミアムユーザーの場合、まずスコアを生成
     if premium:
         try:
             total_score = calculate_swing_score(raw, club_type)
@@ -3610,7 +3707,9 @@ def build_analysis(
             logging.error(f"Score calculation failed: {e}")
             analysis["00_score"] = build_paid_score_block(70) 
 
+    # 2. その後に既存の01セクションを追加
     analysis["01"] = build_section_01(raw, club_type)
+
     spine_flag = judge_spine_flag(raw)
 
     if not premium:
@@ -3623,10 +3722,10 @@ def build_analysis(
     analysis["05"] = build_paid_05_head(raw, seed=report_id)
     analysis["06"] = build_paid_06_knee(raw, seed=report_id)
 
-    # ★最重要修正：AI(07)に comparison を渡し、過去との差分を分析できるようにしました
+    # ★修正：引数にcomparisonを渡し、AI(LLM)が過去データを見れるようにしました
     analysis["07"] = build_paid_07_from_analysis(analysis, raw, comparison=comparison)
 
-    # 07 Summary 前傾補足ロジック
+    # 07 Summary 前傾補足ロジック（既存を維持）
     if spine_flag == "ok":
         analysis["07"].setdefault("text", []).append("【前傾維持】前傾角の変化は小さく、回転動作の再現性は安定しています。")
     elif spine_flag == "warn":
@@ -3649,7 +3748,7 @@ def build_analysis(
 
     analysis["10"] = build_paid_10(analysis)
 
-    # 10 Summary 前傾補足ロジック
+    # 10 Summary 前傾補足ロジック（既存を維持）
     head_mean = float(raw.get("head", {}).get("mean", 0.0))
     knee_mean = float(raw.get("knee", {}).get("mean", 0.0))
 
