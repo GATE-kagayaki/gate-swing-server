@@ -3484,24 +3484,77 @@ def judge_spine_maintain_display(raw: Dict[str, Any]) -> Dict[str, str]:
     }
 
 # ==================================================
-# Helper Functions (追加する比較用関数)
+# Helper Functions (比較・分析・スコアリング統合ブロック)
 # ==================================================
-from typing import Dict, Any
+from typing import Dict, Any, List
+import logging
+from google.cloud import firestore
+
+def get_past_reports(user_id: str, current_report_id: str, club_type: str, limit: int = 5):
+    """
+    インデックスエラーを100%回避する安全版。
+    Firestoreには「user_id」だけで問い合わせ、残りの仕分けはPythonで行います。
+    """
+    reports_ref = db.collection("reports")
+    docs = reports_ref.where("user_id", "==", user_id).get()
+    
+    past_data = []
+    for doc in docs:
+        if doc.id == current_report_id:
+            continue
+        r = doc.to_dict()
+        if r.get("status") != "DONE":
+            continue
+        r_club = r.get("raw", {}).get("club_type") or r.get("user_inputs", {}).get("club_type")
+        if r_club != club_type:
+            continue
+        past_data.append(r)
+            
+    past_data.sort(key=lambda x: x.get("completed_at") or "", reverse=True)
+    return past_data[:limit]
+
+def calculate_full_comparison(current_raw: dict, past_reports: list):
+    """
+    全解析項目の過去平均との差分を計算し、グラフ用の履歴データを作成します。
+    """
+    if not past_reports:
+        return {"past_sessions_count": 0, "deltas": {}, "history": []}
+
+    metrics_keys = ["shoulder", "hip", "wrist", "head", "knee", "x_factor", "spine"]
+    deltas = {}
+    past_raws = [r.get("raw", {}) for r in past_reports]
+    num_past = len(past_raws)
+    
+    for key in metrics_keys:
+        curr_val = current_raw.get(key, {}).get("mean", 0)
+        avg_val = sum(r.get(key, {}).get("mean", 0) for r in past_raws) / num_past
+        deltas[f"{key}_mean"] = round(curr_val - avg_val, 2)
+        
+        curr_std = current_raw.get(key, {}).get("std", 0)
+        avg_std = sum(r.get(key, {}).get("std", 0) for r in past_raws) / num_past
+        deltas[f"{key}_std"] = round(curr_std - avg_std, 2)
+
+    return {
+        "past_sessions_count": num_past,
+        "deltas": deltas,
+        # ★修正：JS側がグラフを描画できるように「score」を確実に含める
+        "history": [
+            {
+                "date": r.get("completed_at"), 
+                "score": r.get("total_score") or r.get("raw", {}).get("total_score", 0),
+                "raw": r.get("raw")
+            } for r in past_reports
+        ]
+    }
 
 def build_comparison_block(comparison: Dict[str, Any]) -> Dict[str, Any]:
     deltas = comparison.get("deltas", {})
     count = comparison.get("past_sessions_count", 0)
     
     label_map = {
-        "shoulder": "肩の回転",
-        "hip": "腰の回転",
-        "wrist": "手首の角度",
-        "head": "頭のブレ",
-        "knee": "膝の動き",
-        "x_factor": "捻転差(X-Factor)",
-        "spine": "前傾角度(全体)",
-        "spine_top": "トップでの前傾",
-        "spine_impact": "インパクトでの前傾"
+        "shoulder": "肩の回転", "hip": "腰の回転", "wrist": "手首の角度",
+        "head": "頭のブレ", "knee": "膝の動き", "x_factor": "捻転差(X-Factor)",
+        "spine": "前傾角度(全体)", "spine_top": "トップでの前傾", "spine_impact": "インパクトでの前傾"
     }
 
     detailed_results = []
@@ -3515,18 +3568,14 @@ def build_comparison_block(comparison: Dict[str, Any]) -> Dict[str, Any]:
         status_icon = "✅" if is_improved else "⚠️"
         diff_text = f"+{d_mean}" if d_mean > 0 else f"{d_mean}"
         
-        # --- 追加：ゲーム感覚で成長を実感できる1行コメントの自動生成 ---
         if is_positive_metric:
             comment = "前回より動きが深くなり、良い傾向です。" if is_improved else "前回より動きが浅くなっています。"
         else:
             comment = "前回よりブレが少なく、安定しています。" if is_improved else "前回よりブレが大きくなっています。"
         
         detailed_results.append({
-            "label": label,
-            "diff": diff_text,
-            "status": status_icon,
-            "is_improved": is_improved,
-            "comment": comment  # フロントエンドに渡す
+            "label": label, "diff": diff_text, "status": status_icon,
+            "is_improved": is_improved, "comment": comment
         })
 
     return {
@@ -3546,38 +3595,27 @@ def build_analysis(
     user_profile: Dict[str, Any] = None,
     user_plan: str = "free"
 ) -> Dict[str, Any]:
-    # user_inputsの安全な取得とclub_typeの抽出
     ui = user_inputs or {}
     club_type = raw.get("club_type") or ui.get("club_type", "unknown")
 
-    # --- [修正箇所] ここから ---
     analysis: Dict[str, Any] = {}
 
-    # 1. プレミアムユーザー（monthly, single）の場合、まずスコアを生成
     if premium:
         try:
             total_score = calculate_swing_score(raw, club_type)
             analysis["00_score"] = build_paid_score_block(total_score)
             if comparison and "deltas" in comparison:
                 analysis["00_comparison"] = build_comparison_block(comparison)
-            # --------------------------------------------------------
         except Exception as e:
-            # 計算エラー時も止まらないように安全策
-            import logging
             logging.error(f"Score calculation failed: {e}")
-            analysis["00_score"] = build_paid_score_block(70) # デフォルト値
+            analysis["00_score"] = build_paid_score_block(70) 
 
-    # 2. その後に既存の01セクションを追加
     analysis["01"] = build_section_01(raw, club_type)
-    # --- [修正箇所] ここまで ---
-
     spine_flag = judge_spine_flag(raw)
 
     if not premium:
         analysis["07"] = build_free_07(raw)
         return analysis
-    
-    # ...この後に続く有料版用の処理（02〜10など）...
         
     analysis["02"] = build_paid_02_shoulder(raw, seed=report_id)
     analysis["03"] = build_paid_03_hip(raw, seed=report_id)
@@ -3585,139 +3623,48 @@ def build_analysis(
     analysis["05"] = build_paid_05_head(raw, seed=report_id)
     analysis["06"] = build_paid_06_knee(raw, seed=report_id)
 
-    # 05 / 06 への前傾補足は削除
-    # 理由:
-    # - build_paid_05_head / build_paid_06_knee の内部ですでに spine_flag を見ている
-    # - ここで追加すると前傾が二重反映になり、主因に見えやすくなるため
+    # ★最重要修正：AI(07)に comparison を渡し、過去との差分を分析できるようにしました
+    analysis["07"] = build_paid_07_from_analysis(analysis, raw, comparison=comparison)
 
-    analysis["07"] = build_paid_07_from_analysis(analysis, raw)
-
-    # 07 Summary では前傾を1回だけ補足
+    # 07 Summary 前傾補足ロジック
     if spine_flag == "ok":
-        analysis["07"].setdefault("text", []).append(
-            "【前傾維持】前傾角の変化は小さく、回転動作の再現性は安定しています。"
-        )
-
+        analysis["07"].setdefault("text", []).append("【前傾維持】前傾角の変化は小さく、回転動作の再現性は安定しています。")
     elif spine_flag == "warn":
-        analysis["07"].setdefault("text", []).append(
-            "【前傾維持】スイング中に前傾角の変化がやや見られ、動作の再現性に影響する可能性があります。"
-        )
-
+        analysis["07"].setdefault("text", []).append("【前傾維持】スイング中に前傾角の変化がやや見られ、動作の再現性に影響する可能性があります。")
     elif spine_flag == "bad":
-        analysis["07"].setdefault("text", []).append(
-            "【前傾維持】スイング中の前傾角の変化がやや大きく、回転動作の安定性に影響しています。"
-        )
+        analysis["07"].setdefault("text", []).append("【前傾維持】スイング中の前傾角の変化がやや大きく、回転動作の安定性に影響しています。")
 
-    # 必要ならタグとして持たせる（ドリル選定用）
     if spine_flag == "bad":
         analysis["07"].setdefault("tags", [])
-        if "前傾維持不安定" not in analysis["07"]["tags"]:
-            analysis["07"]["tags"].append("前傾維持不安定")
+        if "前傾維持不安定" not in analysis["07"]["tags"]: analysis["07"]["tags"].append("前傾維持不安定")
     elif spine_flag == "warn":
         analysis["07"].setdefault("tags", [])
-        if "前傾維持やや不安定" not in analysis["07"]["tags"]:
-            analysis["07"]["tags"].append("前傾維持やや不安定")
+        if "前傾維持やや不安定" not in analysis["07"]["tags"]: analysis["07"]["tags"].append("前傾維持やや不安定")
 
     analysis["08"] = build_paid_08(analysis, raw)
 
-    # 09は入力がある場合のみ出力
     ui = user_inputs or {}
     if club_type == "driver" and (ui.get("head_speed") is not None or ui.get("miss_tendency") or ui.get("gender")):
         analysis["09"] = build_paid_09(raw, ui)
 
     analysis["10"] = build_paid_10(analysis)
 
-    # 10 Summary は前傾を先頭に入れるが、表現は弱める
+    # 10 Summary 前傾補足ロジック
     head_mean = float(raw.get("head", {}).get("mean", 0.0))
     knee_mean = float(raw.get("knee", {}).get("mean", 0.0))
 
     if spine_flag == "ok":
-        analysis["10"].setdefault("text", []).insert(0,
-            "前傾姿勢は全体として比較的安定しており、スイングの再現性を支えています。"
-        )
+        analysis["10"].setdefault("text", []).insert(0, "前傾姿勢は全体として比較的安定しており、スイングの再現性を支えています。")
     elif spine_flag == "warn":
-        analysis["10"].setdefault("text", []).insert(0,
-            "前傾姿勢にはやや変化が見られ、局面によって再現性に影響している可能性があります。"
-        )
+        analysis["10"].setdefault("text", []).insert(0, "前傾姿勢にはやや変化が見られ、局面によって再現性に影響している可能性があります。")
     elif spine_flag == "bad":
-        # head / knee がそこまで悪くない時は mild 表現
         if head_mean <= 6.0 and knee_mean <= 9.0:
-            analysis["10"].setdefault("text", []).insert(0,
-                "前傾姿勢にはやや変化が見られますが、全体として大きくバランスを崩している状態ではありません。"
-            )
+            analysis["10"].setdefault("text", []).insert(0, "前傾姿勢にはやや変化が見られますが、全体として大きくバランスを崩している状態ではありません。")
         else:
-            analysis["10"].setdefault("text", []).insert(0,
-                "前傾姿勢の変化がやや大きく、スイング全体の再現性に影響している可能性があります。"
-            )
+            analysis["10"].setdefault("text", []).insert(0, "前傾姿勢の変化がやや大きく、スイング全体の再現性に影響している可能性があります。")
 
     return analysis
-
-# ==================================================
-# Helper Functions (追加する比較用関数)
-# ==================================================
-from google.cloud import firestore
-
-def get_past_reports(user_id: str, current_report_id: str, club_type: str, limit: int = 5):
-    """
-    インデックスエラーを100%回避する安全版。
-    Firestoreには「ユーザーID」だけで問い合わせ、残りの仕分けはPythonで行います。
-    """
-    reports_ref = db.collection("reports")
     
-    # 検索条件を「user_id」だけに絞る。
-    # これならデフォルトのインデックスだけで動くので、追加設定は一切不要です。
-    docs = reports_ref.where("user_id", "==", user_id).get()
-    
-    past_data = []
-    for doc in docs:
-        # 今回のレポート自身は除外
-        if doc.id == current_report_id:
-            continue
-            
-        r = doc.to_dict()
-        
-        # フィルタ1: ステータスが完了(DONE)しているものだけ
-        if r.get("status") != "DONE":
-            continue
-            
-        # フィルタ2: クラブタイプが一致するものだけ（raw または user_inputs を確認）
-        r_club = r.get("raw", {}).get("club_type") or r.get("user_inputs", {}).get("club_type")
-        if r_club != club_type:
-            continue
-            
-        past_data.append(r)
-            
-    # 新しい順(completed_at)に並び替える（Python側で実行）
-    past_data.sort(key=lambda x: x.get("completed_at") or "", reverse=True)
-    
-    # 指定した件数（5件）だけを返す
-    return past_data[:limit]
-
-def calculate_full_comparison(current_raw: dict, past_reports: list):
-    """
-    全解析項目の過去平均との差分（Delta）を計算
-    """
-    metrics_keys = ["shoulder", "hip", "wrist", "head", "knee", "x_factor", "spine"]
-    deltas = {}
-    
-    past_raws = [r.get("raw", {}) for r in past_reports]
-    
-    for key in metrics_keys:
-        curr_val = current_raw.get(key, {}).get("mean", 0)
-        # 過去平均
-        avg_val = sum(r.get(key, {}).get("mean", 0) for r in past_raws) / len(past_raws)
-        deltas[f"{key}_mean"] = round(curr_val - avg_val, 2)
-        
-        # 安定度（std）も比較
-        curr_std = current_raw.get(key, {}).get("std", 0)
-        avg_std = sum(r.get(key, {}).get("std", 0) for r in past_raws) / len(past_raws)
-        deltas[f"{key}_std"] = round(curr_std - avg_std, 2)
-
-    return {
-        "past_sessions_count": len(past_reports),
-        "deltas": deltas,
-        "history": [{"date": r.get("completed_at"), "raw": r.get("raw")} for r in past_reports]
-    }
     
 # ==================================================
 # Routes
