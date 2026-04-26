@@ -3630,36 +3630,39 @@ from google.cloud import firestore
 
 def get_past_reports(user_id: str, current_report_id: str, club_type: str, limit: int = 5):
     """
-    月額会員用に、同じクラブの過去の完了済みレポートを取得
+    インデックスエラーを100%回避する安全版。
+    Firestoreには「ユーザーID」だけで問い合わせ、残りの仕分けはPythonで行います。
     """
     reports_ref = db.collection("reports")
     
-    # Firestoreのインデックスエラーを回避するため、DBへの問い合わせはシンプルにする
-    query = (
-        reports_ref.where("user_id", "==", user_id)
-        .where("status", "==", "DONE")
-        .order_by("completed_at", direction=firestore.Query.DESCENDING)
-    )
-    
-    docs = query.limit(10).get() # 念のため多めに取得
+    # 検索条件を「user_id」だけに絞る。
+    # これならデフォルトのインデックスだけで動くので、追加設定は一切不要です。
+    docs = reports_ref.where("user_id", "==", user_id).get()
     
     past_data = []
     for doc in docs:
+        # 今回のレポート自身は除外
         if doc.id == current_report_id:
             continue
             
         r = doc.to_dict()
         
-        # rawの中か、user_inputsの中のどちらにクラブ種別があっても対応
+        # フィルタ1: ステータスが完了(DONE)しているものだけ
+        if r.get("status") != "DONE":
+            continue
+            
+        # フィルタ2: クラブタイプが一致するものだけ（raw または user_inputs を確認）
         r_club = r.get("raw", {}).get("club_type") or r.get("user_inputs", {}).get("club_type")
-        
-        if r_club == club_type:
-            past_data.append(r)
+        if r_club != club_type:
+            continue
             
-        if len(past_data) >= limit:
-            break
+        past_data.append(r)
             
-    return past_data
+    # 新しい順(completed_at)に並び替える（Python側で実行）
+    past_data.sort(key=lambda x: x.get("completed_at") or "", reverse=True)
+    
+    # 指定した件数（5件）だけを返す
+    return past_data[:limit]
 
 def calculate_full_comparison(current_raw: dict, past_reports: list):
     """
