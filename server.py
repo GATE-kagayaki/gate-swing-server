@@ -3466,6 +3466,8 @@ def judge_spine_maintain_display(raw: Dict[str, Any]) -> Dict[str, str]:
 # ==================================================
 # Helper Functions (追加する比較用関数)
 # ==================================================
+from typing import Dict, Any
+
 def build_comparison_block(comparison: Dict[str, Any]) -> Dict[str, Any]:
     deltas = comparison.get("deltas", {})
     count = comparison.get("past_sessions_count", 0)
@@ -3493,11 +3495,18 @@ def build_comparison_block(comparison: Dict[str, Any]) -> Dict[str, Any]:
         status_icon = "✅" if is_improved else "⚠️"
         diff_text = f"+{d_mean}" if d_mean > 0 else f"{d_mean}"
         
+        # --- 追加：ゲーム感覚で成長を実感できる1行コメントの自動生成 ---
+        if is_positive_metric:
+            comment = "前回より動きが深くなり、良い傾向です。" if is_improved else "前回より動きが浅くなっています。"
+        else:
+            comment = "前回よりブレが少なく、安定しています。" if is_improved else "前回よりブレが大きくなっています。"
+        
         detailed_results.append({
             "label": label,
             "diff": diff_text,
             "status": status_icon,
-            "is_improved": is_improved
+            "is_improved": is_improved,
+            "comment": comment  # フロントエンドに渡す
         })
 
     return {
