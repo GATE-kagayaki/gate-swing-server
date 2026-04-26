@@ -255,66 +255,6 @@
       console.error("Comparison rendering error:", e);
     }
   }
-  
-             backgroundColor: 'rgba(0,185,0,0.1)'
-          }]
-        },
-    html += `</div></div>`;
-      
-      // グラフ用のCanvasエリア
-      html += `<div class="card mt-4 p-4"><canvas id="historyChart" style="width: 100%; max-height: 200px;"></canvas></div>`;
-      
-      sec.innerHTML += html;
-      reportContent.appendChild(sec);
-
-      // DOMが追加された後にグラフを描画
-      if (secData.history && secData.history.length > 0) {
-        setTimeout(() => {
-          const canvas = document.getElementById('historyChart');
-          if (!canvas) return;
-          const ctx = canvas.getContext('2d');
-          
-          const labels = secData.history.map(h => {
-            const d = new Date(h.date);
-            return `${d.getMonth() + 1}/${d.getDate()}`;
-          });
-          
-          // 履歴からスコアを抽出（スコアがない場合は0）
-          const scores = secData.history.map(h => {
-             return h.score || 0;
-          });
-
-          new Chart(ctx, {
-            type: 'line',
-            data: {
-              labels: labels.reverse(), // 古い順に表示するため反転
-              datasets: [{
-                label: 'スイングスコア推移',
-                data: scores.reverse(), // 古い順に表示するため反転
-                borderColor: '#00b900',
-                backgroundColor: 'rgba(0, 185, 0, 0.1)',
-                borderWidth: 3,
-                fill: true,
-                tension: 0.3,
-                pointRadius: 4,
-                pointBackgroundColor: '#00b900'
-              }]
-            },
-            options: { 
-              responsive: true, 
-              maintainAspectRatio: false,
-              plugins: { legend: { display: false } },
-              scales: {
-                y: { min: 40, max: 100 }
-              }
-            }
-          });
-        }, 100);
-      }
-    } catch(e) {
-      console.error("Comparison rendering error:", e);
-    }
-  }
 
   // ↓ 見つけていただいた既存のコードがここから続きます ↓
   function renderVideo(videoUrl, downloadUrl) {
