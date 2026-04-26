@@ -166,114 +166,108 @@
   // ★【追加箇所2】比較分析（グラフ・差分）表示用関数
   // ==========================================
   function render00_comparison(secData) {
-    try {
-      const sec = sectionWrap(secData.title);
-      let html = `
-        <div class="card mt-3 bg-gray-50 border-gray-200">
-          <p class="text-sm muted mb-3">${secData.subtitle}</p>
-          <div class="grid grid-cols-1 gap-3">
-      `;
+  try {
+    const sec = sectionWrap(secData.title);
+    let html = `<p class="text-sm text-gray-600 mb-2">${secData.subtitle}</p>`;
 
-      if (secData.detailed_results) {
-        secData.detailed_results.forEach(res => {
-          const colorClass = res.is_improved ? "text-green-600" : "text-orange-600";
-          
-          html += `
-            <div class="bg-white p-3 rounded-lg border border-gray-100 shadow-sm">
-              <div class="flex justify-between items-center">
-                <span class="text-sm font-bold text-gray-700">${res.status} ${res.label}</span>
-                <span class="text-sm font-mono font-bold ${colorClass}">${res.diff}</span>
-              </div>
-              <p class="text-xs mt-1 text-gray-500 leading-relaxed">${res.comment || "解析完了"}</p>
+    // テキストでの詳細リスト表示（既存のロジックを維持）
+    if (secData.detailed_results && secData.detailed_results.length > 0) {
+      html += `<div class="grid grid-cols-1 gap-2 mb-4">`;
+      secData.detailed_results.forEach(res => {
+        const colorClass = res.is_improved ? 'text-green-600' : 'text-amber-600';
+        html += `
+          <div class="bg-gray-50 p-2 rounded-lg border-l-4 ${res.is_improved ? 'border-green-500' : 'border-amber-500'}">
+            <div class="flex justify-between items-center">
+              <span class="font-bold text-gray-700">${res.status} ${res.label}</span>
+              <span class="font-mono font-bold ${colorClass}">${res.diff}</span>
             </div>
-          `;
-        });
-      }
-
-      html += `</div></div>`;
-      
-      // グラフ用のCanvasエリア
-      html += `
-        <div class="card mt-4 p-4" style="position: relative; height: 250px; width: 100%;">
-          <canvas id="historyChart"></canvas>
-        </div>`;
-      
-      sec.innerHTML += html;
-      reportContent.appendChild(sec);
-
-      // DOMが追加された後にグラフを描画
-      setTimeout(() => {
-        try {
-          const canvas = document.getElementById('historyChart');
-          if (!canvas) return;
-          const ctx = canvas.getContext('2d');
-          
-          // 【本物データ】画面上の「今回のスコア」を取得
-          const scoreEl = document.getElementById('currentTotalScore');
-          let currentScore = scoreEl ? parseInt(scoreEl.innerText) : 0;
-          if (isNaN(currentScore)) currentScore = 0;
-          
-          // 【本物データ】過去のラベル（日付）
-          let labels = (secData.history || []).map(h => {
-            if (!h.date) return "過去";
-            const d = new Date(h.date);
-            return `${d.getMonth() + 1}/${d.getDate()}`;
-          }).reverse(); 
-          
-          // 【本物データ】過去のスコア（考えられる全ての保存名から本物の点数を探す）
-          let scores = (secData.history || []).map(h => {
-             let realScore = h.score || h.total_score || h.overall_score;
-             return realScore ? parseInt(realScore) : 0; 
-          }).reverse();
-
-          // 今回のデータを追加
-          if (currentScore > 0) {
-            labels.push("今回");
-            scores.push(currentScore);
-          }
-
-          // ★【原因特定用】プログラムが取得した「本物の点数」を画面に表示
-          const debugInfo = document.createElement("div");
-          debugInfo.style.fontSize = "12px";
-          debugInfo.style.color = "#0056b3";
-          debugInfo.style.marginBottom = "8px";
-          debugInfo.style.fontWeight = "bold";
-          debugInfo.innerHTML = `システムが取得した本物のデータ ➡ [ ${scores.join(", ")} ]<br><span style="font-size:10px; color:#666;">※もしここに「0」が並んでいる場合、過去データの保存場所にズレがあります。</span>`;
-          canvas.parentElement.insertBefore(debugInfo, canvas);
-
-          new Chart(ctx, {
-            type: 'line',
-            data: {
-              labels: labels,
-              datasets: [{
-                label: 'スイングスコア推移',
-                data: scores,
-                borderColor: '#00b900',
-                backgroundColor: 'rgba(0, 185, 0, 0.1)',
-                borderWidth: 3,
-                fill: true,
-                tension: 0.3,
-                pointRadius: 4,
-                pointBackgroundColor: '#00b900'
-              }]
-            },
-            options: { 
-              responsive: true, 
-              maintainAspectRatio: false,
-              plugins: { legend: { display: false } },
-              scales: {
-                y: { min: 40, max: 100 }
-              }
-            }
-          });
-        } catch(err) {
-          console.error("Chart draw error:", err);
-        }
-      }, 500);
-    } catch(e) {
-      console.error("Comparison rendering error:", e);
+            <p class="text-xs text-gray-500 mt-1">${res.comment}</p>
+          </div>`;
+      });
+      html += `</div>`;
     }
+
+    // ★レーダーチャート表示エリア
+    html += `
+      <div class="card mt-4 p-4 bg-white rounded-xl shadow-sm border border-gray-100" style="position: relative; height: 350px; width: 100%;">
+        <canvas id="statusRadarChart"></canvas>
+      </div>`;
+
+    sec.innerHTML += html;
+    reportContent.appendChild(sec);
+
+    // グラフの描画処理
+    setTimeout(() => {
+      const canvas = document.getElementById('statusRadarChart');
+      if (!canvas) return;
+      const ctx = canvas.getContext('2d');
+
+      // 表示するラベル
+      const labels = ["肩の回転", "腰の回転", "手首角度", "頭のブレ", "膝の動き", "捻転差", "前傾角度"];
+      
+      // Pythonから渡された deltas（差分）を利用して「今回」と「過去平均」を算出
+      // ※ここでは計算を簡略化するため、基準値を100とした相対比較で表示します
+      const datasets = [
+        {
+          label: '今回のスイング',
+          data: [
+            100 + (secData.deltas.shoulder_mean || 0),
+            100 + (secData.deltas.hip_mean || 0),
+            100 - (secData.deltas.wrist_mean || 0), // 少ない方が良い項目は反転
+            100 - (secData.deltas.head_mean || 0),
+            100 - (secData.deltas.knee_mean || 0),
+            100 + (secData.deltas.x_factor_mean || 0),
+            100 - (secData.deltas.spine_mean || 0)
+          ],
+          fill: true,
+          backgroundColor: 'rgba(0, 185, 0, 0.2)',
+          borderColor: '#00b900',
+          pointBackgroundColor: '#00b900',
+          pointBorderColor: '#fff',
+          pointHoverBackgroundColor: '#fff',
+          pointHoverBorderColor: '#00b900'
+        },
+        {
+          label: '過去の平均',
+          data: [100, 100, 100, 100, 100, 100, 100], // 過去平均を基準(100)とする
+          fill: true,
+          backgroundColor: 'rgba(156, 163, 175, 0.1)',
+          borderColor: '#9ca3af',
+          borderDash: [5, 5],
+          pointBackgroundColor: '#9ca3af',
+          pointBorderColor: '#fff'
+        }
+      ];
+
+      new Chart(ctx, {
+        type: 'radar',
+        data: { labels: labels, datasets: datasets },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          scales: {
+            r: {
+              angleLines: { display: true, color: '#e5e7eb' },
+              grid: { color: '#e5e7eb' },
+              suggestedMin: 80,
+              suggestedMax: 120,
+              ticks: { display: false }
+            }
+          },
+          plugins: {
+            legend: {
+              position: 'bottom',
+              labels: { boxWidth: 12, padding: 20, font: { size: 12 } }
+            }
+          }
+        }
+      });
+    }, 500);
+  } catch(e) {
+    console.error("Radar Chart Render Error:", e);
   }
+}
+  
   // ↓ 見つけていただいた既存のコードがここから続きます ↓
   function renderVideo(videoUrl, downloadUrl) {
     // レポートの「00.」セクションを作成
