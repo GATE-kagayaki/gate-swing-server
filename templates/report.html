@@ -7,6 +7,8 @@
 
   <script src="https://cdn.tailwindcss.com"></script>
   <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+JP:wght@600;700&family=Noto+Sans+JP:wght@400;700&display=swap" rel="stylesheet">
+  
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
  <style>
     /* 既存のベーススタイルを維持 */
@@ -157,6 +159,87 @@
       reportContent.appendChild(sec);
     } catch(e) {
       console.error("Score parsing error:", e);
+    }
+  }
+
+  // ==========================================
+  // ★【追加箇所2】比較分析（グラフ・差分）表示用関数
+  // ==========================================
+  function render00_comparison(secData) {
+    try {
+      const sec = sectionWrap(secData.title);
+      let html = `
+        <div class="card mt-3 bg-gray-50 border-gray-200">
+          <p class="text-sm muted mb-3">${secData.subtitle}</p>
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+      `;
+
+      if (secData.detailed_results) {
+        secData.detailed_results.forEach(res => {
+          const colorClass = res.is_improved ? "text-green-600" : "text-orange-600";
+          html += `
+            <div class="flex justify-between items-center bg-white p-3 rounded-lg border border-gray-100 shadow-sm">
+              <span class="text-sm font-bold text-gray-700">${res.status} ${res.label}</span>
+              <span class="text-sm font-mono font-bold ${colorClass}">${res.diff}</span>
+            </div>
+          `;
+        });
+      }
+
+      html += `</div></div>`;
+      
+      // グラフ用のCanvasエリア
+      html += `<div class="card mt-4 p-4"><canvas id="historyChart" style="width: 100%; max-height: 200px;"></canvas></div>`;
+      
+      sec.innerHTML += html;
+      reportContent.appendChild(sec);
+
+      // DOMが追加された後にグラフを描画
+      if (secData.history && secData.history.length > 0) {
+        setTimeout(() => {
+          const canvas = document.getElementById('historyChart');
+          if (!canvas) return;
+          const ctx = canvas.getContext('2d');
+          
+          const labels = secData.history.map(h => {
+            const d = new Date(h.date);
+            return `${d.getMonth() + 1}/${d.getDate()}`;
+          });
+          
+          // 履歴からスコアを抽出（スコアがない場合は0）
+          const scores = secData.history.map(h => {
+             return h.score || 0;
+          });
+
+          new Chart(ctx, {
+            type: 'line',
+            data: {
+              labels: labels.reverse(), // 古い順に表示するため反転
+              datasets: [{
+                label: 'スイングスコア推移',
+                data: scores.reverse(), // 古い順に表示するため反転
+                borderColor: '#00b900',
+                backgroundColor: 'rgba(0, 185, 0, 0.1)',
+                borderWidth: 3,
+                fill: true,
+                tension: 0.3,
+                pointRadius: 4,
+                pointBackgroundColor: '#00b900'
+              }]
+            },
+            options: { 
+              responsive: true, 
+              maintainAspectRatio: false,
+              plugins: { legend: { display: false } },
+              scales: {
+                y: { min: 40, max: 100 }
+              }
+            }
+          });
+        }, 100);
+      }
+    } catch(e) {
+      console.error("Comparison rendering error:", e);
     }
   }
 
@@ -459,6 +542,11 @@ function render09(secData) {
         // ★【新規追加】一番上にスコアを描画
         if (a["00_score"]) {
             render00_score(a["00_score"]);
+        }
+
+        // ★【追加箇所3】比較データがあれば描画する
+        if (a["00_comparison"]) {
+            render00_comparison(a["00_comparison"]);
         }
 
         if (data.overlay_video_url) {
