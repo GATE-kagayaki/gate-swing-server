@@ -3633,20 +3633,29 @@ def get_past_reports(user_id: str, current_report_id: str, club_type: str, limit
     月額会員用に、同じクラブの過去の完了済みレポートを取得
     """
     reports_ref = db.collection("reports")
+    
+    # Firestoreのインデックスエラーを回避するため、DBへの問い合わせはシンプルにする
     query = (
         reports_ref.where("user_id", "==", user_id)
         .where("status", "==", "DONE")
-        .where("raw.club_type", "==", club_type) # 解析結果のクラブ種別でフィルタ
         .order_by("completed_at", direction=firestore.Query.DESCENDING)
     )
     
-    docs = query.limit(limit + 1).get() # 今回分を含む可能性があるので+1
+    docs = query.limit(10).get() # 念のため多めに取得
     
     past_data = []
     for doc in docs:
         if doc.id == current_report_id:
             continue
-        past_data.append(doc.to_dict())
+            
+        r = doc.to_dict()
+        
+        # rawの中か、user_inputsの中のどちらにクラブ種別があっても対応
+        r_club = r.get("raw", {}).get("club_type") or r.get("user_inputs", {}).get("club_type")
+        
+        if r_club == club_type:
+            past_data.append(r)
+            
         if len(past_data) >= limit:
             break
             
