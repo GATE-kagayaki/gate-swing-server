@@ -166,65 +166,100 @@
   // ★【追加箇所2】比較分析（グラフ・差分）表示用関数
   // ==========================================
   function render00_comparison(secData) {
-  try {
-    const sec = sectionWrap(secData.title);
-    let html = `<div class="card mt-3 bg-gray-50 border-gray-200">
-                  <p class="text-sm muted mb-3">${secData.subtitle}</p>
-                  <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">`;
+    try {
+      const sec = sectionWrap(secData.title);
+      let html = `
+        <div class="card mt-3 bg-gray-50 border-gray-200">
+          <p class="text-sm muted mb-3">${secData.subtitle}</p>
+          <div class="grid grid-cols-1 gap-3">
+      `;
 
-    if (secData.detailed_results) {
-      secData.detailed_results.forEach(res => {
-        // 数値の意味を日本語で補足するロジック
-        const isPlus = res.diff.startsWith('+');
-        const isBetter = res.is_improved ? "✨ 向上" : "⚠️ 要注意";
-        const colorClass = res.is_improved ? "text-green-600" : "text-orange-600";
-        
-        html += `
-          <div class="flex justify-between items-center bg-white p-3 rounded-lg border border-gray-100 shadow-sm">
-            <span class="text-sm font-bold text-gray-700">${res.label}</span>
-            <div class="text-right">
-              <div class="text-xs ${colorClass} font-bold">${isBetter}</div>
-              <div class="text-sm font-mono font-bold ${colorClass}">${res.diff}</div>
+      if (secData.detailed_results) {
+        secData.detailed_results.forEach(res => {
+          const colorClass = res.is_improved ? "text-green-600" : "text-orange-600";
+          
+          html += `
+            <div class="bg-white p-3 rounded-lg border border-gray-100 shadow-sm">
+              <div class="flex justify-between items-center">
+                <span class="text-sm font-bold text-gray-700">${res.status} ${res.label}</span>
+                <span class="text-sm font-mono font-bold ${colorClass}">${res.diff}</span>
+              </div>
+              <p class="text-xs mt-1 text-gray-500 leading-relaxed">${res.comment || "解析完了"}</p>
             </div>
-          </div>`;
-      });
+          `;
+        });
+      }
+
+      html += `</div></div>`;
+      
+      // グラフ用のCanvasエリア
+      html += `<div class="card mt-4 p-4"><canvas id="historyChart" style="width: 100%; max-height: 200px;"></canvas></div>`;
+      
+      sec.innerHTML += html;
+      reportContent.appendChild(sec);
+
+      // DOMが追加された後にグラフを描画
+      setTimeout(() => {
+        const canvas = document.getElementById('historyChart');
+        if (!canvas) return;
+        const ctx = canvas.getContext('2d');
+        
+        // 画面上の「現在のスコア」を取得
+        const scoreEl = document.getElementById('currentTotalScore');
+        const currentScore = scoreEl ? parseInt(scoreEl.innerText) : 0;
+        
+        // 過去のラベルとスコアを古い順に反転
+        let labels = (secData.history || []).map(h => {
+          if (!h.date) return "過去";
+          const d = new Date(h.date);
+          return `${d.getMonth() + 1}/${d.getDate()}`;
+        }).reverse(); 
+        
+        let scores = (secData.history || []).map(h => {
+           return h.score || 0;
+        }).reverse();
+
+        // グラフの最後に「今回」を付け足す
+        if (currentScore > 0) {
+            labels.push("今回");
+            scores.push(currentScore);
+        }
+
+        new Chart(ctx, {
+          type: 'line',
+          data: {
+            labels: labels,
+            datasets: [{
+              label: 'スイングスコア推移',
+              data: scores,
+              borderColor: '#00b900',
+              backgroundColor: 'rgba(0, 185, 0, 0.1)',
+              borderWidth: 3,
+              fill: true,
+              tension: 0.3,
+              pointRadius: 4,
+              pointBackgroundColor: '#00b900'
+            }]
+          },
+          options: { 
+            responsive: true, 
+            maintainAspectRatio: false,
+            plugins: { legend: { display: false } },
+            scales: {
+              y: { min: 40, max: 100 }
+            }
+          }
+        });
+      }, 500);
+    } catch(e) {
+      console.error("Comparison rendering error:", e);
     }
-    html += `</div></div><div class="card mt-4 p-4"><canvas id="historyChart" style="width: 100%; height: 200px;"></canvas></div>`;
-    sec.innerHTML += html;
-    reportContent.appendChild(sec);
-
-    // グラフ描画（今回のスコアを末尾に追加して線を引く）
-    setTimeout(() => {
-      const ctx = document.getElementById('historyChart').getContext('2d');
-      // 過去の履歴 + 今回のスコア（画面上の54点など）を合体させる
-      const currentScore = parseInt(document.querySelector('span[style*="font-size: 4rem"]').innerText) || 0;
-      
-      let labels = (secData.history || []).map(h => h.date ? new Date(h.date).toLocaleDateString() : '過去').reverse();
-      let scores = (secData.history || []).map(h => h.score || 50).reverse();
-      
-      // 今回のデータを追加
-      labels.push("今回");
-      scores.push(currentScore);
-
-      new Chart(ctx, {
-        type: 'line',
-        data: {
-          labels: labels,
-          datasets: [{
-            label: 'スコア推移',
-            data: scores,
-            borderColor: '#00b900',
-            tension: 0.4,
-            fill: true,
-            backgroundColor: 'rgba(0,185,0,0.1)'
+  }
+  
+             backgroundColor: 'rgba(0,185,0,0.1)'
           }]
         },
-        options: { scales: { y: { min: 40, max: 100 } } }
-      });
-    }, 200);
-  } catch(e) { console.error(e); }
-}
-      html += `</div></div>`;
+    html += `</div></div>`;
       
       // グラフ用のCanvasエリア
       html += `<div class="card mt-4 p-4"><canvas id="historyChart" style="width: 100%; max-height: 200px;"></canvas></div>`;
