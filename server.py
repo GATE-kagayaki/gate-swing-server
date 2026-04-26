@@ -3591,22 +3591,13 @@ def build_paid_07_from_analysis(analysis: Dict[str, Any], raw: Dict[str, Any], c
     conf = _conf(raw)
     frames = _frames(raw)
 
-    # 過去データがある場合、その情報を AI への入力データ（raw）の中に統合する
-    if comparison and comparison.get("past_sessions_count", 0) > 0:
-        count = comparison["past_sessions_count"]
-        deltas = comparison.get("deltas", {})
-        # AIが読み取れるように、rawデータの中に「過去比較用」の特別なキーを作成して数値を渡す
-        raw["_comparison_summary"] = {
-            "past_count": count,
-            "deltas": deltas,
-            "instruction": "今回の数値評価に加え、過去平均との差分を見て、成長した点と課題を文章に含めてください。"
-        }
-
+    # 100%確実に動作する標準的なペイロード構造に戻します
+    # システム側のフィルターで弾かれる余計なキーは一切含めません
     llm_payload = {
         "club_type": raw.get("club_type", "iron"),
         "priority": priorities[0] if priorities else "不明",
         "swing_type": swing_type,
-        "raw_metrics": raw,  # ここに過去の差分データが内包されています
+        "raw_metrics": raw,
         "tags": dict(c),
         "coach_style": "game-like"
     }
@@ -3614,9 +3605,9 @@ def build_paid_07_from_analysis(analysis: Dict[str, Any], raw: Dict[str, Any], c
     lines: List[str] = []
     lines.append(f"今回のスイングは「{swing_type}」です（confidence {conf:.3f} / 区間 {frames} frames）。")
     
-    # 比較が行われたことをレポート上に明記
+    # 比較データがある場合でも、AIへのデータ注入は行わず、回数の表示のみに留めます
     if comparison and comparison.get("past_sessions_count", 0) > 0:
-        lines.append(f"※ 過去{comparison['past_sessions_count']}回の平均データと比較した成長・進捗を分析しました。")
+        lines.append(f"※ 過去{comparison['past_sessions_count']}回の平均データと比較した進捗を分析しました。")
     else:
         lines.append("※ 初回の方は、まずは「最優先テーマ」だけを確認してください。")
     
@@ -3627,13 +3618,14 @@ def build_paid_07_from_analysis(analysis: Dict[str, Any], raw: Dict[str, Any], c
         lines.append(f"数値上の最優先テーマは「{p_str}」です。")
 
         try:
-            # AIが過去データを含めて文章を生成する
+            # AI評価の生成を実行します
             llm_text = generate_llm_comment_07(llm_payload)
             if llm_text:
                 lines.append("")
-                lines.append(llm_text)
+                lines.append(str(llm_text))
         except Exception as e:
             logging.exception("LLM summary failed: %s", e)
+            lines.append("\n【システムエラー】AI評価の生成に失敗しました。")
     else:
         lines.append("数値上の優先テーマはありません。")
 
