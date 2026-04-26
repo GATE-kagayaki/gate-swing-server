@@ -170,16 +170,17 @@
     const sec = sectionWrap(secData.title);
     let html = `<p class="text-sm text-gray-600 mb-2">${secData.subtitle}</p>`;
 
-    // テキストでの詳細リスト表示（既存のロジックを維持）
+    // 1. テキスト詳細リストの表示（既存のロジック）
     if (secData.detailed_results && secData.detailed_results.length > 0) {
       html += `<div class="grid grid-cols-1 gap-2 mb-4">`;
       secData.detailed_results.forEach(res => {
-        const colorClass = res.is_improved ? 'text-green-600' : 'text-amber-600';
+        const borderCol = res.is_improved ? 'border-green-500' : 'border-amber-500';
+        const textCol = res.is_improved ? 'text-green-600' : 'text-amber-600';
         html += `
-          <div class="bg-gray-50 p-2 rounded-lg border-l-4 ${res.is_improved ? 'border-green-500' : 'border-amber-500'}">
+          <div class="bg-gray-50 p-2 rounded-lg border-l-4 ${borderCol}">
             <div class="flex justify-between items-center">
               <span class="font-bold text-gray-700">${res.status} ${res.label}</span>
-              <span class="font-mono font-bold ${colorClass}">${res.diff}</span>
+              <span class="font-mono font-bold ${textCol}">${res.diff}</span>
             </div>
             <p class="text-xs text-gray-500 mt-1">${res.comment}</p>
           </div>`;
@@ -187,82 +188,85 @@
       html += `</div>`;
     }
 
-    // ★レーダーチャート表示エリア
+    // 2. レーダーチャート用のコンテナ（明示的なIDとスタイルを付与）
+    const canvasId = "statusRadarChart";
     html += `
-      <div class="card mt-4 p-4 bg-white rounded-xl shadow-sm border border-gray-100" style="position: relative; height: 350px; width: 100%;">
-        <canvas id="statusRadarChart"></canvas>
+      <div id="radar-container" class="mt-4 bg-white rounded-xl p-4 shadow-inner" style="position: relative; height: 320px; width: 100%; border: 1px solid #f0f0f0;">
+        <canvas id="${canvasId}"></canvas>
       </div>`;
 
     sec.innerHTML += html;
     reportContent.appendChild(sec);
 
-    // グラフの描画処理
+    // 3. 描画実行
     setTimeout(() => {
-      const canvas = document.getElementById('statusRadarChart');
+      const canvas = document.getElementById(canvasId);
       if (!canvas) return;
-      const ctx = canvas.getContext('2d');
 
-      // 表示するラベル
-      const labels = ["肩の回転", "腰の回転", "手首角度", "頭のブレ", "膝の動き", "捻転差", "前傾角度"];
+      // Chart.js が存在しない場合のガード
+      if (typeof Chart === 'undefined') {
+        console.error("Chart.js is not loaded.");
+        return;
+      }
+
+      const deltas = secData.deltas || {};
+      const labels = ["肩回転", "腰回転", "手首角", "頭ブレ", "膝動き", "捻転差", "前傾角"];
       
-      // Pythonから渡された deltas（差分）を利用して「今回」と「過去平均」を算出
-      // ※ここでは計算を簡略化するため、基準値を100とした相対比較で表示します
-      const datasets = [
-        {
-          label: '今回のスイング',
-          data: [
-            100 + (secData.deltas.shoulder_mean || 0),
-            100 + (secData.deltas.hip_mean || 0),
-            100 - (secData.deltas.wrist_mean || 0), // 少ない方が良い項目は反転
-            100 - (secData.deltas.head_mean || 0),
-            100 - (secData.deltas.knee_mean || 0),
-            100 + (secData.deltas.x_factor_mean || 0),
-            100 - (secData.deltas.spine_mean || 0)
-          ],
-          fill: true,
-          backgroundColor: 'rgba(0, 185, 0, 0.2)',
-          borderColor: '#00b900',
-          pointBackgroundColor: '#00b900',
-          pointBorderColor: '#fff',
-          pointHoverBackgroundColor: '#fff',
-          pointHoverBorderColor: '#00b900'
-        },
-        {
-          label: '過去の平均',
-          data: [100, 100, 100, 100, 100, 100, 100], // 過去平均を基準(100)とする
-          fill: true,
-          backgroundColor: 'rgba(156, 163, 175, 0.1)',
-          borderColor: '#9ca3af',
-          borderDash: [5, 5],
-          pointBackgroundColor: '#9ca3af',
-          pointBorderColor: '#fff'
-        }
+      // 基準値100に対して、差分を反映（良ければ外、悪ければ内に動くよう計算）
+      const currentStats = [
+        100 + (deltas.shoulder_mean || 0),
+        100 + (deltas.hip_mean || 0),
+        100 - (deltas.wrist_mean || 0), // 角度ブレはマイナスが良い
+        100 - (deltas.head_mean || 0),  // ブレはマイナスが良い
+        100 - (deltas.knee_mean || 0),  // ブレはマイナスが良い
+        100 + (deltas.x_factor_mean || 0),
+        100 - (deltas.spine_mean || 0)
       ];
 
-      new Chart(ctx, {
+      new Chart(canvas, {
         type: 'radar',
-        data: { labels: labels, datasets: datasets },
+        data: {
+          labels: labels,
+          datasets: [
+            {
+              label: '今回のスイング',
+              data: currentStats,
+              backgroundColor: 'rgba(34, 197, 94, 0.2)',
+              borderColor: '#22c55e',
+              borderWidth: 2,
+              pointBackgroundColor: '#22c55e',
+              pointRadius: 3
+            },
+            {
+              label: '過去平均 (基準)',
+              data: [100, 100, 100, 100, 100, 100, 100],
+              backgroundColor: 'rgba(156, 163, 175, 0.05)',
+              borderColor: '#9ca3af',
+              borderDash: [5, 5],
+              pointRadius: 0
+            }
+          ]
+        },
         options: {
           responsive: true,
           maintainAspectRatio: false,
           scales: {
             r: {
-              angleLines: { display: true, color: '#e5e7eb' },
-              grid: { color: '#e5e7eb' },
-              suggestedMin: 80,
-              suggestedMax: 120,
-              ticks: { display: false }
+              min: 50,
+              max: 150,
+              ticks: { display: false },
+              grid: { color: '#f0f0f0' },
+              angleLines: { color: '#f0f0f0' },
+              pointLabels: { font: { size: 11, weight: 'bold' }, color: '#374151' }
             }
           },
           plugins: {
-            legend: {
-              position: 'bottom',
-              labels: { boxWidth: 12, padding: 20, font: { size: 12 } }
-            }
+            legend: { position: 'bottom', labels: { boxWidth: 12, font: { size: 11 } } }
           }
         }
       });
     }, 500);
+
   } catch(e) {
     console.error("Radar Chart Render Error:", e);
   }
