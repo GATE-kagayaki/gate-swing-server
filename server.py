@@ -3688,9 +3688,11 @@ def build_paid_07_from_analysis(analysis: Dict[str, Any], raw: Dict[str, Any], c
                 lines.append("")
                 lines.append(str(llm_text))
         except Exception as e:
+            import logging
             logging.exception("LLM summary failed: %s", e)
             lines.append("")
-            lines.append(f"【システムエラー詳細】{str(e)}")
+            lines.append("【システムエラー】AI評価の生成に失敗しました。")
+            
     else:
         lines.append("数値上の優先テーマはありません。")
 
