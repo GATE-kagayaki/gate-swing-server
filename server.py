@@ -2870,10 +2870,10 @@ def generate_llm_drills_08(payload: Dict[str, Any], base_drills: List[Dict[str, 
 
         return [
             {
-                "name": "【LLMエラー】ドリル生成失敗",
-                "purpose": f"● エラー内容: {str(e)}",
-                "how": "① Cloud Loggingを確認\n② JSON形式/APIエラーを確認"
-            }
+                "name": d["name"],
+                "purpose": d["purpose"],
+                "how": d["how"]
+            } for d in base_drills
         ]
 
 def build_paid_08(analysis: Dict[str, Any], raw: Dict[str, Any], comparison: Dict[str, Any] = None) -> Dict[str, Any]:
