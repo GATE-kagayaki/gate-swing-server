@@ -3119,9 +3119,33 @@ def generate_llm_driver_fitting_ai(payload: Dict[str, Any]) -> Dict[str, Any]:
     AIフィッティングエンジン：2026年最新の全ギア（純正・カスタム問わず）から、
     算出された物理スペックに最も合致する1本を特定する。
     """
+    hs_val = 0
+    try:
+        hs_val = float(payload.get("hs", 0))
+    except:
+        pass
+    
+    gender = payload.get("gender", "none")
+    gender_instruction = ""
+    if gender == "female":
+        if hs_val <= 33:
+            gender_instruction = "【特別条件】対象は女性でHS33以下のため、必ず「レディースクラブ（レディースモデル）」を提案してください。"
+        elif hs_val < 36:
+            gender_instruction = "【特別条件】対象は女性でHS34〜35のため、「メンズモデル（軽量モデル含む）」と「レディースモデル」を両方合わせて検討し、最適なものを提案してください。"
+        else:
+            gender_instruction = "【特別条件】対象は女性ですがHS36以上あるため、軽量モデルに決めつけず「通常のメンズモデル」も含めて、算出された推奨重量・推奨フレックスに最も合致するものを検討・提案してください。"
+
+    miss = payload.get("miss", "none")
+    miss_instruction = ""
+    if miss in ["right", "left"]:
+        miss_instruction = "【特別条件】ミス傾向が左右（スライスやフック）にあるため、安易にPING G440シリーズを推奨することは避け、よりそのミスを明確に補正・軽減できるヘッド設計（ドローバイアス等）を優先して選定してください。"
+
     prompt = f"""
 あなたは世界中のゴルフクラブ・シャフトの剛性分布（EIプロファイル）を学習した「AIフィッティングエンジン」です。
 算出された【{payload['kp']}調子】という物理条件は絶対的な正解であり、これと矛盾するシャフト提案はシステムエラーとみなします。
+
+{gender_instruction}
+{miss_instruction}
 
 【算出済み物理制約】
 ■ 推奨重量: {payload['weight']} / 推奨フレックス: {payload['flex']}
@@ -3135,10 +3159,11 @@ def generate_llm_driver_fitting_ai(payload: Dict[str, Any]) -> Dict[str, Any]:
 2. シャフトは、純正シャフト（PING TOUR 2.0 BLACK等）に加え、主要カスタムシャフト（Fujikura、三菱ケミカル、グラファイトデザイン、USTマミヤ等の最新モデル）も含めて広く評価し、算出スペックに合致するものを優先的に選定してください。
 3. シャフト名の響き（BLACK等）に騙されず、必ず【{payload['kp']}調子】であることを再確認してください。
    （例：元調子判定に、先中調子のSpeeder NX BLACKを提案することは厳禁です）
-4. 理由は以下の3構成とし、専門用語を避けつつ物理的な理屈が直感的に伝わるよう簡潔に記述してください。
+4. 【重要】ヘッド単体・シャフト単体で選ぶのではなく、「このヘッドとこのシャフトを組み合わせることで、なぜこのユーザーにとって究極のセッティングになるのか（相乗効果）」をAIフィッターとしての腕の見せ所として強く打ち出してください。シャフトの挙動がヘッドの特性をどう引き出すか、あるいはどう補うかを論理的に説明してください。
+5. 理由は以下の3構成とし、専門用語を避けつつ物理的な理屈が直感的に伝わるよう簡潔に記述してください。
    ・【ヘッド】選定理由（例：高MOIによる直進性向上など）
    ・【シャフト】選定理由（例：逆転ロジックに基づく「間」の生成など）
-   ・【結 果】両者の相乗効果でどんな弾道になるか
+   ・【結 果】ヘッドとシャフトの組み合わせによる相乗効果と、それがユーザーのミスをどう解決しどんな弾道を生むか
 
 {{
   "model_name": "最新ヘッド名 + 具体的シャフト名",
@@ -3293,7 +3318,8 @@ def build_paid_09(raw: Dict[str, Any], user_inputs: Dict[str, Any], analysis: Di
     # --- 5. AI提案の取得と表示テーブルの構築（3項目構成） ---
     llm_payload = {
         "hs": hs or power_idx, "miss": miss, "weight": weight, "flex": flex, 
-        "kp": kp, "wrist_cock": f"{wrist_cock:.1f}", "stability_val": f"{stability_val:.1f}"
+        "kp": kp, "wrist_cock": f"{wrist_cock:.1f}", "stability_val": f"{stability_val:.1f}",
+        "gender": gender
     }
     ai_fit = generate_llm_driver_fitting_ai(llm_payload)
 
