@@ -2308,7 +2308,7 @@ def generate_llm_comment_07(payload: Dict[str, Any]) -> str:
     # ここから追加：過去比較データ（ステータス差分）の生成
     # ==================================================
     comparison_text = ""
-    comp_data = payload.get("comparison_data", {})
+    comp_data = payload.get("comparison_data") or {}
     if comp_data.get("past_count", 0) > 0 and comp_data.get("deltas"):
         d = comp_data["deltas"]
         diffs = []
@@ -2332,6 +2332,8 @@ def generate_llm_comment_07(payload: Dict[str, Any]) -> str:
 
 数値データ:
 腰回転 {payload["hip"]} / 捻転差 {payload["x_factor"]} / 前傾 {payload.get("spine", "unknown")} / 頭部 {payload["head"]} / 膝 {payload["knee"]}
+
+{comparison_text}
 
 アドバイス作成の指針:
 1. 【称賛】まずは数値から見える「素晴らしい点」を具体的に1つ褒めてください。
