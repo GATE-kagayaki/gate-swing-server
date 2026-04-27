@@ -3131,8 +3131,8 @@ def generate_llm_driver_fitting_ai(payload: Dict[str, Any]) -> Dict[str, Any]:
 ミス傾向: {payload['miss']} / HS: {payload['hs']}m/s / 軸ブレ: {payload['stability_val']}% / タメ: {payload['wrist_cock']}度
 
 指令（ミッション）:
-1. 2026年4月現在の現行モデル全体から、ヘッドとシャフトを特定してください。
-2. 純正シャフト（PING TOUR 2.0 BLACK等）の性能を高く評価し、算出スペックに合致する場合は優先的に選定してください。
+1. 2026年4月現在の最新機材カタログ（Callaway Quantum, Cobra OPTM, PING G440シリーズ、TaylorMade最新シリーズ、Titleist、Srixon、Bridgestone、Mizuno等）を含む現行モデル全体から、ヘッドを特定してください。
+2. シャフトは、純正シャフト（PING TOUR 2.0 BLACK等）に加え、主要カスタムシャフト（Fujikura、三菱ケミカル、グラファイトデザイン、USTマミヤ等の最新モデル）も含めて広く評価し、算出スペックに合致するものを優先的に選定してください。
 3. シャフト名の響き（BLACK等）に騙されず、必ず【{payload['kp']}調子】であることを再確認してください。
    （例：元調子判定に、先中調子のSpeeder NX BLACKを提案することは厳禁です）
 4. 理由は「AIによる最適化の結果、スイングからどう無駄が消えるか」を3手順で出力してください。
@@ -3257,9 +3257,12 @@ def build_paid_09(raw: Dict[str, Any], user_inputs: Dict[str, Any], analysis: Di
 
     # 【調子】（逆転ロジック維持）
     if miss == "right":
-        if cock_level == "shallow" or tame_band == "unstable_deep" or wrist_std >= 15.0:
+        if wrist_cock < 45.0:
             kp = "元"
-            k_reason = "手元側のしなりにより『タメの間』を自動生成し、右ミスを抑制"
+            k_reason = "手元側のしなりにより『タメの間』を意図的に作り出し、右ミスを抑制"
+        elif tame_band == "unstable_deep" or wrist_std >= 15.0:
+            kp = "元"
+            k_reason = "タメのばらつきを抑えるため、手元調子でタイミングを安定化"
         elif stability_val > 7.0:
             kp = "中"
             k_reason = f"軸ブレ{stability_val:.1f}%を考慮し、挙動の安定性を優先"
