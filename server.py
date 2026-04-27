@@ -2801,17 +2801,89 @@ def select_drills_with_priority(tags: List[str], priorities: List[str], max_dril
 
     return selected
 
+# ==================================================
+# ここから追加：08ドリル生成用のLLM呼び出し関数
+# ==================================================
+def generate_llm_drills_08(payload: Dict[str, Any], base_drills: List[Dict[str, Any]]) -> List[Dict[str, str]]:
+    priorities = payload.get("priorities", ["不明"])
+    p_str = "／".join(priorities)
+    club_type = payload.get("club_type", "不明")
+    
+    # ベースとなるドリルのお手本テキストを作成
+    base_texts = ""
+    for i, d in enumerate(base_drills, 1):
+        base_texts += f"【ベース案{i}: {d['name']}】\n目的: {d['purpose']}\nやり方: {d['how']}\n\n"
 
-def build_paid_08(analysis: Dict[str, Any], raw: Dict[str, Any]) -> Dict[str, Any]:
+    # 過去比較データ（ステータス差分）の抽出
+    comparison_text = ""
+    comp_data = payload.get("comparison_data", {})
+    if comp_data.get("past_count", 0) > 0 and comp_data.get("deltas"):
+        d = comp_data["deltas"]
+        diffs = []
+        if "shoulder_mean" in d: diffs.append(f"肩{d['shoulder_mean']:+.2f}")
+        if "hip_mean" in d: diffs.append(f"腰{d['hip_mean']:+.2f}")
+        if "head_mean" in d: diffs.append(f"頭{d['head_mean']:+.2f}")
+        if "knee_mean" in d: diffs.append(f"膝{d['knee_mean']:+.2f}")
+        if "x_factor_mean" in d: diffs.append(f"捻転差{d['x_factor_mean']:+.2f}")
+        comparison_text = f"\n過去{comp_data['past_count']}回平均との差分: {'、'.join(diffs)} (※プラスは動き/ブレが拡大、マイナスは縮小)"
 
+    prompt = f"""
+あなたはプロのゴルフコーチです。
+ユーザーの解析データに基づき、最優先で取り組むべき「あなただけの練習ドリル」を【2つ】考案してください。
+
+使用クラブ: {club_type}
+最優先課題: {p_str}
+{comparison_text}
+
+【ベース案（参考ドリル）】
+{base_texts}
+
+アドバイス作成の指針:
+1. 上記の【ベース案】の意図や目的を踏襲しつつ、ユーザーの課題や比較数値（あれば）に合わせて、より具体的でパーソナライズされた内容にアレンジしてください。
+2. 名前は「〇〇攻略ドリル」など、ゲーム感覚でモチベーションが上がる独自のキャッチーな名称にしてください。
+3. アマチュアでも安全にできる、一般的で物理的に無理のない動きにしてください。怪我のリスクがある特殊なドリルは禁止です。
+4. 出力は以下のJSON形式の配列のみを厳守してください。他の文章（「わかりました」等）やマークダウンのコードブロック(` ```json `等)は一切含めないでください。
+
+[
+  {{
+    "name": "ドリルの名前",
+    "purpose": "● 何のために行うのか\\n● どんな効果があるのか",
+    "how": "① やり方ステップ1\\n② やり方ステップ2\\n③ 回数や注意点"
+  }},
+  {{
+    ...
+  }}
+]
+"""
+    try:
+        # LLMを呼び出す（ここは既存の call_llm など環境に合わせてください）
+        response_text = call_llm(prompt)
+        import json
+        import re
+        # マークダウン記法が返ってきた場合を除去する安全処理
+        clean_text = re.sub(r'```json\s*', '', response_text)
+        clean_text = re.sub(r'```', '', clean_text).strip()
+        drills = json.loads(clean_text)
+        return drills
+    except Exception as e:
+        import logging
+        logging.exception("LLM drill generation failed: %s", e)
+        # エラー時は安全のためにベース案をそのまま返す
+        return [
+            {
+                "name": d["name"],
+                "purpose": d["purpose"],
+                "how": d["how"]
+            } for d in base_drills
+        ]
+
+def build_paid_08(analysis: Dict[str, Any], raw: Dict[str, Any], comparison: Dict[str, Any] = None) -> Dict[str, Any]:
     sec07 = analysis.get("07") or {}
     meta07 = sec07.get("meta") or {}
     priorities = meta07.get("priorities", [])
 
     all_tags = collect_all_tags(analysis)
-
     sh_std = float(raw.get("shoulder", {}).get("std", 0) or 0)
-
     spine_flag = judge_spine_flag(raw)
 
     head_mean = float(raw.get("head", {}).get("mean", 0) or 0)
@@ -2823,67 +2895,31 @@ def build_paid_08(analysis: Dict[str, Any], raw: Dict[str, Any]) -> Dict[str, An
 
     # 前傾は他要素にも影響がある場合のみ追加
     if spine_flag == "bad" and (head_mean > 6.0 or knee_mean > 9.0):
-
         all_tags.append("前傾維持不安定")
 
-    selected_drills = select_drills_with_priority(
+    # まずは既存の安全なルールベースでドリルを選出する（AIの参考にするため）
+    selected_base_drills = select_drills_with_priority(
         all_tags,
         priorities,
         2
     )
 
-    for d in selected_drills:
+    # LLMに渡すためのペイロードを作成
+    llm_payload = {
+        "priorities": priorities,
+        "club_type": raw.get("club_type", "不明"),
+        "comparison_data": {
+            "deltas": comparison.get("deltas", {}) if comparison else {},
+            "past_count": comparison.get("past_sessions_count", 0) if comparison else 0
+        }
+    }
 
-        extra_notes = []
-
-        if sh_std > 18:
-
-            extra_notes.append(
-                f"● 【再現性補足】肩回転のばらつき（σ {sh_std:.1f}）がやや大きいため、"
-                "回数よりも『同じトップ位置をゆっくり再現すること』を優先してください。"
-            )
-
-        if spine_flag == "bad" and d["id"] in {
-
-            "spine_posture_keep",
-            "hip_depth_wall"
-
-        }:
-
-            extra_notes.append(
-                "● 【前傾維持補足】切り返しからインパクトまで胸の向きと上体角度を揃える意識を優先してください。"
-            )
-
-        elif spine_flag == "warn" and d["id"] == "spine_posture_keep":
-
-            extra_notes.append(
-                "● 【前傾維持補足】動作スピードを少し落とし、上体角度が大きく変わらない範囲で行ってください。"
-            )
-
-        if extra_notes:
-
-            d["how"] += "\n\n" + "\n".join(extra_notes)
+    # ★ LLMを使って、ベースドリルを元に無限のバリエーションを生成
+    generated_drills = generate_llm_drills_08(llm_payload, selected_base_drills)
 
     return {
-
         "title": "08. Training Drills（練習ドリル）",
-
-        "drills": [
-
-            {
-
-                "name": d["name"],
-
-                "purpose": d["purpose"],
-
-                "how": d["how"]
-
-            }
-
-            for d in selected_drills
-
-        ]
-
+        "drills": generated_drills
     }
     
 # ==================================================
