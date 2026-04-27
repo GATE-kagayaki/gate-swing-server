@@ -2802,18 +2802,13 @@ def select_drills_with_priority(tags: List[str], priorities: List[str], max_dril
     return selected
 
 # ==================================================
-# ここから追加：08ドリル生成用のLLM呼び出し関数
+# ここから追加：08ドリル生成用のLLM呼び出し関数（完全AIオリジナル生成テスト版）
 # ==================================================
 def generate_llm_drills_08(payload: Dict[str, Any], base_drills: List[Dict[str, Any]]) -> List[Dict[str, str]]:
     priorities = payload.get("priorities", ["不明"])
     p_str = "／".join(priorities)
     club_type = payload.get("club_type", "不明")
     
-    # ベースとなるドリルのお手本テキストを作成
-    base_texts = ""
-    for i, d in enumerate(base_drills, 1):
-        base_texts += f"【ベース案{i}: {d['name']}】\n目的: {d['purpose']}\nやり方: {d['how']}\n\n"
-
     # 過去比較データ（ステータス差分）の抽出
     comparison_text = ""
     comp_data = payload.get("comparison_data", {})
@@ -2827,28 +2822,28 @@ def generate_llm_drills_08(payload: Dict[str, Any], base_drills: List[Dict[str, 
         if "x_factor_mean" in d: diffs.append(f"捻転差{d['x_factor_mean']:+.2f}")
         comparison_text = f"\n過去{comp_data['past_count']}回平均との差分: {'、'.join(diffs)} (※プラスは動き/ブレが拡大、マイナスは縮小)"
 
+    # ★ 既存のベース案をプロンプトから完全に消去し、AIにゼロから考案させます
     prompt = f"""
-あなたはプロのゴルフコーチです。
-ユーザーの解析データに基づき、最優先で取り組むべき「あなただけの練習ドリル」を【2つ】考案してください。
+あなたは世界トップクラスのプロゴルフコーチです。
+ユーザーの解析データに基づき、最優先で取り組むべき「あなただけの完全オリジナル練習ドリル」を【2つ】考案してください。既存の枠にとらわれない、ユーザーの数値に最も効くドリルを提案してください。
 
 使用クラブ: {club_type}
 最優先課題: {p_str}
 {comparison_text}
 
-【ベース案（参考ドリル）】
-{base_texts}
-
 アドバイス作成の指針:
-1. 上記の【ベース案】の意図や目的を踏襲しつつ、ユーザーの課題や比較数値（あれば）に合わせて、より具体的でパーソナライズされた内容にアレンジしてください。
-2. 名前は「〇〇攻略ドリル」など、ゲーム感覚でモチベーションが上がる独自のキャッチーな名称にしてください。
-3. アマチュアでも安全にできる、一般的で物理的に無理のない動きにしてください。怪我のリスクがある特殊なドリルは禁止です。
-4. 出力は以下のJSON形式の配列のみを厳守してください。他の文章（「わかりました」等）やマークダウンのコードブロック(` ```json `等)は一切含めないでください。
+1. ユーザーの課題とステータス差分（あれば）を分析し、最も効果的なドリルをゼロから2つ考案してください。
+2. 名前は「〇〇攻略ドリル」など、ゲーム感覚でモチベーションが上がるキャッチーな名称にすること。
+3. 【目的】は、絶対に長文にならないよう注意し、専門用語を避けた分かりやすい表現で、「どんなエラーが直り、どうレベルアップするのか」を簡潔な2つの箇条書きにしてください（1文は短くスッキリと）。
+4. 【手順】は、練習場で体を動かす際に読みやすいよう、1文を短く、具体的なアクションのみをシンプルに記述してください（理屈や数値による解説は絶対に含めないでください）。
+5. 【超重要】完全オリジナルとはいえ、アマチュアが絶対に怪我をしない、一般的なゴルフ理論に基づいた物理的に無理のない安全な動きにしてください。
+6. 出力は以下のJSON形式の配列のみを厳守してください。他の文章やマークダウン記法(` ```json `等)は一切含めないこと。
 
 [
   {{
     "name": "ドリルの名前",
-    "purpose": "● 何のために行うのか\\n● どんな効果があるのか",
-    "how": "① やり方ステップ1\\n② やり方ステップ2\\n③ 回数や注意点"
+    "purpose": "● 短く分かりやすい目的1\\n● 短く分かりやすい目的2",
+    "how": "① 具体的な短いアクション\\n② 具体的な短いアクション\\n③ 回数や意識するポイント"
   }},
   {{
     ...
@@ -2856,11 +2851,9 @@ def generate_llm_drills_08(payload: Dict[str, Any], base_drills: List[Dict[str, 
 ]
 """
     try:
-        # LLMを呼び出す（ここは既存の call_llm など環境に合わせてください）
         response_text = call_llm(prompt)
         import json
         import re
-        # マークダウン記法が返ってきた場合を除去する安全処理
         clean_text = re.sub(r'```json\s*', '', response_text)
         clean_text = re.sub(r'```', '', clean_text).strip()
         drills = json.loads(clean_text)
@@ -2868,7 +2861,7 @@ def generate_llm_drills_08(payload: Dict[str, Any], base_drills: List[Dict[str, 
     except Exception as e:
         import logging
         logging.exception("LLM drill generation failed: %s", e)
-        # エラー時は安全のためにベース案をそのまま返す
+        # エラーが起きた時だけ、システムダウンを防ぐために既存のベース案を返します
         return [
             {
                 "name": d["name"],
@@ -2876,6 +2869,7 @@ def generate_llm_drills_08(payload: Dict[str, Any], base_drills: List[Dict[str, 
                 "how": d["how"]
             } for d in base_drills
         ]
+# ==================================================
 
 def build_paid_08(analysis: Dict[str, Any], raw: Dict[str, Any], comparison: Dict[str, Any] = None) -> Dict[str, Any]:
     sec07 = analysis.get("07") or {}
