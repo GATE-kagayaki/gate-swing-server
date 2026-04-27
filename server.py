@@ -3156,7 +3156,7 @@ def generate_llm_driver_fitting_ai(payload: Dict[str, Any]) -> Dict[str, Any]:
 
 指令（ミッション）:
 1. 2026年4月現在の最新機材（例として挙げた Callaway Quantum, Cobra OPTM, PING G440シリーズ 等）を含む現行モデルから、ヘッドを特定してください。
-   【重要】AI自身で「ELYTE 10K MAX」などの架空のクラブ名を勝手に創作・捏造することは厳禁です。必ず実在するモデル、もしくはプロンプト内で指定されている2026年最新モデル名（Quantum, OPTM, G440等）の中から選定してください。
+   【重要】AI自身で「ELYTE 10K MAX」などの架空のクラブ名を勝手に創作・捏造することは厳禁ですが、例に挙げたメーカー（CallawayやPING等）に縛られる必要はありません。ユーザーの課題解決に最も適しているのであれば、国内外問わず幅広いクラブメーカー（TaylorMade, Titleist, Srixon, Bridgestone, Mizuno, PRGR, YAMAHAなど）の現行・実在モデルから柔軟かつ幅広く検討してください。
 2. シャフトは、純正シャフト（PING TOUR 2.0 BLACK等）に加え、主要カスタムシャフト（Fujikura、三菱ケミカル、グラファイトデザイン、USTマミヤ等の最新モデル）も含めて広く評価し、算出スペックに合致するものを優先的に選定してください。
 3. シャフト名の響き（BLACK等）に騙されず、必ず【{payload['kp']}調子】であることを再確認してください。
    （例：元調子判定に、先中調子のSpeeder NX BLACKを提案することは厳禁です）
