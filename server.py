@@ -3135,10 +3135,8 @@ def generate_llm_driver_fitting_ai(payload: Dict[str, Any]) -> Dict[str, Any]:
         else:
             gender_instruction = "【特別条件】対象は女性ですがHS36以上あるため、軽量モデルに決めつけず「通常のメンズモデル」も含めて、算出された推奨重量・推奨フレックスに最も合致するものを検討・提案してください。"
 
-    miss = payload.get("miss", "none")
-    miss_instruction = ""
-    if miss in ["right", "left"]:
-        miss_instruction = "【特別条件】ミス傾向が左右（スライスやフック）にあるため、安易にPING G440シリーズを推奨することは避け、よりそのミスを明確に補正・軽減できるヘッド設計（ドローバイアス等）を優先して選定してください。"
+    raw_miss = payload.get("raw_miss", "")
+    miss_instruction = f"【特別条件】ユーザーからの実際の悩み・ミス傾向の入力は「{raw_miss}」です。この生の声を深く解釈し、その悩みを最も的確に解決・補正できるヘッド設計やシャフトの組み合わせを優先して選定してください（例：スライスやフックが明らかな場合、安易に直進性モデルを選ぶのではなく、そのミスを相殺できるモデルを選定する等）。"
 
     prompt = f"""
 あなたは世界中のゴルフクラブ・シャフトの剛性分布（EIプロファイル）を学習した「AIフィッティングエンジン」です。
@@ -3152,7 +3150,7 @@ def generate_llm_driver_fitting_ai(payload: Dict[str, Any]) -> Dict[str, Any]:
 ■ 推奨調子: {payload['kp']}調子（※この特性を物理的に厳守せよ）
 
 【解析データ】
-ミス傾向: {payload['miss']} / HS: {payload['hs']}m/s / 軸ブレ: {payload['stability_val']}% / タメ: {payload['wrist_cock']}度
+ユーザーの生の悩み: {payload.get('raw_miss', '')} / HS: {payload['hs']}m/s / 軸ブレ: {payload['stability_val']}% / タメ: {payload['wrist_cock']}度
 
 指令（ミッション）:
 1. 2026年4月現在の最新機材（例として挙げた Callaway Quantum, Cobra OPTM, PING G440シリーズ 等）を含む現行モデルから、ヘッドを特定してください。
@@ -3320,7 +3318,8 @@ def build_paid_09(raw: Dict[str, Any], user_inputs: Dict[str, Any], analysis: Di
     llm_payload = {
         "hs": hs or power_idx, "miss": miss, "weight": weight, "flex": flex, 
         "kp": kp, "wrist_cock": f"{wrist_cock:.1f}", "stability_val": f"{stability_val:.1f}",
-        "gender": gender
+        "gender": gender,
+        "raw_miss": str(user_inputs.get("miss_tendency", ""))
     }
     ai_fit = generate_llm_driver_fitting_ai(llm_payload)
 
@@ -4661,8 +4660,8 @@ def handle_text_message(event):
                 TextSendMessage(
                     text=(
                         "ありがとうございます。\n\n"
-                        "続けて、主なミスの傾向を1つだけ送ってください。\n"
-                        "（例：スライス／フック／トップ／ダフリ）"
+                        "続けて、普段のゴルフでの悩みや主なミスの傾向を自由に入力して送ってください。\n"
+                        "（例：右へのプッシュアウトが多い、チーピンに悩んでいる、ダフリやすい など）"
                     )
                 )
             )
