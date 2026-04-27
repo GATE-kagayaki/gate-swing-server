@@ -185,7 +185,11 @@
 
     const canvasId = "statusRadarChart";
     html += `<div class="mt-4 bg-white rounded-xl p-4 shadow-inner" style="position: relative; height: 350px; width: 100%; border: 1px solid #f0f0f0;"><canvas id="${canvasId}"></canvas></div>`;
-
+    html += `
+    <p class="text-xs text-gray-500 mt-2">
+    ※ 灰色の円は過去平均（基準値100）です。緑の形が大きいほど、スイングの安定性や動きが改善しています。
+    </p>`;
+    
     sec.innerHTML += html;
     reportContent.appendChild(sec);
 
