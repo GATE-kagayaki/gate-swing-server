@@ -3610,17 +3610,20 @@ def build_paid_07_from_analysis(analysis: Dict[str, Any], raw: Dict[str, Any], c
     conf = _conf(raw)
     frames = _frames(raw)
 
-    # 100%確実に動作する標準的なペイロード構造に戻します
-    # システム側のフィルターで弾かれる余計なキーは一切含めません
     llm_payload = {
         "club_type": raw.get("club_type", "iron"),
         "priority": priorities[0] if priorities else "不明",
         "swing_type": swing_type,
         "raw_metrics": raw,
         "tags": dict(c),
-        "coach_style": "game-like"
-    }
 
+        "hip": raw.get("hip", {}),
+        "x_factor": raw.get("x_factor", {}),
+        "head": raw.get("head", {}),
+        "knee": raw.get("knee", {}),
+        "spine": judge_spine_flag(raw),
+    }
+    
     lines: List[str] = []
     lines.append(f"今回のスイングは「{swing_type}」です（confidence {conf:.3f} / 区間 {frames} frames）。")
     
