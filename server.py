@@ -4004,11 +4004,16 @@ def task_handler():
             }
         }
 
-        line_bot_api.push_message(
-            user_id,
-            FlexSendMessage(
-                alt_text="スイング診断完了のお知らせ",
-                contents=flex_contents
+       try:
+            line_bot_api.push_message(
+                user_id,
+                FlexSendMessage(
+                    alt_text="スイング診断完了のお知らせ",
+                    contents=flex_contents
+                )
+            )
+        except Exception as e:
+            logging.exception("LINE push failed: %s", e)
             )
         )
         
