@@ -3114,8 +3114,54 @@ def infer_hs_band(power_idx: int) -> str:
         return "mid"
     return "high"
 
+def generate_llm_driver_fitting_antigravity(payload: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    AIアンチグラビティ：物理的制約を守りつつ、ユーザーを重力から解放する提案を行う
+    """
+    # 2026年最新ギア知識
+    driver_catalog = """
+    - TaylorMade Qi4D: 4Dカーボンによる超初速。空気抵抗を無効化するような振り抜き。
+    - Callaway Quantum: Tri-Forceフェース。エネルギーロスをゼロに近づける反発性能。
+    - PING G440 K: 10K超の慣性モーメント。ミスを「なかったこと」にする圧倒的直進性。
+    - Tour AD FI (2026): スイングの『重さ（打ち急ぎ）』を、手元の粘りで消し去る新作。
+    - Ventus TR+ Blue/Black: 軸のブレを磁石のように吸い付ける安定感。
+    """
 
-def build_paid_09(raw: Dict[str, Any], user_inputs: Dict[str, Any]) -> Dict[str, Any]:
+    prompt = f"""
+あなたは常識に縛られない「アンチグラビティ・フィッター」です。
+ユーザーをスイングの『重力（ミスや力み）』から解放し、ポテンシャルを空高く引き上げる提案をしてください。
+
+【算定済み基本スペック（物理的ガードレール）】
+重量帯: {payload['weight']} / 硬さ: {payload['flex']} / 調子: {payload['kp']}調子
+
+【解析結果（ユーザーの現在地）】
+ミス: {payload['miss']} / HS: {payload['hs']}m/s / 軸ブレ: {payload['stability_val']}% / タメ: {payload['wrist_cock']}度
+
+アンチグラビティ・オーダー:
+1. 2026年最新モデルから、ユーザーの『重荷（ミス）』を最も軽くするセットを選んでください。
+2. 提案理由は「〜だからこのスペック」という過去の分析ではなく、「これを使うことで、あなたのスイングからどう『重さ（無駄な抵抗）』が消えるか」という未来の浮揚感にフォーカスしてください。
+3. 語り口は情熱的かつ軽やかに。ゲームの最強装備を提案するワクワク感を含めること。
+4. 各ステップ60文字以内、3つの手順（①②③）で出力してください。
+
+{{
+  "model_name": "アンチグラビティ・セット名",
+  "loft": "推奨ロフト",
+  "reason": "① 浮揚への準備\\n② 加速の感覚\\n③ 到達する未来"
+}}
+"""
+    try:
+        response_text = call_llm(prompt)
+        import json, re
+        clean_text = re.sub(r'```json\s*|```', '', response_text).strip()
+        return json.loads(clean_text)
+    except:
+        return {
+            "model_name": f"Qi4D + {payload['weight']} {payload['flex']}",
+            "loft": "10.5°",
+            "reason": "① 2026年最新のQi4Dテクノロジーで空気抵抗を無効化。\\n② 算定された最適スペックがスイングの詰まりを解消。\\n③ 重力を感じさせない突き抜ける弾道を体感してください。"
+        }
+        
+def build_paid_09(raw: Dict[str, Any], user_inputs: Dict[str, Any], analysis: Dict[str, Any]) -> Dict[str, Any]:
     import logging
     from typing import List, Dict, Any
 
@@ -3125,6 +3171,7 @@ def build_paid_09(raw: Dict[str, Any], user_inputs: Dict[str, Any]) -> Dict[str,
     hs = _to_float_or_none(user_inputs.get("head_speed"))
     miss = _norm_miss(user_inputs.get("miss_tendency"))
     gender = _norm_gender(user_inputs.get("gender"))
+    club_type = user_inputs.get("club_type", "driver")
 
     # 外部関数（KeyErrorガード）: 返り型に合わせて int fallback
     try:
@@ -3335,11 +3382,35 @@ def build_paid_09(raw: Dict[str, Any], user_inputs: Dict[str, Any]) -> Dict[str,
         "reason": f"● {final_desc}\n● 推奨詳細：【 重量{weight} / {flex} / {kp}調子 / トルク{tq} 】"
     })
 
+    llm_payload = {
+        "hs": hs or power_idx,
+        "miss": miss,
+        "weight": weight,
+        "flex": flex,
+        "kp": kp,
+        "wrist_cock": f"{wrist_cock:.1f}",
+        "stability_val": f"{stability_val:.1f}"
+    }
+    
+    # アンチグラビティ関数を呼び出し
+    ai_fit = generate_llm_driver_fitting_antigravity(llm_payload)
+    
+    # 表示用の最上部行を作成
+    antigravity_row = {
+        "item": "🚀 アンチグラビティ提案",
+        "guide": ai_fit["model_name"],
+        "reason": f"推奨ロフト: {ai_fit['loft']}\n" + ai_fit["reason"]
+    }
+    
+    final_rows = [antigravity_row] + rows # AI提案を一番上に
+    # ★★★ ここまで ★★★
+
+    # 最後の return では、rows ではなく final_rows を返すように書き換えます
     return {
-        "title": "09. Shaft Fitting Guide（推奨）",
-        "table": rows,
+        "title": "09. Driver Fitting Guide（推奨）",
+        "table": final_rows,  # ここを rows から final_rows に変更！
         "note": "※本結果は解析数値に基づく指標です。購入時は試打での最終確認を推奨します。",
-        "meta": {
+       "meta": {
             "power_idx": power_idx,
             "stability_idx": stability_idx,
             "wrist_cock": wrist_cock,
@@ -3784,7 +3855,7 @@ def build_analysis(
     analysis["08"] = build_paid_08(analysis, raw, comparison=comparison if is_monthly else None)
 
     if club_type == "driver" and (ui.get("head_speed") is not None or ui.get("miss_tendency") or ui.get("gender")):
-        analysis["09"] = build_paid_09(raw, ui)
+        analysis["09"] = build_paid_09(raw, ui, analysis)
 
     analysis["10"] = build_paid_10(analysis)
 
