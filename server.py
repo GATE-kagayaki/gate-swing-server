@@ -3779,7 +3779,8 @@ def build_analysis(
         if "前傾維持やや不安定" not in analysis["07"]["tags"]:
             analysis["07"]["tags"].append("前傾維持やや不安定")
 
-    analysis["08"] = build_paid_08(analysis, raw)
+    # 月額プランの場合は過去データを、単発プランの場合は None を渡します
+    analysis["08"] = build_paid_08(analysis, raw, comparison=comparison if is_monthly else None)
 
     if club_type == "driver" and (ui.get("head_speed") is not None or ui.get("miss_tendency") or ui.get("gender")):
         analysis["09"] = build_paid_09(raw, ui)
