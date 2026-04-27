@@ -4014,10 +4014,7 @@ def task_handler():
             )
         except Exception as e:
             logging.exception("LINE push failed: %s", e)
-            )
-        )
         
-
         return jsonify({"ok": True}), 200
 
     except Exception:
