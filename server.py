@@ -3622,6 +3622,11 @@ def build_paid_07_from_analysis(analysis: Dict[str, Any], raw: Dict[str, Any], c
         "head": raw.get("head", {}),
         "knee": raw.get("knee", {}),
         "spine": judge_spine_flag(raw),
+        
+        "comparison_data": {
+            "deltas": comparison.get("deltas", {}) if comparison else {},
+            "past_count": comparison.get("past_sessions_count", 0) if comparison else 0
+        },
     }
     
     lines: List[str] = []
