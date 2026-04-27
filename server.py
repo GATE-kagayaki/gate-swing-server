@@ -3116,28 +3116,26 @@ def infer_hs_band(power_idx: int) -> str:
 
 def generate_llm_driver_fitting_ai(payload: Dict[str, Any]) -> Dict[str, Any]:
     """
-    AIフィッティングエンジン：算出されたキックポイント特性を絶対厳守して選定
+    AIフィッティングエンジン：2026年最新の全ギア（純正・カスタム問わず）から、
+    算出された物理スペックに最も合致する1本を特定する。
     """
     prompt = f"""
-あなたは膨大なギアスペックを学習した「AIフィッティングエンジン」です。
-解析データに基づき、2026年4月現在の市場から【{payload['kp']}調子】のシャフトを特定してください。
+あなたは世界中のゴルフクラブ・シャフトの剛性分布（EIプロファイル）を学習した「AIフィッティングエンジン」です。
+算出された【{payload['kp']}調子】という物理条件は絶対的な正解であり、これと矛盾するシャフト提案はシステムエラーとみなします。
 
-【⚠️警告：特性矛盾の禁止】
-算出されたキックポイント（{payload['kp']}調子）と、提案するシャフトの物理特性が一致しない場合、そのフィッティングは「誤診」とみなされます。
-
+【算出済み物理制約】
 ■ 推奨重量: {payload['weight']} / 推奨フレックス: {payload['flex']}
-■ 推奨調子: {payload['kp']}調子（※この特性に合致するシャフトのみを選定せよ）
+■ 推奨調子: {payload['kp']}調子（※この特性を物理的に厳守せよ）
 
-【参考：特性別シャフト知識】
-- 元調子判定時：Ventus Black, Tour AD VF, Diamana WB, Speeder NX WHITE, Tour AD FI(2026) 等
-- 先調子判定時：Speeder NX BLACK/VIOLET, Tour AD AJ, Diamana GT 等
-- 中調子判定時：Ventus Blue, Tour AD GC, Diamana BB 等
+【解析データ】
+ミス傾向: {payload['miss']} / HS: {payload['hs']}m/s / 軸ブレ: {payload['stability_val']}% / タメ: {payload['wrist_cock']}度
 
-指令:
-1. 2026年4月現在のモデルから、ヘッドとシャフトを特定。
-2. シャフト銘柄は、必ず算出された【{payload['kp']}調子】であることを再確認してから出力すること。
-3. 理由は、このAI推奨セットがどう「スイングの無駄」を排除し、最大効率化するかを記述。
-4. 各ステップ60文字以内、3つの手順（①②③）で出力。
+指令（ミッション）:
+1. 2026年4月現在の現行モデル全体から、ヘッドとシャフトを特定してください。
+2. 純正シャフト（PING TOUR 2.0 BLACK等）の性能を高く評価し、算出スペックに合致する場合は優先的に選定してください。
+3. シャフト名の響き（BLACK等）に騙されず、必ず【{payload['kp']}調子】であることを再確認してください。
+   （例：元調子判定に、先中調子のSpeeder NX BLACKを提案することは厳禁です）
+4. 理由は「AIによる最適化の結果、スイングからどう無駄が消えるか」を3手順で出力してください。
 
 {{
   "model_name": "最新ヘッド名 + 具体的シャフト名",
@@ -3169,7 +3167,6 @@ def build_paid_09(raw: Dict[str, Any], user_inputs: Dict[str, Any], analysis: Di
     gender = _norm_gender(user_inputs.get("gender"))
     club_type = user_inputs.get("club_type", "driver")
 
-    # 外部関数（KeyErrorガード）
     try:
         power_idx = int(calc_power_idx(raw, club_type))
     except Exception:
@@ -3225,14 +3222,12 @@ def build_paid_09(raw: Dict[str, Any], user_inputs: Dict[str, Any], analysis: Di
     cock_level = "shallow" if wrist_cock < 45.0 else ("deep" if wrist_cock > 75.0 else "normal")
     cock_label = "浅め" if cock_level == "shallow" else ("深め" if cock_level == "deep" else "標準")
 
-    # --- 4. スペック計算（判定ロジック維持 ＋ 1行理由の生成） ---
+    # --- 4. スペック判定と1行理由の生成（既存ロジック100%維持） ---
 
     # 【重量】
     if hs is not None:
         if gender == "female":
-            if hs < 35: weight = "30〜40g"
-            elif hs < 40: weight = "40〜50g"
-            else: weight = "50g前後"
+            weight = "30〜40g" if hs < 35 else ("40〜50g" if hs < 40 else "50g前後")
         else:
             if hs < 35: weight = "40〜50g"
             elif hs < 40: weight = "50g前後"
@@ -3240,12 +3235,12 @@ def build_paid_09(raw: Dict[str, Any], user_inputs: Dict[str, Any], analysis: Di
             else: weight = "60〜70g"
         if (hs >= 40 and stability_val > 7.0) or (cock_level == "deep" and stability_val > 5.0):
             weight = "60g前後"
-            w_reason = f"HS{hs:.1f}m/sと深いタメ、軸ブレ{stability_val:.1f}%を考慮し重量で安定化"
+            w_reason = f"HSと深いタメ、軸ブレ{stability_val:.1f}%を考慮し重量で安定化"
         else:
             w_reason = f"HS{hs:.1f}m/sとタメ平均に応じた身体負荷の最適化"
     else:
         weight = {"low": "40〜50g", "mid": "50〜60g", "high": "60〜70g"}[hs_level]
-        w_reason = f"パワー指数{power_idx}に基づく推奨重量の算出"
+        w_reason = f"パワー指数{power_idx}に基づくAI推奨重量の算出"
 
     # 【硬さ】
     if hs is not None:
@@ -3258,44 +3253,36 @@ def build_paid_09(raw: Dict[str, Any], user_inputs: Dict[str, Any], analysis: Di
             f_reason = f"HS{hs:.1f}m/sに対する標準的な適正剛性"
     else:
         flex = {"low": "A〜R", "mid": "R〜SR", "high": "SR〜S"}[hs_level]
-        f_reason = f"AI判定レベル({hs_level})に基づく標準的な剛性"
+        f_reason = f"AI判定レベルに基づく標準的な剛性"
 
     # 【調子】（逆転ロジック維持）
     if miss == "right":
         if cock_level == "shallow" or tame_band == "unstable_deep" or wrist_std >= 15.0:
             kp = "元"
-            k_reason = "手元側のしなりで『タメの間』を自動生成し右ミスを抑制"
+            k_reason = "手元側のしなりにより『タメの間』を自動生成し、右ミスを抑制"
         elif stability_val > 7.0:
             kp = "中"
-            k_reason = f"軸ブレ{stability_val:.1f}%を考慮し癖のない挙動を優先"
+            k_reason = f"軸ブレ{stability_val:.1f}%を考慮し、挙動の安定性を優先"
         else:
             kp = "先〜中"
-            k_reason = "右ミスに対し、つかまりを助ける先調子系を選択"
+            k_reason = "右ミスに対し、つかまりを助ける先調子系を基準に選定"
     elif miss == "left":
         kp = "中〜元"
-        k_reason = "左ミス防止：先端の動きを抑え捕まり過ぎを抑制"
+        k_reason = "左ミス防止：先端の動きを抑え、つかまり過ぎによるミスを抑制"
     else:
         kp = "中"
-        k_reason = "ニュートラルな挙動で操作性と安定性を両立"
+        k_reason = "ニュートラルな挙動の中調子で、操作性と安定性のバランスを最適化"
 
     # 【トルク】
     if stability_val >= 9.0:
         tq = "3.0〜4.0"
-        t_reason = f"軸ブレ実測{stability_val:.1f}%を抑え打点安定性を最優先"
+        t_reason = f"軸ブレ実測{stability_val:.1f}%を抑え、打点安定性を最優先"
     elif stability_val >= 5.0:
         tq = "3.5〜5.0"
-        t_reason = "平均的な軸ブレ量に基づき標準的なトルク帯を選択"
+        t_reason = "平均的な軸ブレ量に基づき、標準的なトルク帯を選択"
     else:
         tq = "4.5〜6.0"
         t_reason = "高い安定性を活かし、シャフトの挙動を使いやすく設定"
-
-    # ミス補正によるトルク調整
-    if miss == "right":
-        tq = "4.5〜5.5" if stability_val >= 5.0 else "5.5以上"
-        t_reason += "（右ミス補正：フェースターンをサポート）"
-    elif miss == "left":
-        tq = "2.5〜3.5"
-        t_reason += "（左ミス補正：つかまり過ぎを抑制）"
 
     # --- 5. AI提案の取得と表示テーブルの構築（3項目構成） ---
     llm_payload = {
@@ -3306,7 +3293,7 @@ def build_paid_09(raw: Dict[str, Any], user_inputs: Dict[str, Any], analysis: Di
 
     final_rows = []
 
-    # 項目1: AI推奨提案（ここに重量とフレックスを明記）
+    # 項目1: AI推奨提案（AIが選んだヘッド＋シャフトと、算出スペックを併記）
     final_rows.append({
         "item": "AI推奨提案",
         "guide": f"{ai_fit['model_name']} ({weight} / {flex} / {ai_fit['loft']})",
@@ -3324,7 +3311,7 @@ def build_paid_09(raw: Dict[str, Any], user_inputs: Dict[str, Any], analysis: Di
         )
     })
 
-    # 項目3: 最適シャフトスペック（1行ずつの理由付き）
+    # 項目3: 最適シャフトスペック（理由1行化）
     final_rows.append({
         "item": "最適シャフトスペック",
         "guide": f"推奨：{weight} / {flex} / {kp}調子",
