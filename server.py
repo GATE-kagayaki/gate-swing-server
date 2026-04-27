@@ -3683,23 +3683,28 @@ def build_analysis(
     club_type = raw.get("club_type") or ui.get("club_type", "unknown")
     analysis: Dict[str, Any] = {}
 
-    if premium:
+    is_paid_plan = user_plan in ["single", "monthly"]
+    is_monthly = user_plan == "monthly"
+
+    if is_paid_plan:
         try:
             total_score = calculate_swing_score(raw, club_type)
             analysis["00_score"] = build_paid_score_block(total_score)
-            if comparison and "deltas" in comparison:
+
+            if is_monthly and comparison and "deltas" in comparison:
                 analysis["00_comparison"] = build_comparison_block(comparison)
+
         except Exception as e:
             logging.error(f"Score calculation failed: {e}")
-            analysis["00_score"] = build_paid_score_block(70) 
+            analysis["00_score"] = build_paid_score_block(70)
 
     analysis["01"] = build_section_01(raw, club_type)
     spine_flag = judge_spine_flag(raw)
 
-    if not premium:
+    if user_plan == "free":
         analysis["07"] = build_free_07(raw)
         return analysis
-        
+
     analysis["02"] = build_paid_02_shoulder(raw, seed=report_id)
     analysis["03"] = build_paid_03_hip(raw, seed=report_id)
     analysis["04"] = build_paid_04_wrist(raw, seed=report_id)
@@ -3707,9 +3712,21 @@ def build_analysis(
     analysis["06"] = build_paid_06_knee(raw, seed=report_id)
 
     # 07評価（LLM）
-    analysis["07"] = build_paid_07_from_analysis(analysis, raw, comparison=comparison)
+    if is_monthly:
+        analysis["07"] = build_paid_07_from_analysis(
+            analysis,
+            raw,
+            comparison=comparison
+        )
+    else:
+        # single は今回のみの詳細分析。過去比較は出さない
+        analysis["07"] = build_paid_07_from_analysis(
+            analysis,
+            raw,
+            comparison=None
+        )
 
-    # --- [既存の07前傾補足ロジックを完全復元] ---
+    # --- 07前傾補足ロジック ---
     if spine_flag == "ok":
         analysis["07"].setdefault("text", []).append("【前傾維持】前傾角の変化は小さく、回転動作の再現性は安定しています。")
     elif spine_flag == "warn":
@@ -3719,11 +3736,12 @@ def build_analysis(
 
     if spine_flag == "bad":
         analysis["07"].setdefault("tags", [])
-        if "前傾維持不安定" not in analysis["07"]["tags"]: analysis["07"]["tags"].append("前傾維持不安定")
+        if "前傾維持不安定" not in analysis["07"]["tags"]:
+            analysis["07"]["tags"].append("前傾維持不安定")
     elif spine_flag == "warn":
         analysis["07"].setdefault("tags", [])
-        if "前傾維持やや不安定" not in analysis["07"]["tags"]: analysis["07"]["tags"].append("前傾維持やや不安定")
-    # ------------------------------------------
+        if "前傾維持やや不安定" not in analysis["07"]["tags"]:
+            analysis["07"]["tags"].append("前傾維持やや不安定")
 
     analysis["08"] = build_paid_08(analysis, raw)
 
