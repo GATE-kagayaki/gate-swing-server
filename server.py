@@ -2414,12 +2414,12 @@ def build_paid_07_from_analysis(
         print("### LLM BLOCK ENTERED ###")
 
         try:
-            print("LLM CALL START")  # ←ここに追加（確認用）
+            print("LLM CALL START")
 
-            # ★ LLMへの命令（この llm_payload の中に deltas が入った状態で渡されます）
+            # ★ LLMへの命令
             llm_text = generate_llm_comment_07(llm_payload)
 
-            print("LLM CALL END")    # ←ここに追加（確認用）
+            print("LLM CALL END")
 
             lines.append("")
             lines.append(llm_text)
@@ -2427,6 +2427,9 @@ def build_paid_07_from_analysis(
         except Exception as e:
             import logging
             logging.exception("LLM summary failed: %s", e)
+
+            lines.append("")
+            lines.append(f"【システムエラー詳細】{str(e)}")
             
     else:
         lines.append("数値上の優先テーマはありません。")
