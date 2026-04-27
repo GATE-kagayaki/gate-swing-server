@@ -2852,24 +2852,29 @@ def generate_llm_drills_08(payload: Dict[str, Any], base_drills: List[Dict[str, 
 """
     try:
         response_text = call_llm(prompt)
+
+        print("### 08 LLM RESPONSE ###")
+        print(response_text)
+
         import json
         import re
         clean_text = re.sub(r'```json\s*', '', response_text)
         clean_text = re.sub(r'```', '', clean_text).strip()
+
         drills = json.loads(clean_text)
         return drills
+
     except Exception as e:
         import logging
         logging.exception("LLM drill generation failed: %s", e)
-        # エラーが起きた時だけ、システムダウンを防ぐために既存のベース案を返します
+
         return [
             {
-                "name": d["name"],
-                "purpose": d["purpose"],
-                "how": d["how"]
-            } for d in base_drills
+                "name": "【LLMエラー】ドリル生成失敗",
+                "purpose": f"● エラー内容: {str(e)}",
+                "how": "① Cloud Loggingを確認\n② JSON形式/APIエラーを確認"
+            }
         ]
-# ==================================================
 
 def build_paid_08(analysis: Dict[str, Any], raw: Dict[str, Any], comparison: Dict[str, Any] = None) -> Dict[str, Any]:
     sec07 = analysis.get("07") or {}
