@@ -2811,7 +2811,7 @@ def generate_llm_drills_08(payload: Dict[str, Any], base_drills: List[Dict[str, 
     
     # 過去比較データ（ステータス差分）の抽出
     comparison_text = ""
-    comp_data = payload.get("comparison_data", {})
+    comp_data = payload.get("comparison_data") or {}
     if comp_data.get("past_count", 0) > 0 and comp_data.get("deltas"):
         d = comp_data["deltas"]
         diffs = []
@@ -2914,7 +2914,7 @@ def build_paid_08(analysis: Dict[str, Any], raw: Dict[str, Any], comparison: Dic
     }
 
     # ★ LLMを使って、ベースドリルを元に無限のバリエーションを生成
-    generated_drills = generate_llm_drills_08(llm_payload, selected_base_drills)
+    generated_drills = generate_llm_drills_08(llm_payload, [])
 
     return {
         "title": "08. Training Drills（練習ドリル）",
