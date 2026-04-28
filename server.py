@@ -4408,14 +4408,18 @@ def stripe_webhook():
                 return "OK", 200
 
             existing_plan = before.get("plan", "free")
-            metadata_plan = session.get("metadata", {}).get("plan", "")
+            
+            # sessionオブジェクトからの安全な取得 (StripeObject は get() を持たない場合がある)
+            metadata = getattr(session, "metadata", None)
+            metadata_plan = getattr(metadata, "plan", "") if metadata else ""
+            session_mode = getattr(session, "mode", "")
             
             # 月額の環境変数を取得
             monthly_price_id1 = (os.environ.get("STRIPE_PRICE_ID", "") or "").strip()
             monthly_price_id2 = (os.environ.get("STRIPE_PRICE_MONTHLY", "") or "").strip()
 
             is_monthly = (
-                session.get("mode") == "subscription" or 
+                session_mode == "subscription" or 
                 metadata_plan == "monthly" or 
                 (price_id and price_id in [monthly_price_id1, monthly_price_id2])
             )
@@ -4443,7 +4447,7 @@ def stripe_webhook():
             if not is_monthly:
                 update_data["ticket_remaining"] = firestore.Increment(add_tickets)
 
-            customer_id = session.get("customer")
+            customer_id = getattr(session, "customer", None)
             if customer_id:
                 update_data["stripe_customer_id"] = customer_id
 
