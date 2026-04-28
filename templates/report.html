@@ -471,7 +471,7 @@ function render09(secData) {
   cardList.innerHTML = (secData.table || []).map(r => `
     <div class="gate-spec-card">
       <div>
-        <div class="card-label">項目: ${r.item}</div>
+        <div class="card-label" style="font-size: 1.05rem; color: #1e3a8a; letter-spacing: 0.05em; margin-bottom: 0.4rem;">${r.item}</div>
         <span class="card-value">${r.guide}</span>
       </div>
       <div class="card-reason-box">
@@ -485,7 +485,7 @@ function render09(secData) {
   if (secData.note) {
     const note = document.createElement("div");
     note.className = "muted mt-2";
-    note.textContent = secData.note;
+    note.innerHTML = secData.note; // textContentからinnerHTMLに変更して<br>タグを有効化
     sec.appendChild(note);
   }
 
