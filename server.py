@@ -4397,10 +4397,22 @@ def stripe_webhook():
 
 
             user_ref = db.collection("users").document(line_user_id)
+            before = user_ref.get().to_dict() or {}
 
+            # 冪等（Stripe再送でも二重加算・状態上書きしない）
+            if before.get("last_stripe_event_id") == event_id:
+                print("✅ duplicate event ignored", flush=True)
+                return "OK", 200
+
+            existing_plan = before.get("plan", "free")
             metadata_plan = session.get("metadata", {}).get("plan", "")
             is_monthly = (session.get("mode") == "subscription" or metadata_plan == "monthly")
-            new_plan = "monthly" if is_monthly else ("ticket" if add_tickets > 1 else "single")
+            
+            # プランのダウングレード防止（月額ユーザーが誤って単発を買っても月額を維持）
+            if is_monthly or existing_plan == "monthly":
+                new_plan = "monthly"
+            else:
+                new_plan = "ticket" if add_tickets > 1 else "single"
 
             update_data = {
                 "plan": new_plan,
@@ -4412,14 +4424,12 @@ def stripe_webhook():
             
             if not is_monthly:
                 update_data["ticket_remaining"] = firestore.Increment(add_tickets)
-            else:
-                update_data["ticket_remaining"] = firestore.Increment(0)
 
             customer_id = session.get("customer")
             if customer_id:
                 update_data["stripe_customer_id"] = customer_id
 
-            # Firestore更新（ここで増える）
+            # Firestore更新
             user_ref.set(update_data, merge=True)
 
             # ===== 購入完了メッセージ（新規追加・既存文言は触らない）=====
