@@ -4314,7 +4314,9 @@ def payment_success():
     <body>
         <h1>決済が完了しました！</h1>
         <p>ありがとうございます。<br>引き続きLINEアプリに戻ってご利用ください。</p>
-        <a href="https://line.me/R/" class="btn">LINEに戻る</a>
+        <a href="javascript:void(0);" onclick="window.close();" class="btn">画面を閉じてLINEに戻る</a>
+        <br><br>
+        <a href="https://line.me/R/nv/chat" style="color:#06c755; text-decoration:underline; font-size:14px;">うまくいかない場合はこちらをタップ</a>
     </body>
     </html>
     """
@@ -4337,6 +4339,7 @@ def payment_cancel():
     <body>
         <h1>決済がキャンセルされました</h1>
         <p>購入手続きは中断されました。<br>ウィンドウを閉じてLINEに戻ってください。</p>
+        <a href="javascript:void(0);" onclick="window.close();" class="btn" style="display:inline-block; margin-top:30px; padding:12px 24px; background-color:#6c757d; color:white; text-decoration:none; border-radius:8px; font-weight:bold;">画面を閉じる</a>
     </body>
     </html>
     """
@@ -4406,7 +4409,16 @@ def stripe_webhook():
 
             existing_plan = before.get("plan", "free")
             metadata_plan = session.get("metadata", {}).get("plan", "")
-            is_monthly = (session.get("mode") == "subscription" or metadata_plan == "monthly")
+            
+            # 月額の環境変数を取得
+            monthly_price_id1 = (os.environ.get("STRIPE_PRICE_ID", "") or "").strip()
+            monthly_price_id2 = (os.environ.get("STRIPE_PRICE_MONTHLY", "") or "").strip()
+
+            is_monthly = (
+                session.get("mode") == "subscription" or 
+                metadata_plan == "monthly" or 
+                (price_id and price_id in [monthly_price_id1, monthly_price_id2])
+            )
             
             # プランのダウングレード防止（月額ユーザーが誤って単発を買っても月額を維持）
             if is_monthly or existing_plan == "monthly":
@@ -4421,6 +4433,12 @@ def stripe_webhook():
                 "last_stripe_event_id": event_id,
                 "updated_at": firestore.SERVER_TIMESTAMP,
             }
+            
+            if new_plan == "monthly":
+                # 月額プランの場合は、14日間のトライアル期限を設定する
+                exp = datetime.now(timezone.utc) + timedelta(days=14)
+                update_data["plan_expire_at"] = exp
+                update_data["monthly_reset"] = exp.strftime("%Y-%m-%d") # 確認用に追加
             
             if not is_monthly:
                 update_data["ticket_remaining"] = firestore.Increment(add_tickets)
