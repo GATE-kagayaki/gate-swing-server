@@ -4204,7 +4204,10 @@ def stripe_checkout():
         }
 
         if plan == "monthly":
-            session_kwargs["line_items"] = [{"price": "price_1TR1AQCZFahUhJa5RvkSJtZD", "quantity": 1}]
+            monthly_price_id = os.environ.get("STRIPE_PRICE_ID", "").strip()
+            if not monthly_price_id:
+                monthly_price_id = os.environ.get("STRIPE_PRICE_MONTHLY", "").strip()
+            session_kwargs["line_items"] = [{"price": monthly_price_id, "quantity": 1}]
             session_kwargs["subscription_data"] = {"trial_period_days": 14}
         else:
             session_kwargs["line_items"] = [{"price": price_id, "quantity": 1}]
@@ -4234,10 +4237,14 @@ def stripe_checkout_monthly_get():
     cancel_url = os.environ.get("STRIPE_CANCEL_URL", SERVICE_HOST_URL)
 
     try:
+        monthly_price_id = os.environ.get("STRIPE_PRICE_ID", "").strip()
+        if not monthly_price_id:
+            monthly_price_id = os.environ.get("STRIPE_PRICE_MONTHLY", "").strip()
+            
         session = stripe.checkout.Session.create(
             mode="subscription",
             payment_method_types=["card"],
-            line_items=[{"price": "price_1TR1AQCZFahUhJa5RvkSJtZD", "quantity": 1}],
+            line_items=[{"price": monthly_price_id, "quantity": 1}],
             client_reference_id=line_user_id,
             subscription_data={"trial_period_days": 14},
             metadata={
