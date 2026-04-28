@@ -21,7 +21,7 @@ from linebot.models import (
     MessageAction
 )
 
-from flask import Flask, request, jsonify, abort, render_template, render_template_string
+from flask import Flask, request, jsonify, abort, render_template, render_template_string, redirect
 
 from linebot import LineBotApi, WebhookHandler
 from linebot.exceptions import InvalidSignatureError, LineBotApiError
@@ -68,12 +68,26 @@ def get_cancel_portal_url(customer_id: str):
     ユーザー専用の解約・管理ポータルURLを生成
     """
     try:
+        import stripe
+        import os
+        import logging
+        stripe.api_key = os.environ.get("STRIPE_SECRET_KEY")
+        
+        # サブスクリプション取得ロジック（有効またはトライアル中か確認）
+        subs = stripe.Subscription.list(customer=customer_id, status="active")
+        if not subs.data:
+            subs_trial = stripe.Subscription.list(customer=customer_id, status="trialing")
+            if not subs_trial.data:
+                logging.warning(f"No active/trialing subscription found for customer: {customer_id}")
+                return "NO_ACTIVE_SUBSCRIPTION"
+
         session = stripe.billing_portal.Session.create(
             customer=customer_id,
             return_url="https://gate-golf.com/mypage" 
         )
         return session.url
     except Exception as e:
+        import logging
         logging.error(f"Portal Error: {e}")
         return None
 
@@ -446,8 +460,17 @@ def is_premium_user(user_id: str) -> bool:
     # 月額
     if plan == "monthly":
         expire = data.get("plan_expire_at")
-        if expire and expire.replace(tzinfo=timezone.utc) > datetime.now(timezone.utc):
-            return True
+        if expire:
+            try:
+                # Firestoreで手動編集された文字列等の場合への対応
+                if isinstance(expire, str):
+                    # 簡単な文字列パース試行
+                    expire = datetime.fromisoformat(expire.replace('Z', '+00:00'))
+                
+                if expire.replace(tzinfo=timezone.utc) > datetime.now(timezone.utc):
+                    return True
+            except Exception as e:
+                logging.error(f"[PREMIUM_CHECK_ERROR] expire parsing failed: {e}")
         return False
 
     # free
@@ -3133,7 +3156,7 @@ def generate_llm_driver_fitting_ai(payload: Dict[str, Any]) -> Dict[str, Any]:
         elif hs_val < 36:
             gender_instruction = "【特別条件】対象は女性でHS34〜35のため、「メンズモデル（軽量モデル含む）」と「レディースモデル」を両方合わせて検討し、最適なものを提案してください。"
         else:
-            gender_instruction = "【特別条件】対象は女性ですがHS36以上あるため、軽量モデルに決めつけず「通常のメンズモデル」も含めて、算出された推奨重量・推奨フレックスに最も合致するものを検討・提案してください。"
+            gender_instruction = "【特別条件】対象は女性でHS36以上あるため、しっかり振れるセッティングが必要ですが、シャフトは重すぎず硬すぎない「40g台のカスタムシャフト」や「メンズの軽量モデル」を中心に提案してください。男性用のハードなシャフト（50g台のツアー系など）は避けてください。"
 
     raw_miss = payload.get("raw_miss", "")
     miss_instruction = f"【特別条件】ユーザーからの実際の悩み・ミス傾向の入力は「{raw_miss}」です。この生の声を深く解釈し、その悩みを最も的確に解決・補正できるヘッド設計やシャフトの組み合わせを優先して選定してください（例：スライスやフックが明らかな場合、安易に直進性モデルを選ぶのではなく、そのミスを相殺できるモデルを選定する等）。"
@@ -3153,21 +3176,45 @@ def generate_llm_driver_fitting_ai(payload: Dict[str, Any]) -> Dict[str, Any]:
 ユーザーの生の悩み: {payload.get('raw_miss', '')} / HS: {payload['hs']}m/s / 軸ブレ: {payload['stability_val']}% / タメ: {payload['wrist_cock']}度
 
 指令（ミッション）:
-1. 2026年4月現在の最新機材（例として挙げた Callaway Quantum, Cobra OPTM, PING G440シリーズ 等）を含む現行モデルから、ヘッドを特定してください。
-   【重要】AI自身で「ELYTE 10K MAX」などの架空のクラブ名を勝手に創作・捏造することは厳禁ですが、例に挙げたメーカー（CallawayやPING等）に縛られる必要はありません。ユーザーの課題解決に最も適しているのであれば、国内外問わず幅広いクラブメーカー（TaylorMade, Titleist, Srixon, Bridgestone, Mizuno, PRGR, YAMAHAなど）の現行・実在モデルから柔軟かつ幅広く検討してください。
-2. シャフトは、純正シャフト（PING TOUR 2.0 BLACK等）に加え、主要カスタムシャフト（Fujikura、三菱ケミカル、グラファイトデザイン、USTマミヤ等の最新モデル）も含めて広く評価し、算出スペックに合致するものを優先的に選定してください。
-3. シャフト名の響き（BLACK等）に騙されず、必ず【{payload['kp']}調子】であることを再確認してください。
-   （例：元調子判定に、先中調子のSpeeder NX BLACKを提案することは厳禁です）
-4. 【重要】ヘッド単体・シャフト単体で選ぶのではなく、「このヘッドとこのシャフトを組み合わせることで、なぜこのユーザーにとって究極のセッティングになるのか（相乗効果）」をAIフィッターとしての腕の見せ所として強く打ち出してください。シャフトの挙動がヘッドの特性をどう引き出すか、あるいはどう補うかを論理的に説明してください。
-5. 理由は以下の3構成とし、専門用語を避けつつ物理的な理屈が直感的に伝わるよう簡潔に記述してください。
-   ・【ヘッド】選定理由（例：高MOIによる直進性向上など）
-   ・【シャフト】選定理由（例：逆転ロジックに基づく「間」の生成など）
-   ・【結 果】ヘッドとシャフトの組み合わせによる相乗効果と、それがユーザーのミスをどう解決しどんな弾道を生むか
+1. 【絶対厳守】「2026年4月現在における、各主要メーカー（Callaway, TaylorMade, PING, Titleist, Cobra等）の現行モデルのヘッドとシャフト」の中から、「ヘッド」の第1候補〜第3候補まで3つ選定し、それぞれの選定理由を簡潔に記載してください。SIM2、STEALTH、EPIC、G410、G425、TSiなどの数世代前の古いモデルや、「エリート」等のマイナーモデル・架空のクラブ名は【絶対に出力しないでください】。
+2. 同様に、「2026年4月現在の最新の現行シャフト」（純正・カスタム問わず算出スペックに合致するもの）を第1候補〜第3候補まで3つ選定し、それぞれの選定理由を記載してください。必ず【{payload['kp']}調子】であることを再確認してください。
+3. 以下のJSONフォーマットを厳守して出力してください。キー名は必ず "heads" と "shafts" の配列にしてください。
 
 {{
-  "model_name": "最新ヘッド名 + 具体的シャフト名",
-  "loft": "推奨ロフト",
-  "reason": "【ヘッド】〇〇だからミスに強い\\n【シャフト】〇〇により理想的な「間」を生成\\n【結 果】〇〇な弾道を実現"
+  "heads": [
+    {{
+      "rank": "第1候補",
+      "model": "〇〇モデル",
+      "reason": "高MOIで打点のブレを補正するため"
+    }},
+    {{
+      "rank": "第2候補",
+      "model": "...",
+      "reason": "..."
+    }},
+    {{
+      "rank": "第3候補",
+      "model": "...",
+      "reason": "..."
+    }}
+  ],
+  "shafts": [
+    {{
+      "rank": "第1候補",
+      "model": "〇〇シャフト",
+      "reason": "手元側のしなりで『タメの間』を生成するため"
+    }},
+    {{
+      "rank": "第2候補",
+      "model": "...",
+      "reason": "..."
+    }},
+    {{
+      "rank": "第3候補",
+      "model": "...",
+      "reason": "..."
+    }}
+  ]
 }}
 """
     try:
@@ -3177,9 +3224,20 @@ def generate_llm_driver_fitting_ai(payload: Dict[str, Any]) -> Dict[str, Any]:
         return json.loads(clean_text)
     except:
         return {
-            "model_name": f"2026最新モデル + カスタムシャフト",
-            "loft": "10.5°",
-            "reason": "【ヘッド】高MOI設計で打点のブレを補正し直進性を向上\\n【シャフト】手元側のしなりで『タメの間』を生成しタイミングを安定化\\n【結 果】相乗効果で再現性の高い強弾道を実現します"
+            "heads": [
+                {
+                    "rank": "第1候補",
+                    "model": "2026最新ヘッド",
+                    "reason": "高MOI設計で直進性を向上させるため"
+                }
+            ],
+            "shafts": [
+                {
+                    "rank": "第1候補",
+                    "model": "推奨カスタムシャフト",
+                    "reason": "タメの間を生成しタイミングを安定させるため"
+                }
+            ]
         }
         
 def build_paid_09(raw: Dict[str, Any], user_inputs: Dict[str, Any], analysis: Dict[str, Any]) -> Dict[str, Any]:
@@ -3325,40 +3383,40 @@ def build_paid_09(raw: Dict[str, Any], user_inputs: Dict[str, Any], analysis: Di
 
     final_rows = []
 
-    # 項目1: AI推奨提案（AIが選んだヘッド＋シャフトと、算出スペックを併記）
-    final_rows.append({
-        "item": "AI推奨提案",
-        "guide": f"{ai_fit['model_name']} ({weight} / {flex} / {ai_fit['loft']})",
-        "reason": ai_fit['reason']
-    })
+    # 項目1: AI推奨提案（ヘッドとシャフトを独立して表示）
+    heads = ai_fit.get("heads", [])
+    for p in heads:
+        final_rows.append({
+            "item": f"【ヘッド】 {p.get('rank', '候補')}",
+            "guide": p.get("model", ""),
+            "reason": p.get("reason", "")
+        })
+
+    shafts = ai_fit.get("shafts", [])
+    for p in shafts:
+        final_rows.append({
+            "item": f"【シャフト】 {p.get('rank', '候補')}",
+            "guide": p.get("model", ""),
+            "reason": p.get("reason", "")
+        })
 
     # 項目2: 診断サマリ
     final_rows.append({
         "item": "診断サマリ",
         "guide": "今回の分析根拠",
         "reason": (
-            f"● 軸ブレ：{stability_val:.1f}%（安定性）\n"
-            f"● 捻転差：max {xf_max:.1f}°（パワー）\n"
+            f"● 軸ブレ：{stability_val:.1f}%（安定性）<br>"
+            f"● 捻転差：max {xf_max:.1f}°（パワー）<br>"
             f"● タメ平均：{wrist_cock:.1f}°（リリース）"
         )
     })
-
-    # 項目3: 最適シャフトスペック（理由1行化）
-    final_rows.append({
-        "item": "最適シャフトスペック",
-        "guide": f"推奨：{weight} / {flex} / {kp}調子",
-        "reason": (
-            f"【重量】{weight}：{w_reason}\n"
-            f"【硬さ】{flex}：{f_reason}\n"
-            f"【調子】{kp}調子：{k_reason}\n"
-            f"【トルク】{tq}：{t_reason}"
-        )
-    })
+    
+    # ユーザー要望により「最適シャフトスペック」は削除
 
     return {
         "title": "09. Driver Fitting Guide（AI推奨）",
         "table": final_rows,
-        "note": "※2026年4月現在の最新AIマーケットデータに基づく算出結果です。",
+        "note": "※2026年4月現在の最新AIマーケットデータに基づく算出結果です。<br>※実際のフィーリングや振り心地は個人差があるため、ご購入の際は必ずショップ等で試打を行ってからご判断ください。",
         "meta": {
             "power_idx": power_idx, "stability_idx": stability_idx, "wrist_cock": wrist_cock,
             "head_speed": hs, "stability_val": stability_val, "xf_max": xf_max, "max_wrist": max_wrist,
@@ -4230,25 +4288,34 @@ def stripe_checkout():
     # 月額プランなら 'subscription'、それ以外（単発・回数券）なら 'payment'
     checkout_mode = "subscription" if plan == "monthly" else "payment"
 
-    success_url = os.environ.get("STRIPE_SUCCESS_URL", SERVICE_HOST_URL)
-    cancel_url = os.environ.get("STRIPE_CANCEL_URL", SERVICE_HOST_URL)
+    host = request.host_url.rstrip("/")
+    success_url = f"{host}/payment/success"
+    cancel_url = f"{host}/payment/cancel"
 
     # 4. Stripe セッション作成
     try:
-        session = stripe.checkout.Session.create(
-        mode=checkout_mode,
-        payment_method_types=["card"],
-        line_items=[{"price": price_id, "quantity": 1}],
-        client_reference_id=line_user_id, # LINE ID
-        # --- ここを追加：Webhookでプランを判別するために必須 ---
-        metadata={
-            "plan": plan,             # "single", "ticket", "monthly"
-            "line_user_id": line_user_id
-        },
-        # --------------------------------------------------
-        success_url=success_url,
-        cancel_url=cancel_url,
-    )
+        session_kwargs = {
+            "mode": checkout_mode,
+            "payment_method_types": ["card"],
+            "client_reference_id": line_user_id, # LINE ID
+            "metadata": {
+                "plan": plan,             # "single", "ticket", "monthly"
+                "line_user_id": line_user_id
+            },
+            "success_url": success_url,
+            "cancel_url": cancel_url,
+        }
+
+        if plan == "monthly":
+            monthly_price_id = os.environ.get("STRIPE_PRICE_ID", "").strip()
+            if not monthly_price_id:
+                monthly_price_id = os.environ.get("STRIPE_PRICE_MONTHLY", "").strip()
+            session_kwargs["line_items"] = [{"price": monthly_price_id, "quantity": 1}]
+            session_kwargs["subscription_data"] = {"trial_period_days": 14}
+        else:
+            session_kwargs["line_items"] = [{"price": price_id, "quantity": 1}]
+
+        session = stripe.checkout.Session.create(**session_kwargs)
         return jsonify({"checkout_url": session.url}), 200
 
     except Exception as e:
@@ -4260,12 +4327,98 @@ def stripe_checkout():
 stripe.api_key = os.environ.get("STRIPE_SECRET_KEY", "")
 db = firestore.Client()
 
+@app.route("/stripe/checkout/monthly", methods=["GET"])
+def stripe_checkout_monthly_get():
+    line_user_id = request.args.get("client_reference_id")
+    if not line_user_id:
+        return "Missing client_reference_id", 400
+
+    if not stripe.api_key:
+        return "STRIPE_SECRET_KEY is not set", 500
+
+    host = request.host_url.rstrip("/")
+    success_url = f"{host}/payment/success"
+    cancel_url = f"{host}/payment/cancel"
+
+    try:
+        monthly_price_id = os.environ.get("STRIPE_PRICE_ID", "").strip()
+        if not monthly_price_id:
+            monthly_price_id = os.environ.get("STRIPE_PRICE_MONTHLY", "").strip()
+            
+        session = stripe.checkout.Session.create(
+            mode="subscription",
+            payment_method_types=["card"],
+            line_items=[{"price": monthly_price_id, "quantity": 1}],
+            client_reference_id=line_user_id,
+            subscription_data={"trial_period_days": 14},
+            metadata={
+                "plan": "monthly",
+                "line_user_id": line_user_id
+            },
+            success_url=success_url,
+            cancel_url=cancel_url,
+        )
+        return redirect(session.url)
+    except Exception as e:
+        import traceback
+        print(f"[ERROR] Stripe Session Create Failed: {traceback.format_exc()}")
+        return str(e), 500
+
+@app.route("/payment/success", methods=["GET"])
+def payment_success():
+    html = """
+    <html>
+    <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <title>決済完了</title>
+        <style>
+            body { font-family: sans-serif; text-align: center; padding: 50px 20px; }
+            h1 { color: #28a745; }
+            p { font-size: 16px; color: #333; margin-top: 20px; }
+            .btn { display: inline-block; margin-top: 30px; padding: 12px 24px; background-color: #06c755; color: white; text-decoration: none; border-radius: 8px; font-weight: bold; }
+        </style>
+    </head>
+    <body>
+        <h1>決済が完了しました！</h1>
+        <p>ありがとうございます。<br>引き続きLINEアプリに戻ってご利用ください。</p>
+        <a href="https://line.me/R/oaMessage/@YOUR_LINE_ID/" class="btn">LINEに戻る</a>
+    </body>
+    </html>
+    """
+    return render_template_string(html)
+
+@app.route("/payment/cancel", methods=["GET"])
+def payment_cancel():
+    html = """
+    <html>
+    <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <title>決済キャンセル</title>
+        <style>
+            body { font-family: sans-serif; text-align: center; padding: 50px 20px; }
+            h1 { color: #dc3545; }
+            p { font-size: 16px; color: #333; margin-top: 20px; }
+        </style>
+    </head>
+    <body>
+        <h1>決済がキャンセルされました</h1>
+        <p>購入手続きは中断されました。<br>ウィンドウを閉じてLINEに戻ってください。</p>
+        <a href="https://line.me/R/oaMessage/@YOUR_LINE_ID/" class="btn" style="display:inline-block; margin-top:30px; padding:12px 24px; background-color:#6c757d; color:white; text-decoration:none; border-radius:8px; font-weight:bold;">LINEに戻る</a>
+    </body>
+    </html>
+    """
+    return render_template_string(html)
+
+
 @app.route("/stripe/webhook", methods=["POST"])
 def stripe_webhook():
     import os, traceback, logging
     from flask import request
     import stripe
     from google.cloud import firestore
+    from datetime import datetime, timedelta, timezone
 
     endpoint_secret = os.environ.get("STRIPE_WEBHOOK_SECRET")
     stripe.api_key = os.environ.get("STRIPE_SECRET_KEY")
@@ -4313,22 +4466,59 @@ def stripe_webhook():
 
 
             user_ref = db.collection("users").document(line_user_id)
-
-            # 冪等（Stripe再送でも二重加算しない）
             before = user_ref.get().to_dict() or {}
+
+            # 冪等（Stripe再送でも二重加算・状態上書きしない）
             if before.get("last_stripe_event_id") == event_id:
                 print("✅ duplicate event ignored", flush=True)
                 return "OK", 200
 
-            # Firestore更新（ここで増える）
-            user_ref.set({
-                "plan": "ticket" if add_tickets > 1 else "single",
+            existing_plan = before.get("plan", "free")
+            
+            # sessionオブジェクトからの安全な取得 (StripeObject は get() を持たない場合がある)
+            metadata = getattr(session, "metadata", None)
+            metadata_plan = getattr(metadata, "plan", "") if metadata else ""
+            session_mode = getattr(session, "mode", "")
+            
+            # 月額の環境変数を取得
+            monthly_price_id1 = (os.environ.get("STRIPE_PRICE_ID", "") or "").strip()
+            monthly_price_id2 = (os.environ.get("STRIPE_PRICE_MONTHLY", "") or "").strip()
+
+            is_monthly = (
+                session_mode == "subscription" or 
+                metadata_plan == "monthly" or 
+                (price_id and price_id in [monthly_price_id1, monthly_price_id2])
+            )
+            
+            # プランのダウングレード防止（月額ユーザーが誤って単発を買っても月額を維持）
+            if is_monthly or existing_plan == "monthly":
+                new_plan = "monthly"
+            else:
+                new_plan = "ticket" if add_tickets > 1 else "single"
+
+            update_data = {
+                "plan": new_plan,
                 "status": "paid",
-                "ticket_remaining": firestore.Increment(add_tickets),
                 "last_payment_date": firestore.SERVER_TIMESTAMP,
                 "last_stripe_event_id": event_id,
                 "updated_at": firestore.SERVER_TIMESTAMP,
-            }, merge=True)
+            }
+            
+            if new_plan == "monthly":
+                # 月額プランの場合は、14日間のトライアル期限を設定する
+                exp = datetime.now(timezone.utc) + timedelta(days=14)
+                update_data["plan_expire_at"] = exp
+                update_data["monthly_reset"] = exp.strftime("%Y-%m-%d") # 確認用に追加
+            
+            if not is_monthly:
+                update_data["ticket_remaining"] = firestore.Increment(add_tickets)
+
+            customer_id = getattr(session, "customer", None)
+            if customer_id:
+                update_data["stripe_customer_id"] = customer_id
+
+            # Firestore更新
+            user_ref.set(update_data, merge=True)
 
             # ===== 購入完了メッセージ（新規追加・既存文言は触らない）=====
             after = user_ref.get().to_dict() or {}
@@ -4336,10 +4526,14 @@ def stripe_webhook():
             tickets = int(after.get("ticket_remaining", 0))
 
             if plan == "monthly":
+                jst = timezone(timedelta(hours=9))
+                next_date_str = (datetime.now(jst) + timedelta(days=14)).strftime("%Y年%m月%d日")
                 message = (
-                    "GATEの月額プランへご登録いただき、ありがとうございます！⛳️✨\n\n"
-                    "ご契約期間中は、AIスイング解析が無制限でご利用いただけます。\n\n"
-                    "さっそく、リッチメニューの「分析スタート」からあなたのスイング動画を送ってみましょう🏌️‍♂️"
+                    "GATE プレミアムプランへのご登録ありがとうございます！⛳️✨\n\n"
+                    "🎫 ステータス：月額会員（有効）\n"
+                    f"📅 次回お支払い日：{next_date_str}\n\n"
+                    "さっそくAI解析を始めましょう！\n"
+                    "リッチメニューの「分析スタート」から、あなたのスイング動画を送ってください🏌️‍♂️"
                 )
             else:
                 message = (
@@ -4531,6 +4725,7 @@ def handle_video(event: MessageEvent):
         
 @handler.add(MessageEvent, message=TextMessage)
 def handle_text_message(event):
+    from datetime import datetime, timedelta, timezone
     user_id = event.source.user_id
     text = event.message.text.strip()
 
@@ -4542,6 +4737,18 @@ def handle_text_message(event):
     db = firestore.Client()
 
     if "料金プラン" in text:
+        host = (SERVICE_HOST_URL or "").strip().rstrip("/")
+        if not host:
+            from flask import request
+            host = request.host_url.rstrip("/")
+        elif not host.startswith(("https://", "http://")):
+            host = "https://" + host
+            
+        monthly_checkout_url = f"{host}/stripe/checkout/monthly?client_reference_id={user_id}"
+
+        jst = timezone(timedelta(hours=9))
+        next_date_str = (datetime.now(jst) + timedelta(days=14)).strftime("%Y年%m月%d日")
+
         plan_text = (
             "GATE公式LINEへようこそ！⛳️\n\n"
             "正確なAI解析結果をお届けするため、画面上部に「追加」ボタンが表示されている方は、まず登録をお願いいたします。\n\n"
@@ -4555,7 +4762,8 @@ def handle_text_message(event):
             f"https://buy.stripe.com/4gM6oI3DZd9EeKfcSX18c09?client_reference_id={user_id}\n\n"
             "【月額プラン】2,000円/月\n"
             "月額プランを申し込む → \n"
-            f"https://buy.stripe.com/4gM00ka2nd9E9pV6uz18c08?client_reference_id={user_id}\n\n"
+            f"{monthly_checkout_url}\n\n"
+            f"※初回14日間無料！次回お支払い日は {next_date_str} です。それまでに解約すれば料金は発生しません。\n"
             "--------------------\n"
             "※操作方法などは、このままトークでお気軽にご質問ください。"
         )
@@ -4574,7 +4782,9 @@ def handle_text_message(event):
         if stripe_id:
             # 外部で定義した get_cancel_portal_url を呼び出し
             url = get_cancel_portal_url(stripe_id)
-            if url:
+            if url == "NO_ACTIVE_SUBSCRIPTION":
+                reply = "現在、有効なサブスクリプション（月額プラン）のご契約はありません。"
+            elif url:
                 reply = (
                     "解約・プラン管理のお手続きですね。\n"
                     "以下の専用ページからお手続きいただけます。\n\n"
@@ -4584,7 +4794,15 @@ def handle_text_message(event):
             else:
                 reply = "URLの発行に失敗しました。お手数ですが事務局までご連絡ください。"
         else:
-            reply = "決済情報が見つかりませんでした。お手数ですが事務局までご連絡ください。"
+            # stripe_idが空の場合のログ出力と適切なエラーハンドリング（修復用）
+            logging.error(f"[MANUAL REPAIR REQUIRED] Cancellation requested but no stripe_customer_id found for line_user_id={user_id}. Please manually link the customer ID in Firestore if they have an active subscription.")
+            reply = (
+                "決済情報が見つかりませんでした。\n"
+                "以前のシステムエラー等で決済情報の連携が漏れている可能性があります。\n\n"
+                f"お手数ですが、事務局へ以下のエラーコードをお伝えください。\n"
+                f"【ID: {user_id}】\n\n"
+                "早急に確認し、手動で連携修復・解約処理をご案内いたします。"
+            )
 
         # LINEへ返信して処理を終了
         line_bot_api.reply_message(event.reply_token, TextSendMessage(text=reply))
@@ -4624,13 +4842,8 @@ def handle_text_message(event):
         # 冒頭文とクラブ選択のクイックリプライ
         msg_text = (
             "ご利用ありがとうございます。\n\n"
-            "無料版の方は、このまま動画を送ってください。\n\n"
-            "有料版の方で、より正確なフィッティング分析レポート（09）をご希望の方は、分かる範囲で入力をお願いします。\n\n"
-            "---------------------\n"
-            "【選択】分析するクラブ種別\n"
-            "【必須】ヘッドスピード／主なミス（1つ）\n"
-            "【任意】性別\n\n"
-            "まずは、今回分析するクラブを下のボタンから選んでください。\n"
+            "無料簡易解析をご希望の方はそのまま動画を送ってください。\n\n"
+            "有料プラン・月額プランの方は今回分析するクラブを下のボタンから選んでください。\n"
         )
 
         # クイックリプライボタンの作成
@@ -4695,7 +4908,13 @@ def handle_text_message(event):
 
             line_bot_api.reply_message(
                 event.reply_token,
-                TextSendMessage(text=f"「{text}」で解析を承ります。\n\n次に、ヘッドスピードを数字だけで送ってください（例：43）。")
+                TextSendMessage(
+                    text=(
+                        f"「{text}」で解析を承ります。\n\n"
+                        "クラブ提案をご希望の方は必要事項を順番にお伺いしていきます。クラブ提案が不要な方はそのまま動画を送ってください。\n\n"
+                        "まず、ヘッドスピードを数字だけ送ってください（例：43）。"
+                    )
+                )
             )
             return
 
