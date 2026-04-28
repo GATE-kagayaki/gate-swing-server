@@ -4631,7 +4631,13 @@ def handle_text_message(event):
 
             line_bot_api.reply_message(
                 event.reply_token,
-                TextSendMessage(text=f"「{text}」で解析を承ります。\n\n次に、ヘッドスピードを数字だけで送ってください（例：43）。")
+                TextSendMessage(
+                    text=(
+                        f"「{text}」で解析を承ります。\n\n"
+                        "クラブ提案をご希望の方は必要事項を順番にお伺いしていきます。クラブ提案が不要な方はそのまま動画を送ってください。\n\n"
+                        "まず、ヘッドスピードを数字だけ送ってください（例：43）。"
+                    )
+                )
             )
             return
 
