@@ -4584,6 +4584,7 @@ def handle_video(event: MessageEvent):
         
 @handler.add(MessageEvent, message=TextMessage)
 def handle_text_message(event):
+    from datetime import datetime, timedelta, timezone
     user_id = event.source.user_id
     text = event.message.text.strip()
 
@@ -4604,7 +4605,6 @@ def handle_text_message(event):
             
         monthly_checkout_url = f"{host}/stripe/checkout/monthly?client_reference_id={user_id}"
 
-        from datetime import datetime, timedelta, timezone
         jst = timezone(timedelta(hours=9))
         next_date_str = (datetime.now(jst) + timedelta(days=14)).strftime("%Y年%m月%d日")
 
