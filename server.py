@@ -460,8 +460,17 @@ def is_premium_user(user_id: str) -> bool:
     # 月額
     if plan == "monthly":
         expire = data.get("plan_expire_at")
-        if expire and expire.replace(tzinfo=timezone.utc) > datetime.now(timezone.utc):
-            return True
+        if expire:
+            try:
+                # Firestoreで手動編集された文字列等の場合への対応
+                if isinstance(expire, str):
+                    # 簡単な文字列パース試行
+                    expire = datetime.fromisoformat(expire.replace('Z', '+00:00'))
+                
+                if expire.replace(tzinfo=timezone.utc) > datetime.now(timezone.utc):
+                    return True
+            except Exception as e:
+                logging.error(f"[PREMIUM_CHECK_ERROR] expire parsing failed: {e}")
         return False
 
     # free
@@ -4314,9 +4323,7 @@ def payment_success():
     <body>
         <h1>決済が完了しました！</h1>
         <p>ありがとうございます。<br>引き続きLINEアプリに戻ってご利用ください。</p>
-        <a href="javascript:void(0);" onclick="window.close();" class="btn">画面を閉じてLINEに戻る</a>
-        <br><br>
-        <a href="https://line.me/R/nv/chat" style="color:#06c755; text-decoration:underline; font-size:14px;">うまくいかない場合はこちらをタップ</a>
+        <a href="https://line.me/R/oaMessage/@YOUR_LINE_ID/" class="btn">LINEに戻る</a>
     </body>
     </html>
     """
@@ -4339,7 +4346,7 @@ def payment_cancel():
     <body>
         <h1>決済がキャンセルされました</h1>
         <p>購入手続きは中断されました。<br>ウィンドウを閉じてLINEに戻ってください。</p>
-        <a href="javascript:void(0);" onclick="window.close();" class="btn" style="display:inline-block; margin-top:30px; padding:12px 24px; background-color:#6c757d; color:white; text-decoration:none; border-radius:8px; font-weight:bold;">画面を閉じる</a>
+        <a href="https://line.me/R/oaMessage/@YOUR_LINE_ID/" class="btn" style="display:inline-block; margin-top:30px; padding:12px 24px; background-color:#6c757d; color:white; text-decoration:none; border-radius:8px; font-weight:bold;">LINEに戻る</a>
     </body>
     </html>
     """
