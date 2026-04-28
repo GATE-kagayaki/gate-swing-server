@@ -3153,21 +3153,35 @@ def generate_llm_driver_fitting_ai(payload: Dict[str, Any]) -> Dict[str, Any]:
 ユーザーの生の悩み: {payload.get('raw_miss', '')} / HS: {payload['hs']}m/s / 軸ブレ: {payload['stability_val']}% / タメ: {payload['wrist_cock']}度
 
 指令（ミッション）:
-1. 2026年4月現在の最新機材（例として挙げた Callaway Quantum, Cobra OPTM, PING G440シリーズ 等）を含む現行モデルから、ヘッドを特定してください。
-   【重要】AI自身で「ELYTE 10K MAX」などの架空のクラブ名を勝手に創作・捏造することは厳禁ですが、例に挙げたメーカー（CallawayやPING等）に縛られる必要はありません。ユーザーの課題解決に最も適しているのであれば、国内外問わず幅広いクラブメーカー（TaylorMade, Titleist, Srixon, Bridgestone, Mizuno, PRGR, YAMAHAなど）の現行・実在モデルから柔軟かつ幅広く検討してください。
-2. シャフトは、純正シャフト（PING TOUR 2.0 BLACK等）に加え、主要カスタムシャフト（Fujikura、三菱ケミカル、グラファイトデザイン、USTマミヤ等の最新モデル）も含めて広く評価し、算出スペックに合致するものを優先的に選定してください。
-3. シャフト名の響き（BLACK等）に騙されず、必ず【{payload['kp']}調子】であることを再確認してください。
-   （例：元調子判定に、先中調子のSpeeder NX BLACKを提案することは厳禁です）
-4. 【重要】ヘッド単体・シャフト単体で選ぶのではなく、「このヘッドとこのシャフトを組み合わせることで、なぜこのユーザーにとって究極のセッティングになるのか（相乗効果）」をAIフィッターとしての腕の見せ所として強く打ち出してください。シャフトの挙動がヘッドの特性をどう引き出すか、あるいはどう補うかを論理的に説明してください。
-5. 理由は以下の3構成とし、専門用語を避けつつ物理的な理屈が直感的に伝わるよう簡潔に記述してください。
-   ・【ヘッド】選定理由（例：高MOIによる直進性向上など）
-   ・【シャフト】選定理由（例：逆転ロジックに基づく「間」の生成など）
-   ・【結 果】ヘッドとシャフトの組み合わせによる相乗効果と、それがユーザーのミスをどう解決しどんな弾道を生むか
+1. 2026年4月現在の最新機材（Callaway, Cobra, PING, TaylorMade, Titleist 等を含む国内外の幅広い実在メーカー）から、最適と思われるヘッドを第1候補〜第3候補まで3種類選定してください。架空のクラブ名は厳禁です。
+2. シャフトについても、純正・カスタム問わず算出スペックに合致する最新モデルを第1候補〜第3候補まで3種類選定してください。必ず【{payload['kp']}調子】であることを再確認してください。
+3. 選定理由は長文を避け、ヘッドは「モデル名」＋「選定理由（例：直進性重視など）を一言で」、シャフトは「モデル名」＋「逆転ロジック等の狙い（例：タメを作るなど）を一言で」簡潔にまとめてください。
+4. 以下のJSONフォーマットの配列を厳守して出力してください。
 
 {{
-  "model_name": "最新ヘッド名 + 具体的シャフト名",
-  "loft": "推奨ロフト",
-  "reason": "【ヘッド】〇〇だからミスに強い\\n【シャフト】〇〇により理想的な「間」を生成\\n【結 果】〇〇な弾道を実現"
+  "proposals": [
+    {{
+      "rank": "第1候補（Best Fit）",
+      "head": "〇〇モデル",
+      "head_reason": "高MOIで打点のブレを補正するため",
+      "shaft": "〇〇シャフト",
+      "shaft_reason": "手元側のしなりで『タメの間』を生成するため"
+    }},
+    {{
+      "rank": "第2候補（Alternative 1）",
+      "head": "...",
+      "head_reason": "...",
+      "shaft": "...",
+      "shaft_reason": "..."
+    }},
+    {{
+      "rank": "第3候補（Alternative 2）",
+      "head": "...",
+      "head_reason": "...",
+      "shaft": "...",
+      "shaft_reason": "..."
+    }}
+  ]
 }}
 """
     try:
@@ -3177,9 +3191,15 @@ def generate_llm_driver_fitting_ai(payload: Dict[str, Any]) -> Dict[str, Any]:
         return json.loads(clean_text)
     except:
         return {
-            "model_name": f"2026最新モデル + カスタムシャフト",
-            "loft": "10.5°",
-            "reason": "【ヘッド】高MOI設計で打点のブレを補正し直進性を向上\\n【シャフト】手元側のしなりで『タメの間』を生成しタイミングを安定化\\n【結 果】相乗効果で再現性の高い強弾道を実現します"
+            "proposals": [
+                {
+                    "rank": "第1候補（Best Fit）",
+                    "head": "2026最新モデル",
+                    "head_reason": "高MOI設計で直進性を向上させるため",
+                    "shaft": "推奨カスタムシャフト",
+                    "shaft_reason": "タメの間を生成しタイミングを安定させるため"
+                }
+            ]
         }
         
 def build_paid_09(raw: Dict[str, Any], user_inputs: Dict[str, Any], analysis: Dict[str, Any]) -> Dict[str, Any]:
@@ -3325,35 +3345,30 @@ def build_paid_09(raw: Dict[str, Any], user_inputs: Dict[str, Any], analysis: Di
 
     final_rows = []
 
-    # 項目1: AI推奨提案（AIが選んだヘッド＋シャフトと、算出スペックを併記）
-    final_rows.append({
-        "item": "AI推奨提案",
-        "guide": f"{ai_fit['model_name']} ({weight} / {flex} / {ai_fit['loft']})",
-        "reason": ai_fit['reason']
-    })
+    # 項目1: AI推奨提案（第1〜第3候補）
+    proposals = ai_fit.get("proposals", [])
+    for p in proposals:
+        final_rows.append({
+            "item": p.get("rank", "推奨候補"),
+            "guide": "AI推奨モデル",
+            "reason": (
+                f"ヘッド：{p.get('head', '')}（理由：{p.get('head_reason', '')}）<br><br>"
+                f"シャフト：{p.get('shaft', '')}（理由：{p.get('shaft_reason', '')}）"
+            )
+        })
 
     # 項目2: 診断サマリ
     final_rows.append({
         "item": "診断サマリ",
         "guide": "今回の分析根拠",
         "reason": (
-            f"● 軸ブレ：{stability_val:.1f}%（安定性）\n"
-            f"● 捻転差：max {xf_max:.1f}°（パワー）\n"
+            f"● 軸ブレ：{stability_val:.1f}%（安定性）<br>"
+            f"● 捻転差：max {xf_max:.1f}°（パワー）<br>"
             f"● タメ平均：{wrist_cock:.1f}°（リリース）"
         )
     })
-
-    # 項目3: 最適シャフトスペック（理由1行化）
-    final_rows.append({
-        "item": "最適シャフトスペック",
-        "guide": f"推奨：{weight} / {flex} / {kp}調子",
-        "reason": (
-            f"【重量】{weight}：{w_reason}\n"
-            f"【硬さ】{flex}：{f_reason}\n"
-            f"【調子】{kp}調子：{k_reason}\n"
-            f"【トルク】{tq}：{t_reason}"
-        )
-    })
+    
+    # ユーザー要望により「最適シャフトスペック」は削除
 
     return {
         "title": "09. Driver Fitting Guide（AI推奨）",
