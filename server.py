@@ -21,7 +21,7 @@ from linebot.models import (
     MessageAction
 )
 
-from flask import Flask, request, jsonify, abort, render_template, render_template_string
+from flask import Flask, request, jsonify, abort, render_template, render_template_string, redirect
 
 from linebot import LineBotApi, WebhookHandler
 from linebot.exceptions import InvalidSignatureError, LineBotApiError
@@ -4191,20 +4191,25 @@ def stripe_checkout():
 
     # 4. Stripe セッション作成
     try:
-        session = stripe.checkout.Session.create(
-        mode=checkout_mode,
-        payment_method_types=["card"],
-        line_items=[{"price": price_id, "quantity": 1}],
-        client_reference_id=line_user_id, # LINE ID
-        # --- ここを追加：Webhookでプランを判別するために必須 ---
-        metadata={
-            "plan": plan,             # "single", "ticket", "monthly"
-            "line_user_id": line_user_id
-        },
-        # --------------------------------------------------
-        success_url=success_url,
-        cancel_url=cancel_url,
-    )
+        session_kwargs = {
+            "mode": checkout_mode,
+            "payment_method_types": ["card"],
+            "client_reference_id": line_user_id, # LINE ID
+            "metadata": {
+                "plan": plan,             # "single", "ticket", "monthly"
+                "line_user_id": line_user_id
+            },
+            "success_url": success_url,
+            "cancel_url": cancel_url,
+        }
+
+        if plan == "monthly":
+            session_kwargs["line_items"] = [{"price": "price_1TR1AQCZFahUhJa5RvkSJtZD", "quantity": 1}]
+            session_kwargs["subscription_data"] = {"trial_period_days": 14}
+        else:
+            session_kwargs["line_items"] = [{"price": price_id, "quantity": 1}]
+
+        session = stripe.checkout.Session.create(**session_kwargs)
         return jsonify({"checkout_url": session.url}), 200
 
     except Exception as e:
@@ -4215,6 +4220,38 @@ def stripe_checkout():
 # server.py 上部（1回だけ）
 stripe.api_key = os.environ.get("STRIPE_SECRET_KEY", "")
 db = firestore.Client()
+
+@app.route("/stripe/checkout/monthly", methods=["GET"])
+def stripe_checkout_monthly_get():
+    line_user_id = request.args.get("client_reference_id")
+    if not line_user_id:
+        return "Missing client_reference_id", 400
+
+    if not stripe.api_key:
+        return "STRIPE_SECRET_KEY is not set", 500
+
+    success_url = os.environ.get("STRIPE_SUCCESS_URL", SERVICE_HOST_URL)
+    cancel_url = os.environ.get("STRIPE_CANCEL_URL", SERVICE_HOST_URL)
+
+    try:
+        session = stripe.checkout.Session.create(
+            mode="subscription",
+            payment_method_types=["card"],
+            line_items=[{"price": "price_1TR1AQCZFahUhJa5RvkSJtZD", "quantity": 1}],
+            client_reference_id=line_user_id,
+            subscription_data={"trial_period_days": 14},
+            metadata={
+                "plan": "monthly",
+                "line_user_id": line_user_id
+            },
+            success_url=success_url,
+            cancel_url=cancel_url,
+        )
+        return redirect(session.url)
+    except Exception as e:
+        import traceback
+        print(f"[ERROR] Stripe Session Create Failed: {traceback.format_exc()}")
+        return str(e), 500
 
 @app.route("/stripe/webhook", methods=["POST"])
 def stripe_webhook():
@@ -4292,8 +4329,12 @@ def stripe_webhook():
             tickets = int(after.get("ticket_remaining", 0))
 
             if plan == "monthly":
+                from datetime import datetime, timedelta, timezone
+                jst = timezone(timedelta(hours=9))
+                next_date_str = (datetime.now(jst) + timedelta(days=14)).strftime("%Y年%m月%d日")
                 message = (
                     "GATEの月額プランへご登録いただき、ありがとうございます！⛳️✨\n\n"
+                    f"次回お支払い日は {next_date_str} です。それまでに解約すれば料金は発生しません。\n\n"
                     "ご契約期間中は、AIスイング解析が無制限でご利用いただけます。\n\n"
                     "さっそく、リッチメニューの「分析スタート」からあなたのスイング動画を送ってみましょう🏌️‍♂️"
                 )
@@ -4498,6 +4539,19 @@ def handle_text_message(event):
     db = firestore.Client()
 
     if "料金プラン" in text:
+        host = (SERVICE_HOST_URL or "").strip().rstrip("/")
+        if not host:
+            from flask import request
+            host = request.host_url.rstrip("/")
+        elif not host.startswith(("https://", "http://")):
+            host = "https://" + host
+            
+        monthly_checkout_url = f"{host}/stripe/checkout/monthly?client_reference_id={user_id}"
+
+        from datetime import datetime, timedelta, timezone
+        jst = timezone(timedelta(hours=9))
+        next_date_str = (datetime.now(jst) + timedelta(days=14)).strftime("%Y年%m月%d日")
+
         plan_text = (
             "GATE公式LINEへようこそ！⛳️\n\n"
             "正確なAI解析結果をお届けするため、画面上部に「追加」ボタンが表示されている方は、まず登録をお願いいたします。\n\n"
@@ -4511,7 +4565,8 @@ def handle_text_message(event):
             f"https://buy.stripe.com/4gM6oI3DZd9EeKfcSX18c09?client_reference_id={user_id}\n\n"
             "【月額プラン】2,000円/月\n"
             "月額プランを申し込む → \n"
-            f"https://buy.stripe.com/4gM00ka2nd9E9pV6uz18c08?client_reference_id={user_id}\n\n"
+            f"{monthly_checkout_url}\n\n"
+            f"※初回14日間無料！次回お支払い日は {next_date_str} です。それまでに解約すれば料金は発生しません。\n"
             "--------------------\n"
             "※操作方法などは、このままトークでお気軽にご質問ください。"
         )
