@@ -3153,33 +3153,43 @@ def generate_llm_driver_fitting_ai(payload: Dict[str, Any]) -> Dict[str, Any]:
 ユーザーの生の悩み: {payload.get('raw_miss', '')} / HS: {payload['hs']}m/s / 軸ブレ: {payload['stability_val']}% / タメ: {payload['wrist_cock']}度
 
 指令（ミッション）:
-1. 2026年4月現在の最新機材（Callaway, Cobra, PING, TaylorMade, Titleist 等を含む国内外の幅広い実在メーカー）から、最適と思われるヘッドを第1候補〜第3候補まで3種類選定してください。架空のクラブ名は厳禁です。
-2. シャフトについても、純正・カスタム問わず算出スペックに合致する最新モデルを第1候補〜第3候補まで3種類選定してください。必ず【{payload['kp']}調子】であることを再確認してください。
-3. 選定理由は長文を避け、ヘッドは「モデル名」＋「選定理由（例：直進性重視など）を一言で」、シャフトは「モデル名」＋「逆転ロジック等の狙い（例：タメを作るなど）を一言で」簡潔にまとめてください。
-4. 以下のJSONフォーマットの配列を厳守して出力してください。
+1. 2024年〜2026年発売の最新機材（Callaway, Cobra, PING, TaylorMade, Titleist 等を含む主要メーカーの実在モデル）から、ユーザーに最適な「ヘッド」を第1候補〜第3候補まで3つ選定し、それぞれの選定理由を簡潔に記載してください。「エリート」などの古いモデルやマイナーなモデル、架空のクラブ名は厳禁です。
+2. 同様に、最新の「シャフト」（純正・カスタム問わず算出スペックに合致するもの）を第1候補〜第3候補まで3つ選定し、それぞれの選定理由を記載してください。必ず【{payload['kp']}調子】であることを再確認してください。
+3. 以下のJSONフォーマットを厳守して出力してください。キー名は必ず "heads" と "shafts" の配列にしてください。
 
 {{
-  "proposals": [
+  "heads": [
     {{
-      "rank": "第1候補（Best Fit）",
-      "head": "〇〇モデル",
-      "head_reason": "高MOIで打点のブレを補正するため",
-      "shaft": "〇〇シャフト",
-      "shaft_reason": "手元側のしなりで『タメの間』を生成するため"
+      "rank": "第1候補",
+      "model": "〇〇モデル",
+      "reason": "高MOIで打点のブレを補正するため"
     }},
     {{
-      "rank": "第2候補（Alternative 1）",
-      "head": "...",
-      "head_reason": "...",
-      "shaft": "...",
-      "shaft_reason": "..."
+      "rank": "第2候補",
+      "model": "...",
+      "reason": "..."
     }},
     {{
-      "rank": "第3候補（Alternative 2）",
-      "head": "...",
-      "head_reason": "...",
-      "shaft": "...",
-      "shaft_reason": "..."
+      "rank": "第3候補",
+      "model": "...",
+      "reason": "..."
+    }}
+  ],
+  "shafts": [
+    {{
+      "rank": "第1候補",
+      "model": "〇〇シャフト",
+      "reason": "手元側のしなりで『タメの間』を生成するため"
+    }},
+    {{
+      "rank": "第2候補",
+      "model": "...",
+      "reason": "..."
+    }},
+    {{
+      "rank": "第3候補",
+      "model": "...",
+      "reason": "..."
     }}
   ]
 }}
@@ -3191,13 +3201,18 @@ def generate_llm_driver_fitting_ai(payload: Dict[str, Any]) -> Dict[str, Any]:
         return json.loads(clean_text)
     except:
         return {
-            "proposals": [
+            "heads": [
                 {
-                    "rank": "第1候補（Best Fit）",
-                    "head": "2026最新モデル",
-                    "head_reason": "高MOI設計で直進性を向上させるため",
-                    "shaft": "推奨カスタムシャフト",
-                    "shaft_reason": "タメの間を生成しタイミングを安定させるため"
+                    "rank": "第1候補",
+                    "model": "2026最新ヘッド",
+                    "reason": "高MOI設計で直進性を向上させるため"
+                }
+            ],
+            "shafts": [
+                {
+                    "rank": "第1候補",
+                    "model": "推奨カスタムシャフト",
+                    "reason": "タメの間を生成しタイミングを安定させるため"
                 }
             ]
         }
@@ -3345,16 +3360,21 @@ def build_paid_09(raw: Dict[str, Any], user_inputs: Dict[str, Any], analysis: Di
 
     final_rows = []
 
-    # 項目1: AI推奨提案（第1〜第3候補）
-    proposals = ai_fit.get("proposals", [])
-    for p in proposals:
+    # 項目1: AI推奨提案（ヘッドとシャフトを独立して表示）
+    heads = ai_fit.get("heads", [])
+    for p in heads:
         final_rows.append({
-            "item": p.get("rank", "推奨候補"),
-            "guide": "AI推奨モデル",
-            "reason": (
-                f"ヘッド：{p.get('head', '')}（理由：{p.get('head_reason', '')}）<br><br>"
-                f"シャフト：{p.get('shaft', '')}（理由：{p.get('shaft_reason', '')}）"
-            )
+            "item": f"【ヘッド】 {p.get('rank', '候補')}",
+            "guide": p.get("model", ""),
+            "reason": p.get("reason", "")
+        })
+
+    shafts = ai_fit.get("shafts", [])
+    for p in shafts:
+        final_rows.append({
+            "item": f"【シャフト】 {p.get('rank', '候補')}",
+            "guide": p.get("model", ""),
+            "reason": p.get("reason", "")
         })
 
     # 項目2: 診断サマリ
@@ -3373,7 +3393,7 @@ def build_paid_09(raw: Dict[str, Any], user_inputs: Dict[str, Any], analysis: Di
     return {
         "title": "09. Driver Fitting Guide（AI推奨）",
         "table": final_rows,
-        "note": "※2026年4月現在の最新AIマーケットデータに基づく算出結果です。",
+        "note": "※2026年4月現在の最新AIマーケットデータに基づく算出結果です。<br>※実際のフィーリングや振り心地は個人差があるため、ご購入の際は必ずショップ等で試打を行ってからご判断ください。",
         "meta": {
             "power_idx": power_idx, "stability_idx": stability_idx, "wrist_cock": wrist_cock,
             "head_speed": hs, "stability_val": stability_val, "xf_max": xf_max, "max_wrist": max_wrist,
