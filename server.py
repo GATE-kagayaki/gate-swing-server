@@ -4335,6 +4335,7 @@ def stripe_webhook():
     from flask import request
     import stripe
     from google.cloud import firestore
+    from datetime import datetime, timedelta, timezone
 
     endpoint_secret = os.environ.get("STRIPE_WEBHOOK_SECRET")
     stripe.api_key = os.environ.get("STRIPE_SECRET_KEY")
@@ -4383,21 +4384,29 @@ def stripe_webhook():
 
             user_ref = db.collection("users").document(line_user_id)
 
-            # 冪等（Stripe再送でも二重加算しない）
-            before = user_ref.get().to_dict() or {}
-            if before.get("last_stripe_event_id") == event_id:
-                print("✅ duplicate event ignored", flush=True)
-                return "OK", 200
+            metadata_plan = session.get("metadata", {}).get("plan", "")
+            is_monthly = (session.get("mode") == "subscription" or metadata_plan == "monthly")
+            new_plan = "monthly" if is_monthly else ("ticket" if add_tickets > 1 else "single")
 
-            # Firestore更新（ここで増える）
-            user_ref.set({
-                "plan": "ticket" if add_tickets > 1 else "single",
+            update_data = {
+                "plan": new_plan,
                 "status": "paid",
-                "ticket_remaining": firestore.Increment(add_tickets),
                 "last_payment_date": firestore.SERVER_TIMESTAMP,
                 "last_stripe_event_id": event_id,
                 "updated_at": firestore.SERVER_TIMESTAMP,
-            }, merge=True)
+            }
+            
+            if not is_monthly:
+                update_data["ticket_remaining"] = firestore.Increment(add_tickets)
+            else:
+                update_data["ticket_remaining"] = firestore.Increment(0)
+
+            customer_id = session.get("customer")
+            if customer_id:
+                update_data["stripe_customer_id"] = customer_id
+
+            # Firestore更新（ここで増える）
+            user_ref.set(update_data, merge=True)
 
             # ===== 購入完了メッセージ（新規追加・既存文言は触らない）=====
             after = user_ref.get().to_dict() or {}
@@ -4405,14 +4414,14 @@ def stripe_webhook():
             tickets = int(after.get("ticket_remaining", 0))
 
             if plan == "monthly":
-                from datetime import datetime, timedelta, timezone
                 jst = timezone(timedelta(hours=9))
                 next_date_str = (datetime.now(jst) + timedelta(days=14)).strftime("%Y年%m月%d日")
                 message = (
-                    "GATEの月額プランへご登録いただき、ありがとうございます！⛳️✨\n\n"
-                    f"次回お支払い日は {next_date_str} です。それまでに解約すれば料金は発生しません。\n\n"
-                    "ご契約期間中は、AIスイング解析が無制限でご利用いただけます。\n\n"
-                    "さっそく、リッチメニューの「分析スタート」からあなたのスイング動画を送ってみましょう🏌️‍♂️"
+                    "GATE プレミアムプランへのご登録ありがとうございます！⛳️✨\n\n"
+                    "🎫 ステータス：月額会員（有効）\n"
+                    f"📅 次回お支払い日：{next_date_str}\n\n"
+                    "さっそくAI解析を始めましょう！\n"
+                    "リッチメニューの「分析スタート」から、あなたのスイング動画を送ってください🏌️‍♂️"
                 )
             else:
                 message = (
