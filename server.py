@@ -4186,8 +4186,9 @@ def stripe_checkout():
     # 月額プランなら 'subscription'、それ以外（単発・回数券）なら 'payment'
     checkout_mode = "subscription" if plan == "monthly" else "payment"
 
-    success_url = os.environ.get("STRIPE_SUCCESS_URL", SERVICE_HOST_URL)
-    cancel_url = os.environ.get("STRIPE_CANCEL_URL", SERVICE_HOST_URL)
+    host = request.host_url.rstrip("/")
+    success_url = f"{host}/payment/success"
+    cancel_url = f"{host}/payment/cancel"
 
     # 4. Stripe セッション作成
     try:
@@ -4233,8 +4234,9 @@ def stripe_checkout_monthly_get():
     if not stripe.api_key:
         return "STRIPE_SECRET_KEY is not set", 500
 
-    success_url = os.environ.get("STRIPE_SUCCESS_URL", SERVICE_HOST_URL)
-    cancel_url = os.environ.get("STRIPE_CANCEL_URL", SERVICE_HOST_URL)
+    host = request.host_url.rstrip("/")
+    success_url = f"{host}/payment/success"
+    cancel_url = f"{host}/payment/cancel"
 
     try:
         monthly_price_id = os.environ.get("STRIPE_PRICE_ID", "").strip()
@@ -4259,6 +4261,53 @@ def stripe_checkout_monthly_get():
         import traceback
         print(f"[ERROR] Stripe Session Create Failed: {traceback.format_exc()}")
         return str(e), 500
+
+@app.route("/payment/success", methods=["GET"])
+def payment_success():
+    html = """
+    <html>
+    <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <title>決済完了</title>
+        <style>
+            body { font-family: sans-serif; text-align: center; padding: 50px 20px; }
+            h1 { color: #28a745; }
+            p { font-size: 16px; color: #333; margin-top: 20px; }
+            .btn { display: inline-block; margin-top: 30px; padding: 12px 24px; background-color: #06c755; color: white; text-decoration: none; border-radius: 8px; font-weight: bold; }
+        </style>
+    </head>
+    <body>
+        <h1>決済が完了しました！</h1>
+        <p>ありがとうございます。<br>引き続きLINEアプリに戻ってご利用ください。</p>
+        <a href="https://line.me/R/" class="btn">LINEに戻る</a>
+    </body>
+    </html>
+    """
+    return render_template_string(html)
+
+@app.route("/payment/cancel", methods=["GET"])
+def payment_cancel():
+    html = """
+    <html>
+    <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <title>決済キャンセル</title>
+        <style>
+            body { font-family: sans-serif; text-align: center; padding: 50px 20px; }
+            h1 { color: #dc3545; }
+            p { font-size: 16px; color: #333; margin-top: 20px; }
+        </style>
+    </head>
+    <body>
+        <h1>決済がキャンセルされました</h1>
+        <p>購入手続きは中断されました。<br>ウィンドウを閉じてLINEに戻ってください。</p>
+    </body>
+    </html>
+    """
+    return render_template_string(html)
+
 
 @app.route("/stripe/webhook", methods=["POST"])
 def stripe_webhook():
