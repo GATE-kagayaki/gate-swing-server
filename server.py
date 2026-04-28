@@ -68,12 +68,26 @@ def get_cancel_portal_url(customer_id: str):
     ユーザー専用の解約・管理ポータルURLを生成
     """
     try:
+        import stripe
+        import os
+        import logging
+        stripe.api_key = os.environ.get("STRIPE_SECRET_KEY")
+        
+        # サブスクリプション取得ロジック（有効またはトライアル中か確認）
+        subs = stripe.Subscription.list(customer=customer_id, status="active")
+        if not subs.data:
+            subs_trial = stripe.Subscription.list(customer=customer_id, status="trialing")
+            if not subs_trial.data:
+                logging.warning(f"No active/trialing subscription found for customer: {customer_id}")
+                return "NO_ACTIVE_SUBSCRIPTION"
+
         session = stripe.billing_portal.Session.create(
             customer=customer_id,
             return_url="https://gate-golf.com/mypage" 
         )
         return session.url
     except Exception as e:
+        import logging
         logging.error(f"Portal Error: {e}")
         return None
 
@@ -4670,7 +4684,9 @@ def handle_text_message(event):
         if stripe_id:
             # 外部で定義した get_cancel_portal_url を呼び出し
             url = get_cancel_portal_url(stripe_id)
-            if url:
+            if url == "NO_ACTIVE_SUBSCRIPTION":
+                reply = "現在、有効なサブスクリプション（月額プラン）のご契約はありません。"
+            elif url:
                 reply = (
                     "解約・プラン管理のお手続きですね。\n"
                     "以下の専用ページからお手続きいただけます。\n\n"
@@ -4680,7 +4696,16 @@ def handle_text_message(event):
             else:
                 reply = "URLの発行に失敗しました。お手数ですが事務局までご連絡ください。"
         else:
-            reply = "決済情報が見つかりませんでした。お手数ですが事務局までご連絡ください。"
+            # stripe_idが空の場合のログ出力と適切なエラーハンドリング（修復用）
+            import logging
+            logging.error(f"[MANUAL REPAIR REQUIRED] Cancellation requested but no stripe_customer_id found for line_user_id={user_id}. Please manually link the customer ID in Firestore if they have an active subscription.")
+            reply = (
+                "決済情報が見つかりませんでした。\n"
+                "以前のシステムエラー等で決済情報の連携が漏れている可能性があります。\n\n"
+                f"お手数ですが、事務局へ以下のエラーコードをお伝えください。\n"
+                f"【ID: {user_id}】\n\n"
+                "早急に確認し、手動で連携修復・解約処理をご案内いたします。"
+            )
 
         # LINEへ返信して処理を終了
         line_bot_api.reply_message(event.reply_token, TextSendMessage(text=reply))
