@@ -3416,12 +3416,12 @@ def build_paid_09(raw: Dict[str, Any], user_inputs: Dict[str, Any], analysis: Di
     # ブロック②：[推奨シャフトスペック]
     final_rows.append({
         "item": "推奨シャフトスペック",
-        "guide": f"{weight} / {flex} / {kp}調子",
+        "guide": "",
         "reason": (
-            f"重量：{weight}<br>（{w_reason}）<br><br>"
-            f"硬さ：{flex}<br>（{f_reason}）<br><br>"
-            f"キックポイント：{kp}調子<br>（{k_reason}）<br><br>"
-            f"特性：{type_name}<br>（{t_reason}）"
+            f"<span style='font-size: 1.2rem; font-weight: bold;'>重量：{weight}</span><br>（{w_reason}）<br><br>"
+            f"<span style='font-size: 1.2rem; font-weight: bold;'>硬さ：{flex}</span><br>（{f_reason}）<br><br>"
+            f"<span style='font-size: 1.2rem; font-weight: bold;'>キックポイント：{kp}調子</span><br>（{k_reason}）<br><br>"
+            f"<span style='font-size: 1.2rem; font-weight: bold;'>特性：{type_name}</span><br>（{t_reason}）"
         )
     })
 
