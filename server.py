@@ -3309,6 +3309,8 @@ def build_paid_09(raw: Dict[str, Any], user_inputs: Dict[str, Any], analysis: Di
 
     # --- 4. スペック判定と1行理由の生成（既存ロジック100%維持） ---
 
+    # --- 4. スペック判定と1行理由の生成（既存ロジック100%維持） ---
+
     # 【重量】
     if hs is not None:
         if gender == "female":
@@ -3320,12 +3322,12 @@ def build_paid_09(raw: Dict[str, Any], user_inputs: Dict[str, Any], analysis: Di
             else: weight = "60〜70g"
         if (hs >= 40 and stability_val > 7.0) or (cock_level == "deep" and stability_val > 5.0):
             weight = "60g前後"
-            w_reason = f"HSと深いタメ、軸ブレ{stability_val:.1f}%を考慮し重量で安定化"
+            w_reason = "HSと深いタメ、軸ブレを考慮し、重量を上げてスイング軌道を安定させるため"
         else:
-            w_reason = f"HS{hs:.1f}m/sとタメ平均に応じた身体負荷の最適化"
+            w_reason = "現在のHSとタメの量から算出された、無理なく振り切れる適正重量"
     else:
         weight = {"low": "40〜50g", "mid": "50〜60g", "high": "60〜70g"}[hs_level]
-        w_reason = f"パワー指数{power_idx}に基づくAI推奨重量の算出"
+        w_reason = "スイングのパワー指数から算出された、無理なく振り切れる適正重量"
 
     # 【硬さ】
     if hs is not None:
@@ -3333,90 +3335,86 @@ def build_paid_09(raw: Dict[str, Any], user_inputs: Dict[str, Any], analysis: Di
         flex = next((f for h, f in flex_map if hs < h), "X")
         if xf_max > 70.0 or cock_level == "deep":
             flex = "一ランク硬め"
-            f_reason = f"強い捻転差(max{xf_max:.1f}°)とタメによる負荷への剛性確保"
+            f_reason = "強い捻転差とタメによる、シャフトへの過度な負荷や暴れを抑えるため"
         else:
-            f_reason = f"HS{hs:.1f}m/sに対する標準的な適正剛性"
+            f_reason = "現在のHSに対して最もタイミングが取りやすい、標準的な適正剛性"
     else:
         flex = {"low": "A〜R", "mid": "R〜SR", "high": "SR〜S"}[hs_level]
-        f_reason = f"AI判定レベルに基づく標準的な剛性"
+        f_reason = "スイングのパワーに対して最もタイミングが取りやすい、標準的な適正剛性"
 
     # 【調子】（逆転ロジック維持）
     if miss == "right":
         if wrist_cock < 45.0:
             kp = "元"
-            k_reason = "手元側のしなりにより『タメの間』を意図的に作り出し、右ミスを抑制"
+            k_reason = "手元側のしなりで『タメの間』を意図的に作り出し、振り遅れによる右ミスを防ぐため"
         elif tame_band == "unstable_deep" or wrist_std >= 15.0:
             kp = "元"
-            k_reason = "タメのばらつきを抑えるため、手元調子でタイミングを安定化"
+            k_reason = "タメのばらつきを抑え、手元のしなりで切り返しのタイミングを安定させるため"
         elif stability_val > 7.0:
             kp = "中"
-            k_reason = f"軸ブレ{stability_val:.1f}%を考慮し、挙動の安定性を優先"
+            k_reason = "軸ブレの大きさを考慮し、シャフト全体の挙動の安定性を最優先したため"
         else:
             kp = "先〜中"
-            k_reason = "右ミスに対し、つかまりを助ける先調子系を基準に選定"
+            k_reason = "右ミスに対し、インパクトでのヘッドのつかまりを助ける先調子系を選定したため"
     elif miss == "left":
         kp = "中〜元"
-        k_reason = "左ミス防止：先端の動きを抑え、つかまり過ぎによるミスを抑制"
+        k_reason = "先端の無駄な動きを抑え、ヘッドの返り過ぎによる左ミスを抑制するため"
     else:
         kp = "中"
-        k_reason = "ニュートラルな挙動の中調子で、操作性と安定性のバランスを最適化"
+        k_reason = "ニュートラルな挙動の中調子で、操作性と安定性のバランスを最適化するため"
 
-    # 【トルク】
-    if stability_val >= 9.0:
-        tq = "3.0〜4.0"
-        t_reason = f"軸ブレ実測{stability_val:.1f}%を抑え、打点安定性を最優先"
-    elif stability_val >= 5.0:
-        tq = "3.5〜5.0"
-        t_reason = "平均的な軸ブレ量に基づき、標準的なトルク帯を選択"
-    else:
-        tq = "4.5〜6.0"
-        t_reason = "高い安定性を活かし、シャフトの挙動を使いやすく設定"
-
-    # --- 5. AI提案の取得と表示テーブルの構築（3項目構成） ---
-    llm_payload = {
-        "hs": hs or power_idx, "miss": miss, "weight": weight, "flex": flex, 
-        "kp": kp, "wrist_cock": f"{wrist_cock:.1f}", "stability_val": f"{stability_val:.1f}",
-        "gender": gender,
-        "raw_miss": str(user_inputs.get("miss_tendency", ""))
-    }
-    ai_fit = generate_llm_driver_fitting_ai(llm_payload)
-
+    # --- 5. 表示テーブルの構築（2項目構成・LLM不使用） ---
     final_rows = []
 
-    # 項目1: AI推奨提案（ヘッドとシャフトを独立して表示）
-    heads = ai_fit.get("heads", [])
-    for p in heads:
-        final_rows.append({
-            "item": f"【ヘッド】 {p.get('rank', '候補')}",
-            "guide": p.get("model", ""),
-            "reason": p.get("reason", "")
-        })
+    # 項目1: 分析根拠 (stability_val, xf_max, wrist_cock)
+    if stab_band == "stable":
+        stab_msg = "軸ブレが少なく、打点が非常に安定しています"
+    elif stab_band == "normal":
+        stab_msg = "軸ブレは平均的で、標準的な安定性です"
+    else:
+        stab_msg = "左右にスウェーしやすく、打点が不安定になっています"
+        
+    if xf_band == "low":
+        xf_msg = "捻転差が浅く、パワーを十分に溜められていません"
+    elif xf_band == "mid":
+        xf_msg = "捻転差は平均的で、標準的なパワーを引き出せています"
+    else:
+        xf_msg = "深く捻転できており、力が溜まっている状態です"
+        
+    if tame_band == "shallow":
+        tame_msg = "手首が早くほどける傾向にあるので、タメが弱いです"
+    elif tame_band == "normal":
+        tame_msg = "タメのキープ力は平均的です"
+    elif tame_band == "unstable_deep":
+        tame_msg = "タメのほどけ方にばらつきがあり、タイミングが合いにくいです"
+    else:
+        tame_msg = "タメがしっかりと作れており、強く叩ける状態です"
 
-    shafts = ai_fit.get("shafts", [])
-    for p in shafts:
-        final_rows.append({
-            "item": f"【シャフト】 {p.get('rank', '候補')}",
-            "guide": p.get("model", ""),
-            "reason": p.get("reason", "")
-        })
-
-    # 項目2: 診断サマリ
     final_rows.append({
-        "item": "診断サマリ",
-        "guide": "今回の分析根拠",
+        "item": "今回の分析根拠",
+        "guide": "診断データ",
         "reason": (
-            f"● 軸ブレ：{stability_val:.1f}%（安定性）<br>"
-            f"● 捻転差：max {xf_max:.1f}°（パワー）<br>"
-            f"● タメ平均：{wrist_cock:.1f}°（リリース）"
+            f"● 軸ブレ：{stability_val:.1f}% （{stab_msg}）<br>"
+            f"● 捻転差：max {xf_max:.1f}° （{xf_msg}）<br>"
+            f"● タメ平均：{wrist_cock:.1f}° （{tame_msg}）"
         )
     })
-    
-    # ユーザー要望により「最適シャフトスペック」は削除
+
+    # 項目2: 推奨シャフトスペック
+    final_rows.append({
+        "item": "推奨シャフトスペック",
+        "guide": f"{weight} / {flex} / {kp}調子",
+        "reason": (
+            f"● 重量：{w_reason}<br>"
+            f"● 硬さ：{f_reason}<br>"
+            f"● 調子：{k_reason}"
+        )
+    })
 
     return {
-        "title": "09. Driver Fitting Guide（AI推奨）",
+        "title": "09. Driver Fitting Guide",
         "table": final_rows,
-        "note": "※2026年4月現在の最新AIマーケットデータに基づく算出結果です。<br>※実際のフィーリングや振り心地は個人差があるため、ご購入の際は必ずショップ等で試打を行ってからご判断ください。",
+        "note": "※実際のフィーリングや振り心地は個人差があるため、ご購入の際は必ずショップ等で試打を行ってからご判断ください。",
         "meta": {
             "power_idx": power_idx, "stability_idx": stability_idx, "wrist_cock": wrist_cock,
             "head_speed": hs, "stability_val": stability_val, "xf_max": xf_max, "max_wrist": max_wrist,
