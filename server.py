@@ -3311,6 +3311,8 @@ def build_paid_09(raw: Dict[str, Any], user_inputs: Dict[str, Any], analysis: Di
 
     # --- 4. スペック判定と1行理由の生成（既存ロジック100%維持） ---
 
+    # --- 4. スペック判定と1行理由の生成（既存ロジック100%維持） ---
+
     # 【重量】
     if hs is not None:
         if gender == "female":
@@ -3322,12 +3324,12 @@ def build_paid_09(raw: Dict[str, Any], user_inputs: Dict[str, Any], analysis: Di
             else: weight = "60〜70g"
         if (hs >= 40 and stability_val > 7.0) or (cock_level == "deep" and stability_val > 5.0):
             weight = "60g前後"
-            w_reason = "HSと深いタメ、軸ブレを考慮し、重量を上げてスイング軌道を安定させるため"
+            w_reason = "速いヘッドスピードと強いタメ、またスウェーを抑えるため、重量を上げてスイング軌道を安定させます"
         else:
-            w_reason = "現在のHSとタメの量から算出された、無理なく振り切れる適正重量"
+            w_reason = "現在のヘッドスピードとタメの量から算出された、無理なく振り切れる適正重量です"
     else:
         weight = {"low": "40〜50g", "mid": "50〜60g", "high": "60〜70g"}[hs_level]
-        w_reason = "スイングのパワー指数から算出された、無理なく振り切れる適正重量"
+        w_reason = "スイングのパワー指数から算出された、無理なく振り切れる適正重量です"
 
     # 【硬さ】
     if hs is not None:
@@ -3335,38 +3337,49 @@ def build_paid_09(raw: Dict[str, Any], user_inputs: Dict[str, Any], analysis: Di
         flex = next((f for h, f in flex_map if hs < h), "X")
         if xf_max > 70.0 or cock_level == "deep":
             flex = "一ランク硬め"
-            f_reason = "強い捻転差とタメによる、シャフトへの過度な負荷や暴れを抑えるため"
+            f_reason = "強い捻転差とタメによる、シャフトへの過度な負荷や暴れを抑えるためです"
         else:
-            f_reason = "現在のHSに対して最もタイミングが取りやすい、標準的な適正剛性"
+            f_reason = "現在のヘッドスピードに対して最もタイミングが取りやすい、標準的な硬さです"
     else:
         flex = {"low": "A〜R", "mid": "R〜SR", "high": "SR〜S"}[hs_level]
-        f_reason = "スイングのパワーに対して最もタイミングが取りやすい、標準的な適正剛性"
+        f_reason = "スイングのパワーに対して最もタイミングが取りやすい、標準的な硬さです"
 
-    # 【調子】（逆転ロジック維持）
+    # 【調子】（ミス傾向と物理的課題の連動）
     if miss == "right":
         if wrist_cock < 45.0:
             kp = "元"
-            k_reason = "手元側のしなりで『タメの間』を意図的に作り出し、振り遅れによる右ミスを防ぐため"
+            k_reason = "右ミスの傾向がありますが、タメが不足しているため、手元側のしなりで『タメの間』を作りミスを抑制します"
         elif tame_band == "unstable_deep" or wrist_std >= 15.0:
             kp = "元"
-            k_reason = "タメのばらつきを抑え、手元のしなりで切り返しのタイミングを安定させるため"
+            k_reason = "右ミスの傾向があり、タメのばらつきもあるため、手元のしなりで切り返しのタイミングを安定させます"
         elif stability_val > 7.0:
             kp = "中"
-            k_reason = "軸ブレの大きさを考慮し、シャフト全体の挙動の安定性を最優先したため"
+            k_reason = "右ミスの傾向がありますが、スウェーが大きいため、シャフト全体の挙動の安定性を最優先します"
         else:
             kp = "先〜中"
-            k_reason = "右ミスに対し、インパクトでのヘッドのつかまりを助ける先調子系を選定したため"
+            k_reason = "右ミスの傾向があり、スウェーが少ないため、インパクトでのヘッドのつかまりを助ける先調子系を選定します"
     elif miss == "left":
         kp = "中〜元"
-        k_reason = "先端の無駄な動きを抑え、ヘッドの返り過ぎによる左ミスを抑制するため"
+        k_reason = "左ミスの傾向があるため、先端の無駄な動きを抑え、ヘッドの返り過ぎによるミスを抑制します"
     else:
         kp = "中"
-        k_reason = "ニュートラルな挙動の中調子で、操作性と安定性のバランスを最適化するため"
+        k_reason = "特定方向への大きなミスの傾向がないため、操作性と安定性のバランスを取れる中調子を選定します"
 
-    # --- 5. 表示テーブルの構築（2項目構成・LLM不使用） ---
+    # 【特性（トルク等から算出）】
+    if stability_val >= 9.0:
+        type_name = "方向性・安定化重視タイプ"
+        t_reason = "スウェーが大きいため、ねじれを抑えてミスヒットに強い特性とします"
+    elif stability_val >= 5.0:
+        type_name = "バランス重視タイプ"
+        t_reason = "スウェーが平均的であるため、操作性と安定性のバランスが取れた特性とします"
+    else:
+        type_name = "操作性・振り抜き重視タイプ"
+        t_reason = "スウェーが少なく安定しているため、シャフトのしなりを活かして飛ばせる特性とします"
+
+    # --- 5. 表示テーブルの構築（2ブロック構成・LLM不使用） ---
     final_rows = []
 
-    # 項目1: 分析根拠 (stability_val, xf_max, wrist_cock)
+    # ブロック①：[今回の分析根拠]
     if stab_band == "stable":
         stab_msg = "軸ブレが少なく、打点が非常に安定しています"
     elif stab_band == "normal":
@@ -3400,19 +3413,20 @@ def build_paid_09(raw: Dict[str, Any], user_inputs: Dict[str, Any], analysis: Di
         )
     })
 
-    # 項目2: 推奨シャフトスペック
+    # ブロック②：[推奨シャフトスペック]
     final_rows.append({
         "item": "推奨シャフトスペック",
         "guide": f"{weight} / {flex} / {kp}調子",
         "reason": (
-            f"● 重量：{w_reason}<br>"
-            f"● 硬さ：{f_reason}<br>"
-            f"● 調子：{k_reason}"
+            f"重量：{weight}<br>（{w_reason}）<br><br>"
+            f"硬さ：{flex}<br>（{f_reason}）<br><br>"
+            f"キックポイント：{kp}調子<br>（{k_reason}）<br><br>"
+            f"特性：{type_name}<br>（{t_reason}）"
         )
     })
 
     return {
-        "title": "09. Driver Fitting Guide",
+        "title": "09．ドライバ―シャフトFitting Guide",
         "table": final_rows,
         "note": "※実際のフィーリングや振り心地は個人差があるため、ご購入の際は必ずショップ等で試打を行ってからご判断ください。",
         "meta": {
