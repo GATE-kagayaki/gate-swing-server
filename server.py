@@ -2319,7 +2319,8 @@ def generate_llm_comment_07(payload: Dict[str, Any]) -> str:
         "driver": "ドライバー",
         "iron": "アイアン",
         "wood": "ウッド",
-        "utility": "ユーティリティ"
+        "utility": "ユーティリティ",
+        "wood_ut": "FW/UT"
     }
     club_name = club_map.get(raw_club, "ドライバー")
 
