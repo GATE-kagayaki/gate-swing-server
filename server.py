@@ -4458,9 +4458,12 @@ def stripe_webhook():
     if event_type == "checkout.session.completed":
         session = event.data.object
         
-        # 1. セッションから LINE ID と プラン情報を抜き出す
-        user_id = session.get("client_reference_id")
-        plan = session.get("metadata", {}).get("plan")
+        # 1. セッションから LINE ID と プラン情報を抜き出す (getattrを使用して安全に取得)
+        user_id = getattr(session, "client_reference_id", None)
+        
+        # metadata も StripeObject であるため、同様に getattr を使用して抜き出す
+        metadata = getattr(session, "metadata", None)
+        plan = getattr(metadata, "plan", None) if metadata else None
 
         # 2. 抜き出した情報で権限更新関数を実行
         if user_id and plan:
