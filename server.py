@@ -4454,6 +4454,21 @@ def stripe_webhook():
 
     event_type = event.type
 
+    # 決済完了イベントの処理を追加
+    if event_type == "checkout.session.completed":
+        session = event.data.object
+        
+        # 1. セッションから LINE ID と プラン情報を抜き出す
+        user_id = session.get("client_reference_id")
+        plan = session.get("metadata", {}).get("plan")
+
+        # 2. 抜き出した情報で権限更新関数を実行
+        if user_id and plan:
+            handle_successful_payment(user_id, plan)
+
+    # Stripeへ正常受信を返す（必須）
+    return "OK", 200
+
     # =========================================================
     # A) 購入完了（単発/回数券）
     # =========================================================
