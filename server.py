@@ -4460,11 +4460,17 @@ def stripe_webhook():
     if event_type == "checkout.session.completed":
         session = event.data.object
         
-        # 1. セッションから情報を抜き出す（元の正しい getattr アプローチを使用）
         user_id = getattr(session, "client_reference_id", None)
         metadata = getattr(session, "metadata", None)
-        plan = getattr(metadata, "plan", None) if metadata else None
 
+        if metadata:
+            if hasattr(metadata, "get"):
+                plan = metadata.get("plan")
+            else:
+                plan = getattr(metadata, "plan", None)
+        else:
+            plan = None
+            
         # 真の原因を特定するためのログ出力
         print(f"[WEBHOOK_RECEIVED] user_id: {user_id}, plan: {plan}", flush=True)
 
