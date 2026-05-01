@@ -4456,36 +4456,38 @@ def stripe_webhook():
 
     event_type = event.type
 
-    # 決済完了イベントの処理を追加
+    # 決済完了イベントの処理
     if event_type == "checkout.session.completed":
         session = event.data.object
-        
-        user_id = getattr(session, "client_reference_id", None)
-        metadata = getattr(session, "metadata", None)
 
-        if metadata:
-            if hasattr(metadata, "get"):
-                plan = metadata.get("plan")
-            else:
-                plan = getattr(metadata, "plan", None)
+        user_id = getattr(session, "client_reference_id", None)
+        session_id = getattr(session, "id", None)
+        session_mode = getattr(session, "mode", "")
+
+        plan = None
+
+        if session_mode == "subscription":
+            plan = "monthly"
         else:
-            plan = None
-            
-        # 真の原因を特定するためのログ出力
+            li = stripe.checkout.Session.list_line_items(session_id, limit=1)
+            first = li["data"][0] if li and getattr(li, "data", None) else None
+            price_id = getattr(getattr(first, "price", None), "id", None) if first else None
+
+            single_price_id = (os.environ.get("STRIPE_PRICE_SINGLE", "") or "").strip()
+            ticket_price_id = (os.environ.get("STRIPE_PRICE_TICKET", "") or "").strip()
+
+            if price_id == single_price_id:
+                plan = "single"
+            elif price_id == ticket_price_id:
+                plan = "ticket"
+
         print(f"[WEBHOOK_RECEIVED] user_id: {user_id}, plan: {plan}", flush=True)
 
-        # 2. 抜き出した情報で権限更新関数を実行
         if user_id and plan:
-            try:
-                handle_successful_payment(user_id, plan)
-            except Exception as e:
-                # DB更新が失敗した場合はここで詳細なエラーを出力
-                print(f"[ERROR] DB更新中にエラーが発生しました: {e}", flush=True)
-                print(traceback.format_exc(), flush=True)
-                return "DB Update Error", 500
+            handle_successful_payment(user_id, plan)
         else:
             print(f"⚠️ 必要なデータが不足しています。user_id: {user_id}, plan: {plan}", flush=True)
-
+            
     # Stripeへ正常受信を返す（必須）
     return "OK", 200
     
