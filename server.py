@@ -4664,13 +4664,15 @@ def handle_video(event: MessageEvent):
             ok = False
 
         if not ok:
-            safe_line_reply(
-                event.reply_token,
-                "今月の無料解析（1回）はすでにご利用済みです。\n\n"
-                "引き続き解析をご希望の場合は、単発プランまたは回数券をご利用ください。",
-                user_id=user_id
-            )
-            return
+        # 無料枠を使い切っている場合の返信メッセージ
+        safe_line_reply(
+            event.reply_token,
+            "今月の無料解析（1回）はすでにご利用済みです。\n"
+            "次回の無料枠リセットは 翌月1日の朝9:00 となります。\n\n"
+            "引き続き解析をご希望の場合は、単発プランまたは回数券をご利用ください。",
+            user_id=user_id
+        )
+        return
 
     logging.warning(
         "[DEBUG] handle_video HIT user_id=%s message_id=%s plan=%s free_used_month=%s tickets=%s",
