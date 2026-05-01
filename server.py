@@ -4314,7 +4314,7 @@ def stripe_checkout():
             "payment_method_types": ["card"],
             "client_reference_id": line_user_id, # LINE ID
             "metadata": {
-                "plan": plan,             # "single", "ticket", "monthly"
+                "plan": plan,              # "single", "ticket", "monthly"
                 "line_user_id": line_user_id
             },
             "success_url": success_url,
@@ -4456,16 +4456,16 @@ def stripe_webhook():
 
     event_type = event.type
 
-    # 決済完了イベントの処理
+    # 決済完了イベントの処理を追加
     if event_type == "checkout.session.completed":
         session = event.data.object
         
-        # 1. セッションから情報を抜き出す
-        # client_reference_id は session の直下、plan は metadata の中にあります。
-        user_id = session.get("client_reference_id")
-        metadata = session.get("metadata", {})
-        plan = metadata.get("plan")
+        # 1. セッションから情報を抜き出す（元の正しい getattr アプローチを使用）
+        user_id = getattr(session, "client_reference_id", None)
+        metadata = getattr(session, "metadata", None)
+        plan = getattr(metadata, "plan", None) if metadata else None
 
+        # 真の原因を特定するためのログ出力
         print(f"[WEBHOOK_RECEIVED] user_id: {user_id}, plan: {plan}", flush=True)
 
         # 2. 抜き出した情報で権限更新関数を実行
@@ -4473,13 +4473,14 @@ def stripe_webhook():
             try:
                 handle_successful_payment(user_id, plan)
             except Exception as e:
+                # DB更新が失敗した場合はここで詳細なエラーを出力
                 print(f"[ERROR] DB更新中にエラーが発生しました: {e}", flush=True)
                 print(traceback.format_exc(), flush=True)
                 return "DB Update Error", 500
         else:
             print(f"⚠️ 必要なデータが不足しています。user_id: {user_id}, plan: {plan}", flush=True)
 
-    # Stripeへ正常受信を返す
+    # Stripeへ正常受信を返す（必須）
     return "OK", 200
     
     # =========================================================
