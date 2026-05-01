@@ -4679,10 +4679,8 @@ def handle_video(event: MessageEvent):
             logging.exception("[ERROR] free monthly transaction failed")
             ok = False
 
-        # --- 修正箇所：server.py 4666行目付近 ---
-    if not ok:
-        # 無料枠を使い切っているユーザーへの返信メッセージ
-        # クレーム防止のため、次回のリセット日時を明記する
+    # --- 修正箇所：server.py 4666行目付近 ---
+    if plan == "free" and not ok:
         safe_line_reply(
             event.reply_token,
             "今月の無料解析（1回）はすでにご利用済みです。\n"
