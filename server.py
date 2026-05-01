@@ -4473,7 +4473,7 @@ def stripe_webhook():
     return "OK", 200
 
     # =========================================================
-    # A) 購入完了（単発/回数券）
+    # A) 購入完了（単発/回数券/月額）
     # =========================================================
     if event_type == "checkout.session.completed":
         session = event["data"]["object"]
@@ -4490,38 +4490,34 @@ def stripe_webhook():
             first = li["data"][0] if li and getattr(li, "data", None) else None
             price_id = getattr(getattr(first, "price", None), "id", None) if first else None
 
-            add_tickets = 1
+            single_price_id = (os.environ.get("STRIPE_PRICE_SINGLE", "") or "").strip()
             ticket_price_id = (os.environ.get("STRIPE_PRICE_TICKET", "") or "").strip()
-            if ticket_price_id and price_id == ticket_price_id:
-                add_tickets = 5
 
+            metadata = getattr(session, "metadata", None)
+            metadata_plan = getattr(metadata, "plan", "") if metadata else ""
+            session_mode = getattr(session, "mode", "")
+
+            is_monthly = (session_mode == "subscription" or metadata_plan == "monthly")
+
+            if is_monthly:
+                add_tickets = 0
+            elif price_id == single_price_id:
+                add_tickets = 1
+            elif price_id == ticket_price_id:
+                add_tickets = 5
+            else:
+                print(f"⚠️ Unknown price_id: {price_id}", flush=True)
+                return "OK", 200
 
             user_ref = db.collection("users").document(line_user_id)
             before = user_ref.get().to_dict() or {}
 
-            # 冪等（Stripe再送でも二重加算・状態上書きしない）
             if before.get("last_stripe_event_id") == event_id:
                 print("✅ duplicate event ignored", flush=True)
                 return "OK", 200
 
             existing_plan = before.get("plan", "free")
-            
-            # sessionオブジェクトからの安全な取得 (StripeObject は get() を持たない場合がある)
-            metadata = getattr(session, "metadata", None)
-            metadata_plan = getattr(metadata, "plan", "") if metadata else ""
-            session_mode = getattr(session, "mode", "")
-            
-            # 月額の環境変数を取得
-            monthly_price_id1 = (os.environ.get("STRIPE_PRICE_ID", "") or "").strip()
-            monthly_price_id2 = (os.environ.get("STRIPE_PRICE_MONTHLY", "") or "").strip()
 
-            is_monthly = (
-                session_mode == "subscription" or 
-                metadata_plan == "monthly" or 
-                (price_id and price_id in [monthly_price_id1, monthly_price_id2])
-            )
-            
-            # プランのダウングレード防止（月額ユーザーが誤って単発を買っても月額を維持）
             if is_monthly or existing_plan == "monthly":
                 new_plan = "monthly"
             else:
@@ -4534,13 +4530,12 @@ def stripe_webhook():
                 "last_stripe_event_id": event_id,
                 "updated_at": firestore.SERVER_TIMESTAMP,
             }
-            
+
             if new_plan == "monthly":
-                # 月額プランの場合は、14日間のトライアル期限を設定する
                 exp = datetime.now(timezone.utc) + timedelta(days=14)
                 update_data["plan_expire_at"] = exp
-                update_data["monthly_reset"] = exp.strftime("%Y-%m-%d") # 確認用に追加
-            
+                update_data["monthly_reset"] = exp.strftime("%Y-%m-%d")
+
             if not is_monthly:
                 update_data["ticket_remaining"] = firestore.Increment(add_tickets)
 
@@ -4548,10 +4543,8 @@ def stripe_webhook():
             if customer_id:
                 update_data["stripe_customer_id"] = customer_id
 
-            # Firestore更新
             user_ref.set(update_data, merge=True)
 
-            # ===== 購入完了メッセージ（新規追加・既存文言は触らない）=====
             after = user_ref.get().to_dict() or {}
             plan = after.get("plan")
             tickets = int(after.get("ticket_remaining", 0))
@@ -4576,13 +4569,17 @@ def stripe_webhook():
 
             safe_line_push(line_user_id, message, force=True)
 
-            print(f"✅ Firestore updated user={line_user_id} add={add_tickets}", flush=True)
+            print(
+                f"✅ Firestore updated user={line_user_id} "
+                f"price_id={price_id} add={add_tickets} is_monthly={is_monthly}",
+                flush=True
+            )
             return "OK", 200
 
         except Exception:
             print("❌ post-payment handler failed:", traceback.format_exc(), flush=True)
             return "Internal Error", 500
-
+            
     # =========================================================
     # B) 解約（サブスク削除）
     # =========================================================
