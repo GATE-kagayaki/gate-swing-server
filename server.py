@@ -4456,24 +4456,32 @@ def stripe_webhook():
 
     event_type = event.type
 
-    # 決済完了イベントの処理を追加
+    # 決済完了イベントの処理
     if event_type == "checkout.session.completed":
         session = event.data.object
         
-        # 1. セッションから LINE ID と プラン情報を抜き出す (getattrを使用して安全に取得)
-        user_id = getattr(session, "client_reference_id", None)
-        
-        # metadata も StripeObject であるため、同様に getattr を使用して抜き出す
-        metadata = getattr(session, "metadata", None)
-        plan = getattr(metadata, "plan", None) if metadata else None
+        # 1. セッションから情報を抜き出す
+        # client_reference_id は session の直下、plan は metadata の中にあります。
+        user_id = session.get("client_reference_id")
+        metadata = session.get("metadata", {})
+        plan = metadata.get("plan")
+
+        print(f"[WEBHOOK_RECEIVED] user_id: {user_id}, plan: {plan}", flush=True)
 
         # 2. 抜き出した情報で権限更新関数を実行
         if user_id and plan:
-            handle_successful_payment(user_id, plan)
+            try:
+                handle_successful_payment(user_id, plan)
+            except Exception as e:
+                print(f"[ERROR] DB更新中にエラーが発生しました: {e}", flush=True)
+                print(traceback.format_exc(), flush=True)
+                return "DB Update Error", 500
+        else:
+            print(f"⚠️ 必要なデータが不足しています。user_id: {user_id}, plan: {plan}", flush=True)
 
-    # Stripeへ正常受信を返す（必須）
+    # Stripeへ正常受信を返す
     return "OK", 200
-
+    
     # =========================================================
     # A) 購入完了（単発/回数券/月額）
     # =========================================================
