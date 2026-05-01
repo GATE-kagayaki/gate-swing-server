@@ -4249,29 +4249,31 @@ def handle_successful_payment(user_id: str, plan: str):
     now = datetime.now(timezone.utc)
 
     if plan == "single":
-        # 1回券：残り回数を +1
-        doc_ref.update({
+        doc_ref.set({
             "plan": "single",
+            "status": "paid",
             "ticket_remaining": firestore.Increment(1),
             "updated_at": firestore.SERVER_TIMESTAMP
-        })
+        }, merge=True)
+
     elif plan == "ticket":
-        # 5回券：残り回数を +5
-        doc_ref.update({
+        doc_ref.set({
             "plan": "ticket",
+            "status": "paid",
             "ticket_remaining": firestore.Increment(5),
             "updated_at": firestore.SERVER_TIMESTAMP
-        })
+        }, merge=True)
+
     elif plan == "monthly":
-        # 月額プラン：期限を30日後に設定
-        from datetime import timedelta
         expire_at = now + timedelta(days=30)
-        doc_ref.update({
+        doc_ref.set({
             "plan": "monthly",
+            "status": "paid",
             "plan_expire_at": expire_at,
             "updated_at": firestore.SERVER_TIMESTAMP
-        })
-    print(f"[DB_UPDATE] User {user_id} の権限を {plan} に更新しました。")
+        }, merge=True)
+
+    print(f"[DB_UPDATE] User {user_id} の権限を {plan} に更新しました。", flush=True)
 
 @app.route("/stripe/checkout", methods=["POST"])
 def stripe_checkout():
