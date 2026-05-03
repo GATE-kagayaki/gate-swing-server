@@ -4459,41 +4459,6 @@ def stripe_webhook():
 
     event_type = event.type
 
-    # 決済完了イベントの処理
-    if event_type == "checkout.session.completed":
-        session = event.data.object
-
-        user_id = getattr(session, "client_reference_id", None)
-        session_id = getattr(session, "id", None)
-        session_mode = getattr(session, "mode", "")
-        customer_id = getattr(session, "customer", None)
-
-        plan = None
-
-        if session_mode == "subscription":
-            plan = "monthly"
-        else:
-            li = stripe.checkout.Session.list_line_items(session_id, limit=1)
-            first = li["data"][0] if li and getattr(li, "data", None) else None
-            price_id = getattr(getattr(first, "price", None), "id", None) if first else None
-
-            single_price_id = (os.environ.get("STRIPE_PRICE_SINGLE", "") or "").strip()
-            ticket_price_id = (os.environ.get("STRIPE_PRICE_TICKET", "") or "").strip()
-
-            if price_id == single_price_id:
-                plan = "single"
-            elif price_id == ticket_price_id:
-                plan = "ticket"
-
-        print(f"[WEBHOOK_RECEIVED] user_id: {user_id}, plan: {plan}", flush=True)
-
-        if user_id and plan:
-            handle_successful_payment(user_id, plan, customer_id)
-        else:
-            print(f"⚠️ 必要なデータが不足しています。user_id: {user_id}, plan: {plan}", flush=True)
-            
-    # Stripeへ正常受信を返す（必須）
-    return "OK", 200
     
     # =========================================================
     # A) 購入完了（単発/回数券/月額）
