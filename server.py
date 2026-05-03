@@ -4241,7 +4241,7 @@ def task_handler():
 # ==================================================
 # Stripe Checkout 作成
 # ==================================================    
-def handle_successful_payment(user_id: str, plan: str):
+def handle_successful_payment(user_id: str, plan: str, customer_id: str = None):
     """
     Firestoreのユーザー権限をプランに応じて更新する
     """
@@ -4272,6 +4272,9 @@ def handle_successful_payment(user_id: str, plan: str):
             "plan_expire_at": expire_at,
             "updated_at": firestore.SERVER_TIMESTAMP
         }, merge=True)
+
+    f customer_id:
+        doc_ref.set({"stripe_customer_id": customer_id}, merge=True)
 
     print(f"[DB_UPDATE] User {user_id} の権限を {plan} に更新しました。", flush=True)
 
@@ -4463,6 +4466,7 @@ def stripe_webhook():
         user_id = getattr(session, "client_reference_id", None)
         session_id = getattr(session, "id", None)
         session_mode = getattr(session, "mode", "")
+        customer_id = getattr(session, "customer", None)
 
         plan = None
 
@@ -4484,7 +4488,7 @@ def stripe_webhook():
         print(f"[WEBHOOK_RECEIVED] user_id: {user_id}, plan: {plan}", flush=True)
 
         if user_id and plan:
-            handle_successful_payment(user_id, plan)
+            handle_successful_payment(user_id, plan, customer_id)
         else:
             print(f"⚠️ 必要なデータが不足しています。user_id: {user_id}, plan: {plan}", flush=True)
             
