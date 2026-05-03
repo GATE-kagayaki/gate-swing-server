@@ -4273,7 +4273,7 @@ def handle_successful_payment(user_id: str, plan: str, customer_id: str = None):
             "updated_at": firestore.SERVER_TIMESTAMP
         }, merge=True)
 
-    f customer_id:
+    if customer_id:
         doc_ref.set({"stripe_customer_id": customer_id}, merge=True)
 
     print(f"[DB_UPDATE] User {user_id} の権限を {plan} に更新しました。", flush=True)
