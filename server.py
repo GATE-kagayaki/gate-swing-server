@@ -4811,15 +4811,8 @@ def handle_text_message(event):
             else:
                 reply = "URLの発行に失敗しました。お手数ですが事務局までご連絡ください。"
         else:
-            # stripe_idが空の場合のログ出力と適切なエラーハンドリング（修復用）
-            logging.error(f"[MANUAL REPAIR REQUIRED] Cancellation requested but no stripe_customer_id found for line_user_id={user_id}. Please manually link the customer ID in Firestore if they have an active subscription.")
-            reply = (
-                "決済情報が見つかりませんでした。\n"
-                "以前のシステムエラー等で決済情報の連携が漏れている可能性があります。\n\n"
-                f"お手数ですが、事務局へ以下のエラーコードをお伝えください。\n"
-                f"【ID: {user_id}】\n\n"
-                "早急に確認し、手動で連携修復・解約処理をご案内いたします。"
-            )
+            # stripe_idが空の場合は、解約するサブスクリプションがないと判定する
+            reply = "現在、有効なサブスクリプション（月額プラン）のご契約はありません。"
 
         # LINEへ返信して処理を終了
         line_bot_api.reply_message(event.reply_token, TextSendMessage(text=reply))
