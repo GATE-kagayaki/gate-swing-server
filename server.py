@@ -4063,7 +4063,8 @@ def task_handler():
             return jsonify({"ok": False, "error": "report not found"}), 404
 
         report = snap.to_dict() or {}
-        premium = bool(report.get("is_premium", False))
+        tickets = int(user_data.get("ticket_remaining", 0))
+        premium = (user_plan == "monthly") or (tickets > 0)
         user_inputs = report.get("user_inputs") or {}
         
         # --- [追加] ユーザー情報の取得（プラン、目標スコアなど） ---
