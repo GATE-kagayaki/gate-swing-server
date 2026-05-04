@@ -4063,15 +4063,18 @@ def task_handler():
             return jsonify({"ok": False, "error": "report not found"}), 404
 
         report = snap.to_dict() or {}
-        tickets = int(user_data.get("ticket_remaining", 0))
-        premium = (user_plan == "monthly") or (tickets > 0)
-        user_inputs = report.get("user_inputs") or {}
-        
-        # --- [追加] ユーザー情報の取得（プラン、目標スコアなど） ---
+
+        # --- ユーザー情報を先に取得 ---
         user_snap = db.collection("users").document(user_id).get()
         user_data = user_snap.to_dict() or {}
-        user_plan = user_data.get("plan", "free") # free, single, monthly
-        user_profile = user_data.get("profile", {}) # {current_avg_score: 100, target_score: 90} 等
+        user_plan = user_data.get("plan", "free")
+        user_profile = user_data.get("profile", {})
+        # ------------------------------
+
+        tickets = int(user_data.get("ticket_remaining", 0))
+        premium = (user_plan == "monthly") or (tickets > 0)
+
+        user_inputs = report.get("user_inputs") or {}
         # --------------------------------------------------------
 
               # 動画DL → 解析（＋overlayアップロード）
