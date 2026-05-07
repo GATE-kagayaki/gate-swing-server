@@ -4640,6 +4640,74 @@ def stripe_webhook():
         except Exception:
             print("❌ post-payment handler failed:", traceback.format_exc(), flush=True)
             return "Internal Error", 500
+
+    # =========================================================
+    # C) 無料トライアル終了前通知
+    # =========================================================
+    elif event_type == "customer.subscription.trial_will_end":
+        try:
+            subscription = event["data"]["object"]
+
+            customer_id = getattr(subscription, "customer", None)
+            trial_end_ts = getattr(subscription, "trial_end", None)
+
+            if not customer_id or not trial_end_ts:
+                return "OK", 200
+
+            users = (
+                db.collection("users")
+                .where("stripe_customer_id", "==", customer_id)
+                .limit(1)
+                .stream()
+            )
+
+            user_doc = next(users, None)
+
+            if not user_doc:
+                print(
+                    f"⚠️ user not found for customer_id={customer_id}",
+                    flush=True
+                )
+                return "OK", 200
+
+            line_user_id = user_doc.id
+
+            jst = timezone(timedelta(hours=9))
+
+            trial_end_str = (
+                datetime.fromtimestamp(trial_end_ts, tz=jst)
+                .strftime("%Y年%m月%d日")
+            )
+
+            message = (
+                "⛳️ GATEプレミアムプラン無料体験終了のお知らせ\n\n"
+                "いつもGATEをご利用いただきありがとうございます！\n\n"
+                "現在ご利用中のプレミアムプラン無料体験は、\n"
+                f"【{trial_end_str}】に終了予定です📅\n\n"
+                "無料期間終了後は、月額プランが自動で開始されます。\n\n"
+                "引き続き、AIスイング解析・比較分析・詳細レポートを"
+                "無制限でご利用いただけます🏌️‍♂️✨\n\n"
+                "もし継続をご希望されない場合は、"
+                "課金開始日前までに解約手続きをお願いいたします。"
+            )
+
+            safe_line_push(line_user_id, message, force=True)
+
+            print(
+                f"✅ Sent trial ending notice user={line_user_id} "
+                f"trial_end={trial_end_str}",
+                flush=True
+            )
+
+            return "OK", 200
+
+        except Exception:
+            print(
+                "❌ trial_will_end error:",
+                traceback.format_exc(),
+                flush=True
+            )
+            return "Internal Error", 500
             
     # =========================================================
     # B) 解約（サブスク削除）
