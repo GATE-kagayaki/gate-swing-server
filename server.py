@@ -2500,9 +2500,11 @@ def build_free_07(raw: Dict[str, Any]) -> Dict[str, Any]:
     # --- mean/std取得 ---
     sh_mean = float(sh.get("mean", 0.0))
     sh_std = float(sh.get("std", 0.0))
+    sh_max = float(sh.get("max", 0.0)) # 修正: 有料版に合わせてmaxを取得
 
     hip_mean = float(hip.get("mean", 0.0))
     hip_std = float(hip.get("std", 0.0))
+    hip_max = float(hip.get("max", 0.0)) # 追加: 有料版に合わせてmaxを取得
 
     w_mean = float(w.get("mean", 0.0))
     w_std = float(w.get("std", 0.0))
@@ -2521,16 +2523,16 @@ def build_free_07(raw: Dict[str, Any]) -> Dict[str, Any]:
     # --- 無料版用タグ推定（やや緩和） ---
     tags: List[str] = []
 
-    # 肩回転
-    if sh_mean < 80:
+    # 肩回転 (修正: 有料版に合わせ、meanではなくmaxを使用し、上限を115に変更)
+    if sh_max < 80:
         tags.append("肩回転不足")
-    elif sh_mean > 110:
+    elif sh_max > 115:
         tags.append("肩回転過多")
 
-    # 腰回転
-    if hip_mean < 30:
+    # 腰回転 (修正: 有料版に合わせ、meanではなくmaxを使用)
+    if hip_max < 30:
         tags.append("腰回転不足")
-    elif hip_mean > 60:
+    elif hip_max > 60:
         tags.append("腰回転過多")
 
     # 手首コック
@@ -2545,11 +2547,15 @@ def build_free_07(raw: Dict[str, Any]) -> Dict[str, Any]:
     elif xf_max > 70:
         tags.append("捻転差過多")
 
-    # 安定性
-    if head_mean > 6.5:
+    # 安定性 (修正: 有料版のjudge_head, judge_kneeの数値に統一)
+    if head_mean > 6.0:
         tags.append("頭部ブレ大")
-    if knee_mean > 10.0:
+        tags.append("上半身不安定")
+        
+    if knee_mean > 9.0:
         tags.append("膝ブレ大")
+        
+    if knee_mean > 11.0:
         tags.append("下半身不安定")
 
     # 前傾維持
@@ -2591,10 +2597,10 @@ def build_free_07(raw: Dict[str, Any]) -> Dict[str, Any]:
         lines.append(f"本動画では捻転差が max {xf_max:.1f}° で大きめで、肩と腰の連動を整える余地があります。")
 
     if "腰回転過多" in priorities:
-        lines.append(f"本動画では腰回転が mean {hip_mean:.1f}° で大きめで、下半身主導が強く出ています。")
+        lines.append(f"本動画では腰回転が max {hip_max:.1f}° で大きめで、下半身主導が強く出ています。") # 修正: mean -> max, hip_mean -> hip_maxに変更
 
     if "肩回転過多" in priorities:
-        lines.append(f"本動画では肩回転が mean {sh_mean:.1f}° で大きめで、上半身主導が強く出ています。")
+        lines.append(f"本動画では肩回転が max {sh_max:.1f}° で大きめで、上半身主導が強く出ています。")
 
     if "コック過多" in priorities:
         lines.append(f"本動画では手首コックが mean {w_mean:.1f}° で大きめで、手元の操作量が増えやすい状態です。")
@@ -2613,16 +2619,16 @@ def build_free_07(raw: Dict[str, Any]) -> Dict[str, Any]:
     # --- 良い点（やや緩和） ---
     good_points: List[str] = []
 
-    if 80 <= sh_mean <= 110:
+    if 80 <= sh_max <= 115: # 修正: 110 -> 115 に変更
         good_points.append("肩の回旋量は基準レンジに収まっています。")
 
     if sh_std <= 18:
         good_points.append("肩の回し幅は大きく崩れておらず、上半身の再現性の土台があります。")
 
-    if head_mean <= 6.5:
+    if head_mean <= 6.0: # 修正: 6.5 -> 6.0 に変更
         good_points.append("頭部ブレは比較的抑えられており、軸は大きく崩れていません。")
 
-    if knee_mean <= 10.0:
+    if knee_mean <= 9.0: # 修正: 10.0 -> 9.0 に変更
         good_points.append("膝ブレは比較的抑えられており、下半身は大きく流れていません。")
 
     if xf_max >= 30:
@@ -2637,7 +2643,7 @@ def build_free_07(raw: Dict[str, Any]) -> Dict[str, Any]:
         lines.append("良い点： 大きな破綻は見られません。")
 
     lines.append("")
-    lines.append("有料版では、部位別評価（02〜06）で主因を特定し、総合評価の精度を上げた上で、練習ドリルとフィッティング指針まで提示します。")
+    lines.append("有料版では、スイングのスコア化により成長を楽しみながら確認できるほか、部位別の深掘りや練習ドリルも提示します。さらに月額会員プランでは、直近5回の分析結果と比較した進捗もご確認いただけます。")
 
     return {
         "title": "07. 総合評価（無料版：プロ目線）",
@@ -2652,6 +2658,7 @@ def build_free_07(raw: Dict[str, Any]) -> Dict[str, Any]:
         },
     }
 
+# ===============================================
 # ==================================================
 # 08 ドリル（07の優先順位連動 ＋ バリエーション拡充版）
 # ==================================================
