@@ -4372,10 +4372,26 @@ def stripe_checkout():
             monthly_price_id = os.environ.get("STRIPE_PRICE_ID", "").strip()
             if not monthly_price_id:
                 monthly_price_id = os.environ.get("STRIPE_PRICE_MONTHLY", "").strip()
-            session_kwargs["line_items"] = [{"price": monthly_price_id, "quantity": 1}]
-            session_kwargs["subscription_data"] = {"trial_period_days": 14}
+
+            session_kwargs["line_items"] = [
+                {"price": monthly_price_id, "quantity": 1}
+            ]
+
+            user_ref = db.collection("users").document(line_user_id)
+            user_data = user_ref.get().to_dict() or {}
+            monthly_trial_used = bool(
+                user_data.get("monthly_trial_used", False)
+            )
+
+            if not monthly_trial_used:
+                session_kwargs["subscription_data"] = {
+                    "trial_period_days": 14
+                }
+
         else:
-            session_kwargs["line_items"] = [{"price": price_id, "quantity": 1}]
+            session_kwargs["line_items"] = [
+                {"price": price_id, "quantity": 1}
+            ]
 
         session = stripe.checkout.Session.create(**session_kwargs)
         return jsonify({"checkout_url": session.url}), 200
@@ -4407,12 +4423,23 @@ def stripe_checkout_monthly_get():
         if not monthly_price_id:
             monthly_price_id = os.environ.get("STRIPE_PRICE_MONTHLY", "").strip()
             
+               user_ref = db.collection("users").document(line_user_id)
+        user_data = user_ref.get().to_dict() or {}
+        monthly_trial_used = bool(
+            user_data.get("monthly_trial_used", False)
+        )
+
+        subscription_data = {}
+
+        if not monthly_trial_used:
+            subscription_data["trial_period_days"] = 14
+
         session = stripe.checkout.Session.create(
             mode="subscription",
             payment_method_types=["card"],
             line_items=[{"price": monthly_price_id, "quantity": 1}],
             client_reference_id=line_user_id,
-            subscription_data={"trial_period_days": 14},
+            subscription_data=subscription_data,
             metadata={
                 "plan": "monthly",
                 "line_user_id": line_user_id
@@ -4420,6 +4447,7 @@ def stripe_checkout_monthly_get():
             success_url=success_url,
             cancel_url=cancel_url,
         )
+
         return redirect(session.url)
     except Exception as e:
         import traceback
@@ -4567,6 +4595,7 @@ def stripe_webhook():
                 exp = datetime.now(timezone.utc) + timedelta(days=14)
                 update_data["plan_expire_at"] = exp
                 update_data["monthly_reset"] = exp.strftime("%Y-%m-%d")
+                update_data["monthly_trial_used"] = True
 
             if not is_monthly:
                 update_data["ticket_remaining"] = firestore.Increment(add_tickets)
