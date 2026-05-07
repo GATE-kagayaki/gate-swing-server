@@ -4082,22 +4082,30 @@ def task_handler():
         # --- [追加] 単発/回数券は残数を1消費 ---
         if user_plan in ("single", "ticket"):
             if tickets <= 0:
-                # 本来ここに来ない想定だが、二重送信等で起き得る
-                # ここでは減らさず、レポート側に記録して冪等化だけは完了させる
-                report_ref.set(
-                    {
-                        "entitlement_consumed": True,
-                        "entitlement_type": user_plan,
-                        "entitlement_error": "no_ticket_remaining",
-                    },
-                    merge=True,
-                )
-                return jsonify({"ok": False, "error": "no_ticket_remaining"}), 400
-
-            # チケット残数を1減らしてデータベースを更新
-            user_ref.update({
-                "ticket_remaining": tickets - 1
-            })
+                if user_id in FORCE_PREMIUM_USER_IDS or bool(report.get("is_premium", False)):
+                    report_ref.set(
+                        {
+                            "entitlement_consumed": True,
+                            "entitlement_type": user_plan,
+                            "entitlement_error": None,
+                            "entitlement_bypass": "force_premium_or_report_premium",
+                        },
+                        merge=True,
+                    )
+                else:
+                    report_ref.set(
+                        {
+                            "entitlement_consumed": True,
+                            "entitlement_type": user_plan,
+                            "entitlement_error": "no_ticket_remaining",
+                        },
+                        merge=True,
+                    )
+                    return jsonify({"ok": False, "error": "no_ticket_remaining"}), 400
+            else:
+                user_ref.update({
+                    "ticket_remaining": tickets - 1
+                })
         # --------------------------------------
 
         user_inputs = report.get("user_inputs") or {}
