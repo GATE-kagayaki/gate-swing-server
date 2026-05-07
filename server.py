@@ -592,6 +592,8 @@ def create_cloud_task(report_id: str, user_id: str, message_id: str) -> str:
             },
         }
     }
+    print(f"[TASK URL] {TASK_HANDLER_URL}", flush=True)
+    print(f"[TASK PAYLOAD] {payload.decode('utf-8')}", flush=True)
 
     resp = tasks_client.create_task(parent=queue_path, task=task)
     return resp.name
