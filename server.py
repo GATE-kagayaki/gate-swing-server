@@ -4069,7 +4069,7 @@ def task_handler():
         report = snap.to_dict() or {}
 
         # --- ユーザー情報を先に取得 ---
-        user_ref = db.collection("users").document(user_id) # 書き込み用に参照を変数化
+        user_ref = db.collection("users").document(user_id)
         user_snap = user_ref.get()
         user_data = user_snap.to_dict() or {}
         user_plan = user_data.get("plan", "free")
@@ -4077,7 +4077,13 @@ def task_handler():
         # ------------------------------
 
         tickets = int(user_data.get("ticket_remaining", 0))
-        premium = (user_plan == "monthly") or (tickets > 0)
+
+        premium = (
+            user_id in FORCE_PREMIUM_USER_IDS
+            or bool(report.get("is_premium", False))
+            or user_plan == "monthly"
+            or (tickets > 0)
+        )
 
         # --- [追加] 単発/回数券は残数を1消費 ---
         if user_plan in ("single", "ticket"):
