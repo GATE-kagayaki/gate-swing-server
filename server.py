@@ -4423,7 +4423,7 @@ def stripe_checkout_monthly_get():
         if not monthly_price_id:
             monthly_price_id = os.environ.get("STRIPE_PRICE_MONTHLY", "").strip()
             
-               user_ref = db.collection("users").document(line_user_id)
+        user_ref = db.collection("users").document(line_user_id)
         user_data = user_ref.get().to_dict() or {}
         monthly_trial_used = bool(
             user_data.get("monthly_trial_used", False)
