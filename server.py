@@ -4051,7 +4051,9 @@ def upload_video_to_gcs(local_path: str, report_id: str) -> dict:
 @app.route("/task-handler", methods=["POST"])
 def task_handler():
     try:
+        print(f"[TASK RAW] {request.get_data(as_text=True)}", flush=True)
         data = request.get_json(silent=True) or {}
+        print(f"[TASK JSON] {data}", flush=True)
         report_id = data.get("report_id")
         user_id = data.get("user_id")
         message_id = data.get("message_id")
