@@ -4538,6 +4538,172 @@ def stripe_webhook():
 
     event_type = event.type
 
+    # =====================================================
+    # invoice.paid
+    # =====================================================
+    if event_type == "invoice.paid":
+
+        invoice = event["data"]["object"]
+
+        customer_id = invoice.get("customer")
+        subscription_id = invoice.get("subscription")
+
+        print(
+            f"✅ invoice.paid customer_id={customer_id} subscription_id={subscription_id}",
+            flush=True
+        )
+
+        if customer_id and subscription_id:
+
+            try:
+                # Subscription本体から次回更新日取得
+                sub = stripe.Subscription.retrieve(subscription_id)
+
+                period_end_ts = sub.get("current_period_end")
+
+                if period_end_ts:
+
+                    exp = datetime.fromtimestamp(
+                        period_end_ts,
+                        timezone.utc
+                    )
+
+                    next_reset_str = exp.strftime("%Y-%m-%d")
+
+                    users_query = db.collection("users").where(
+                        "stripe_customer_id",
+                        "==",
+                        customer_id
+                    ).limit(1).stream()
+
+                    target_user_doc = None
+
+                    for doc in users_query:
+                        target_user_doc = doc
+                        break
+
+                    if not target_user_doc:
+                        print(
+                            f"⚠️ User not found: {customer_id}",
+                            flush=True
+                        )
+                        return "OK", 200
+
+                    user_data = target_user_doc.to_dict() or {}
+                    plan = user_data.get("plan")
+
+                    # monthlyプラン以外は更新しない
+                    if plan != "monthly":
+
+                        print(
+                            f"ℹ️ skip webhook. not monthly plan: {plan}",
+                            flush=True
+                        )
+
+                        return "OK", 200
+
+                    target_user_doc.reference.update({
+                        "plan_expire_at": exp,
+                        "monthly_reset": next_reset_str,
+                        "status": sub.get("status", "paid"),
+                        "last_payment_date": firestore.SERVER_TIMESTAMP,
+                        "updated_at": firestore.SERVER_TIMESTAMP
+                    })
+
+                    print(
+                        f"✅ monthly_reset updated: {next_reset_str}",
+                        flush=True
+                    )
+
+            except Exception:
+                print(
+                    f"❌ invoice.paid error: {traceback.format_exc()}",
+                    flush=True
+                )
+
+                return "Internal Error", 500
+
+    # =====================================================
+    # customer.subscription.updated
+    # =====================================================
+    elif event_type == "customer.subscription.updated":
+
+        sub = event["data"]["object"]
+
+        customer_id = sub.get("customer")
+        period_end_ts = sub.get("current_period_end")
+        status = sub.get("status")
+
+        print(
+            f"✅ subscription.updated customer_id={customer_id}",
+            flush=True
+        )
+
+        if customer_id and period_end_ts:
+
+            try:
+                exp = datetime.fromtimestamp(
+                    period_end_ts,
+                    timezone.utc
+                )
+
+                next_reset_str = exp.strftime("%Y-%m-%d")
+
+                users_query = db.collection("users").where(
+                    "stripe_customer_id",
+                    "==",
+                    customer_id
+                ).limit(1).stream()
+
+                target_user_doc = None
+
+                for doc in users_query:
+                    target_user_doc = doc
+                    break
+
+                if not target_user_doc:
+                    print(
+                        f"⚠️ User not found: {customer_id}",
+                        flush=True
+                    )
+
+                    return "OK", 200
+
+                user_data = target_user_doc.to_dict() or {}
+                plan = user_data.get("plan")
+
+                # monthlyプラン以外は更新しない
+                if plan != "monthly":
+
+                    print(
+                        f"ℹ️ skip subscription.updated. not monthly: {plan}",
+                        flush=True
+                    )
+
+                    return "OK", 200
+
+                target_user_doc.reference.update({
+                    "plan_expire_at": exp,
+                    "monthly_reset": next_reset_str,
+                    "status": status,
+                    "updated_at": firestore.SERVER_TIMESTAMP
+                })
+
+                print(
+                    f"✅ subscription.updated: {next_reset_str}",
+                    flush=True
+                )
+
+            except Exception:
+                print(
+                    f"❌ subscription.updated error: {traceback.format_exc()}",
+                    flush=True
+                )
+
+                return "Internal Error", 500
+
+    return "OK", 200
+
     
     # =========================================================
     # A) 購入完了（単発/回数券/月額）
