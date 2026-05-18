@@ -3766,74 +3766,69 @@ def build_comparison_block(comparison: Dict[str, Any]) -> Dict[str, Any]:
 
     detailed_results = []
     for key, label in label_map.items():
-        d_mean = deltas.get(f"{key}_mean") if f"{key}_mean" in deltas else deltas.get(key)
-        if d_mean is None: continue
-
-        is_positive_metric = key in ["shoulder", "hip", "x_factor"]
+        # 【変更】以前は deltas を読み込んでいましたが、今回は radar_scores を読み込みます
+        curr_score = radar_scores_current.get(key)
+        past_score = radar_scores_past.get(key)
         
-        # 閾値（2.0）を用いて😄😐😫を判定
-        if is_positive_metric:
-            if d_mean >= 2.0:
-                emoji = "😄"
-                is_improved = True
-            elif d_mean <= -2.0:
-                emoji = "😫"
-                is_improved = False
-            else:
-                emoji = "😐"
-                is_improved = True
-        else:
-            if d_mean <= -2.0:
-                emoji = "😄"
-                is_improved = True
-            elif d_mean >= 2.0:
-                emoji = "😫"
-                is_improved = False
-            else:
-                emoji = "😐"
-                is_improved = True
+        if curr_score is None or past_score is None: 
+            continue
 
-        # 中学生でもわかるやさしい言葉に変換
+        # 【変更】スコアの差分で良し悪しを判定（100点満点スケール）
+        # +5.0（0.5点）以上改善で 😄、-5.0（0.5点）以上悪化で 😫、それ以外は 😐
+        # すべて「スコアが増えた＝良くなった」で統一されるためロジックがシンプルになります
+        score_diff = curr_score - past_score
+        
+        if score_diff >= 5.0:
+            emoji = "😄"
+            is_improved = True
+        elif score_diff <= -5.0:
+            emoji = "😫"
+            is_improved = False
+        else:
+            emoji = "😐"
+            is_improved = True
+
+        # コメントの生成（単純な増減ではなく、理想に対してどうだったかでテキストを出し分け）
         if key == "shoulder":
-            if emoji == "😄": msg = "いつもより肩がしっかり回っています"
-            elif emoji == "😫": msg = "いつもより肩の回りが浅いです"
-            else: msg = "肩の回りは平均的です"
+            if emoji == "😄": msg = "いつもより肩の回転が理想に近いです"
+            elif emoji == "😫": msg = "いつもより肩の回転が理想からズレています"
+            else: msg = "肩の回転はいつも通りです"
         elif key == "hip":
-            if emoji == "😄": msg = "いつもより腰がしっかり回っています"
-            elif emoji == "😫": msg = "いつもより腰の回りが浅いです"
-            else: msg = "腰の回りは平均的です"
+            if emoji == "😄": msg = "いつもより腰の回転が理想に近いです"
+            elif emoji == "😫": msg = "いつもより腰の回転が理想からズレています"
+            else: msg = "腰の回転はいつも通りです"
         elif key == "wrist":
-            if emoji == "😄": msg = "いつもより手首のほどけが抑えられています"
-            elif emoji == "😫": msg = "いつもより手首がほどけるのが早いです"
-            else: msg = "手首のほどけ具合は平均的です"
+            if emoji == "😄": msg = "いつもより手首の角度が理想に近いです"
+            elif emoji == "😫": msg = "いつもより手首の角度が理想からズレています"
+            else: msg = "手首の角度はいつも通りです"
         elif key == "head":
             if emoji == "😄": msg = "いつもより頭が動かず打てています"
             elif emoji == "😫": msg = "いつもより頭が大きく動いています"
-            else: msg = "頭の動きは平均的です"
+            else: msg = "頭の動きはいつも通りです"
         elif key == "knee":
             if emoji == "😄": msg = "いつもより足元がしっかり踏ん張れています"
             elif emoji == "😫": msg = "いつもより足元が大きくゆれています"
-            else: msg = "足元の動きは平均的です"
+            else: msg = "足元の動きはいつも通りです"
         elif key == "x_factor":
-            if emoji == "😄": msg = "いつもより体がいっぱいねじれています"
-            elif emoji == "😫": msg = "いつもより体のねじれが少ないです"
-            else: msg = "体のねじれは平均的です"
+            if emoji == "😄": msg = "いつもより理想的な体のねじれが作れています"
+            elif emoji == "😫": msg = "いつもより体のねじれが理想からズレています"
+            else: msg = "体のねじれはいつも通りです"
         elif key == "spine":
             if emoji == "😄": msg = "いつもより体の傾きがキープできています"
             elif emoji == "😫": msg = "いつもより打つ時に体が起き上がっています"
-            else: msg = "体の傾き具合は平均的です"
+            else: msg = "体の傾き具合はいつも通りです"
         elif key == "spine_top":
             if emoji == "😄": msg = "振り上げた時に体の傾きがキープできています"
             elif emoji == "😫": msg = "振り上げた時に体が起き上がっています"
-            else: msg = "振り上げた時の体の傾きは平均的です"
+            else: msg = "振り上げた時の体の傾きはいつも通りです"
         elif key == "spine_impact":
             if emoji == "😄": msg = "打つ時に体の傾きがキープできています"
             elif emoji == "😫": msg = "打つ時に体が起き上がっています"
-            else: msg = "打つ時の体の傾きは平均的です"
+            else: msg = "打つ時の体の傾きはいつも通りです"
         else:
             msg = label
 
-        # 特大顔文字化（CSS/HTML側を変えずに行内スタイルで対応）
+       # 特大顔文字化（CSS/HTML側を変えずに行内スタイルで対応）
         huge_emoji = f"<span style='font-size: 1.5rem; vertical-align: middle; margin-right: 4px;'>{emoji}</span>"
 
         detailed_results.append({
@@ -3849,6 +3844,8 @@ def build_comparison_block(comparison: Dict[str, Any]) -> Dict[str, Any]:
         "subtitle": f"過去{count}回の平均データとの全指標比較",
         "detailed_results": detailed_results,
         "deltas": deltas,
+        "radar_scores_current": radar_scores_current, 
+        "radar_scores_past": radar_scores_past,       
         "past_sessions_count": count
     }
 
