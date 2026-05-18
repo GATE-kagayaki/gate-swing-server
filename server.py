@@ -3663,6 +3663,64 @@ def get_past_reports(user_id: str, current_report_id: str, club_type: str, limit
     past_data.sort(key=lambda x: x.get("completed_at") or "", reverse=True)
     return past_data[:limit]
 
+def _calculate_item_score(key: str, val: float) -> float:
+    """
+    各項目の絶対値を、10点満点（レーダーチャート用 0〜100スケール）のスコアに変換する。
+    10点＝100スコア、1点の減点＝-10スコア。
+    """
+    if key == "shoulder":
+        # 基準値: 100°。5% (5°) ズレるごとに -1点(-10スコア)
+        diff = abs(val - 100.0)
+        score = 100.0 - (diff / 5.0) * 10.0
+        return max(0.0, min(100.0, score))
+        
+    elif key == "hip":
+        # 基準値: 50°。5% (2.5°) ズレるごとに -1点(-10スコア)
+        diff = abs(val - 50.0)
+        score = 100.0 - (diff / 2.5) * 10.0
+        return max(0.0, min(100.0, score))
+
+    elif key == "wrist":
+        # 基準値: 60°。5% (3.0°) ズレるごとに -1点(-10スコア)
+        diff = abs(val - 60.0)
+        score = 100.0 - (diff / 3.0) * 10.0
+        return max(0.0, min(100.0, score))
+
+    elif key == "x_factor":
+        # 基準値: 50°。5% (2.5°) ズレるごとに -1点(-10スコア)
+        diff = abs(val - 50.0)
+        score = 100.0 - (diff / 2.5) * 10.0
+        return max(0.0, min(100.0, score))
+
+    elif key == "head":
+        # 基準値: 3.0%以下で10点(100スコア)。そこから 2.0% 増えるごとに -1点(-10スコア)
+        if val <= 3.0:
+            return 100.0
+        else:
+            diff = val - 3.0
+            score = 100.0 - (diff / 2.0) * 10.0
+            return max(0.0, min(100.0, score))
+
+    elif key == "knee":
+        # 基準値: 5.0%以下で10点(100スコア)。そこから 2.0% 増えるごとに -1点(-10スコア)
+        if val <= 5.0:
+            return 100.0
+        else:
+            diff = val - 5.0
+            score = 100.0 - (diff / 2.0) * 10.0
+            return max(0.0, min(100.0, score))
+        
+    elif key in ["spine", "spine_top", "spine_impact"]:
+        # 基準値: 3.0°以下で10点(100スコア)。そこから 1.0° 増えるごとに -1点(-10スコア)
+        if val <= 3.0:
+            return 100.0
+        else:
+            diff = val - 3.0
+            score = 100.0 - (diff / 1.0) * 10.0
+            return max(0.0, min(100.0, score))
+
+    return 50.0 # 未定義の項目
+
 def calculate_full_comparison(current_raw: dict, past_reports: list):
     """
     全解析項目の過去平均との差分を計算し、グラフ用の履歴データを作成します。
