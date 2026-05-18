@@ -4596,7 +4596,7 @@ def stripe_webhook():
     # =====================================================
     # invoice.paid
     # =====================================================
-    if event_type == "invoice.paid":
+    if event_type in ["invoice.paid", "invoice.payment_succeeded"]:
 
         invoice = event["data"]["object"]
 
@@ -4611,8 +4611,18 @@ def stripe_webhook():
         if customer_id and subscription_id:
 
             try:
-                # Subscription本体から次回更新日取得
+                # Subscription本体取得
                 sub = stripe.Subscription.retrieve(subscription_id)
+
+                status = sub.get("status", "active")
+
+                # 有効状態のみ処理
+                if status not in ["active", "trialing"]:
+                    print(
+                        f"ℹ️ subscription inactive status={status}",
+                        flush=True
+                    )
+                    return "OK", 200
 
                 period_end_ts = sub.get("current_period_end")
 
@@ -4625,11 +4635,12 @@ def stripe_webhook():
 
                     next_reset_str = exp.strftime("%Y-%m-%d")
 
-                    users_query = db.collection("users").where(
-                        "stripe_customer_id",
-                        "==",
-                        customer_id
-                    ).limit(1).stream()
+                    users_query = (
+                        db.collection("users")
+                        .where("stripe_customer_id", "==", customer_id)
+                        .limit(1)
+                        .stream()
+                    )
 
                     target_user_doc = None
 
@@ -4644,29 +4655,18 @@ def stripe_webhook():
                         )
                         return "OK", 200
 
-                    user_data = target_user_doc.to_dict() or {}
-                    plan = user_data.get("plan")
-
-                    # monthlyプラン以外は更新しない
-                    if plan != "monthly":
-
-                        print(
-                            f"ℹ️ skip webhook. not monthly plan: {plan}",
-                            flush=True
-                        )
-
-                        return "OK", 200
-
+                    # monthlyプランとして確定更新
                     target_user_doc.reference.update({
+                        "plan": "monthly",
                         "plan_expire_at": exp,
                         "monthly_reset": next_reset_str,
-                        "status": sub.get("status", "paid"),
+                        "status": status,
                         "last_payment_date": firestore.SERVER_TIMESTAMP,
                         "updated_at": firestore.SERVER_TIMESTAMP
                     })
 
                     print(
-                        f"✅ monthly_reset updated: {next_reset_str}",
+                        f"✅ monthly updated user={target_user_doc.id} next_reset={next_reset_str}",
                         flush=True
                     )
 
@@ -4677,7 +4677,7 @@ def stripe_webhook():
                 )
 
                 return "Internal Error", 500
-
+                
     # =====================================================
     # customer.subscription.updated
     # =====================================================
