@@ -4765,9 +4765,9 @@ def stripe_webhook():
     # =========================================================
     if event_type == "checkout.session.completed":
         session = event["data"]["object"]
-        event_id = getattr(event, "id", None)
-        session_id = getattr(session, "id", None)
-        line_user_id = getattr(session, "client_reference_id", None)
+        event_id = event.get("id") if hasattr(event, "get") else getattr(event, "id", None)
+        session_id = session.get("id") if hasattr(session, "get") else getattr(session, "id", None)
+        line_user_id = session.get("client_reference_id") if hasattr(session, "get") else getattr(session, "client_reference_id", None)
 
         if not line_user_id:
             print("❌ client_reference_id missing", flush=True)
@@ -4781,9 +4781,9 @@ def stripe_webhook():
             single_price_id = (os.environ.get("STRIPE_PRICE_SINGLE", "") or "").strip()
             ticket_price_id = (os.environ.get("STRIPE_PRICE_TICKET", "") or "").strip()
 
-            metadata = getattr(session, "metadata", None)
-            metadata_plan = getattr(metadata, "plan", "") if metadata else ""
-            session_mode = getattr(session, "mode", "")
+            metadata = session.get("metadata") if hasattr(session, "get") else getattr(session, "metadata", None)
+            metadata_plan = metadata.get("plan", "") if metadata and hasattr(metadata, "get") else (getattr(metadata, "plan", "") if metadata else "")
+            session_mode = session.get("mode", "") if hasattr(session, "get") else getattr(session, "mode", "")
 
             is_monthly = (session_mode == "subscription" or metadata_plan == "monthly")
 
@@ -4828,7 +4828,7 @@ def stripe_webhook():
             if not is_monthly:
                 update_data["ticket_remaining"] = firestore.Increment(add_tickets)
 
-            customer_id = getattr(session, "customer", None)
+            customer_id = session.get("customer") if hasattr(session, "get") else getattr(session, "customer", None)
             if customer_id:
                 update_data["stripe_customer_id"] = customer_id
 
