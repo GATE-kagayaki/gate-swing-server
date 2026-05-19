@@ -3779,16 +3779,25 @@ def calculate_full_comparison(current_raw: dict, past_reports: list):
     past_spine_val = abs(past_spine_top_avg - past_spine_impact_avg)
 
     # --- スコア化 ---
-    # グラフに描画する7項目（spine_top, spine_impact を除く項目）のみスコア化を行う
+    # グラフに描画する 7 項目のみスコア化を行う
     for key in ["shoulder", "hip", "wrist", "head", "knee", "x_factor", "spine"]:
-        # --- 今回のスイングのスコア算出 ---
+        # 回転系や捻転差の項目は max を優先、それ以外（head/knee/spine）は mean 系のロジックを適用
+        is_max_metric = key in ["shoulder", "hip", "wrist", "x_factor"]
+
+        # --- ① 今回のスイングのスコア算出 ---
         if key == "spine":
             curr_score = _calculate_item_score(key, current_spine_val)
         else:
-            curr_score = _calculate_item_score(key, get_val(current_raw.get(key, {})))
+            c_data = current_raw.get(key, {})
+            # 回転系は max の値を抽出、なければ mean を取る
+            if isinstance(c_data, dict):
+                c_val = float(c_data.get("max") if is_max_metric and "max" in c_data else c_data.get("mean", 0))
+            else:
+                c_val = float(c_data or 0)
+            curr_score = _calculate_item_score(key, c_val)
         radar_scores_current[key] = round(curr_score)
 
-        # --- 過去平均スコアの算出（各過去セッションのスコアを個別に算出して平均する） ---
+        # --- ② 過去平均スコアの算出 ---
         past_scores = []
         for r in past_raws:
             if key == "spine":
@@ -3797,8 +3806,12 @@ def calculate_full_comparison(current_raw: dict, past_reports: list):
                 p_spine_val = abs(p_top - p_impact)
                 score = _calculate_item_score(key, p_spine_val)
             else:
-                # 正確なキー（"shoulder" 等）をそのまま関数に渡し、50点への張り付きを防ぐ
-                score = _calculate_item_score(key, get_val(r.get(key, {})))
+                r_data = r.get(key, {})
+                if isinstance(r_data, dict):
+                    p_val = float(r_data.get("max") if is_max_metric and "max" in r_data else r_data.get("mean", 0))
+                else:
+                    p_val = float(r_data or 0)
+                score = _calculate_item_score(key, p_val)
             past_scores.append(score)
             
         avg_score = sum(past_scores) / num_past if num_past > 0 else 0
