@@ -4757,13 +4757,11 @@ def stripe_webhook():
 
                 return "Internal Error", 500
 
-    return "OK", 200
-
     
     # =========================================================
     # A) 購入完了（単発/回数券/月額）
     # =========================================================
-    if event_type == "checkout.session.completed":
+    elif event_type == "checkout.session.completed":
         session = event["data"]["object"]
         event_id = event.get("id") if hasattr(event, "get") else getattr(event, "id", None)
         session_id = session.get("id") if hasattr(session, "get") else getattr(session, "id", None)
