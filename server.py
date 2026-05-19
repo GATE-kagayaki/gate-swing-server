@@ -3779,6 +3779,7 @@ def calculate_full_comparison(current_raw: dict, past_reports: list):
     past_spine_val = abs(past_spine_top_avg - past_spine_impact_avg)
 
     # --- スコア化 ---
+    # グラフに描画する7項目（spine_top, spine_impact を除く項目）のみスコア化を行う
     for key in ["shoulder", "hip", "wrist", "head", "knee", "x_factor", "spine"]:
         # --- 今回のスイングのスコア算出 ---
         if key == "spine":
@@ -3796,6 +3797,7 @@ def calculate_full_comparison(current_raw: dict, past_reports: list):
                 p_spine_val = abs(p_top - p_impact)
                 score = _calculate_item_score(key, p_spine_val)
             else:
+                # 正確なキー（"shoulder" 等）をそのまま関数に渡し、50点への張り付きを防ぐ
                 score = _calculate_item_score(key, get_val(r.get(key, {})))
             past_scores.append(score)
             
