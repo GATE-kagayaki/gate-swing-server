@@ -3728,28 +3728,15 @@ def calculate_full_comparison(current_raw: dict, past_reports: list):
     if not past_reports:
         return {"past_sessions_count": 0, "deltas": {}, "history": []}
 
-    # 【復元】spine_top と spine_impact を評価対象に追加
+    # 【仕様通り】前傾角の差分を正しく計算するため、生データの集計は spine_top / spine_impact を含む9項目で行う
     metrics_keys = ["shoulder", "hip", "wrist", "head", "knee", "x_factor", "spine", "spine_top", "spine_impact"]
     deltas = {}
     past_raws = [r.get("raw", {}) for r in past_reports]
     num_past = len(past_raws)
     
-    # 【復元】レーダーチャート用のスコア保存先
+    # レーダーチャート用のスコア保存先
     radar_scores_current = {}
     radar_scores_past = {}
-    
-    # 【復元】昨日設定した「項目ごとの設定（目標値と許容範囲）」
-    item_settings = {
-        "shoulder": {"target": 90, "range": 30},
-        "hip": {"target": 45, "range": 20},
-        "wrist": {"target": 90, "range": 30},
-        "head": {"target": 0, "range": 15},
-        "knee": {"target": 0, "range": 15},
-        "x_factor": {"target": 45, "range": 20},
-        "spine": {"target": 45, "range": 20},
-        "spine_top": {"target": 45, "range": 20},
-        "spine_impact": {"target": 45, "range": 20}
-    }
 
     for key in metrics_keys:
         # 生データの取得（辞書型以外が入ってきた場合のエラーも回避）
@@ -3776,26 +3763,50 @@ def calculate_full_comparison(current_raw: dict, past_reports: list):
         avg_std = sum(past_stds) / num_past if num_past > 0 else 0
         deltas[f"{key}_std"] = round(curr_std - avg_std, 2)
 
-        # 【復元】項目ごとの設定を適用したスコア化（100点満点）
-        settings = item_settings.get(key, {"target": 45, "range": 30})
-        target = settings["target"]
-        allowable = settings["range"]
+    # --- 【重要】前傾角（spine）の評価用数値をトップとインパクトの差分から直接算出 ---
+    # 今回のスイングの前傾角変化（度数）
+    curr_spine_top = current_raw.get("spine_top", {}).get("mean", 0)
+    curr_spine_impact = current_raw.get("spine_impact", {}).get("mean", 0)
+    current_spine_val = abs(curr_spine_top - curr_spine_impact)
 
-        # 今回のスコア
-        curr_diff = abs(curr_val - target)
-        curr_score = max(0, min(100, 100 - (curr_diff / allowable * 50)))
+    # 過去5回平均の前傾角変化（度数）
+    past_spine_top_avg = sum(r.get("spine_top", {}).get("mean", 0) for r in past_raws) / num_past if num_past > 0 else 0
+    past_spine_impact_avg = sum(r.get("spine_impact", {}).get("mean", 0) for r in past_raws) / num_past if num_past > 0 else 0
+    past_spine_val = abs(past_spine_top_avg - past_spine_impact_avg)
+    # --------------------------------------------------------------------------------
+
+    # グラフに描画する7項目（spine_top, spine_impact を除く項目）のみスコア化を行う
+    for key in ["shoulder", "hip", "wrist", "head", "knee", "x_factor", "spine"]:
+        if key == "spine":
+            # 前傾角の場合は、上で算出した「差分の度数」を評価関数に渡す
+            curr_score = _calculate_item_score(key, current_spine_val)
+            past_score = _calculate_item_score(key, past_spine_val)
+        else:
+            # それ以外の項目は、通常通り集計したmean（平均値）を評価関数に渡す
+            curr_raw_data = current_raw.get(key, {})
+            if not isinstance(curr_raw_data, dict):
+                curr_raw_data = {"mean": curr_raw_data}
+            c_val = curr_raw_data.get("mean", 0)
+            
+            past_vals = []
+            for r in past_raws:
+                r_data = r.get(key, {})
+                if not isinstance(r_data, dict):
+                    r_data = {"mean": r_data}
+                past_vals.append(r_data.get("mean", 0) or 0)
+            p_val = sum(past_vals) / num_past if num_past > 0 else 0
+
+            curr_score = _calculate_item_score(key, c_val)
+            past_score = _calculate_item_score(key, p_val)
+
         radar_scores_current[key] = round(curr_score)
-
-        # 過去平均のスコア
-        past_diff = abs(avg_val - target)
-        past_score = max(0, min(100, 100 - (past_diff / allowable * 50)))
         radar_scores_past[key] = round(past_score)
 
     return {
         "past_sessions_count": num_past,
         "deltas": deltas,
-        "radar_scores_current": radar_scores_current, # グラフにスコアを渡す
-        "radar_scores_past": radar_scores_past,       # グラフにスコアを渡す
+        "radar_scores_current": radar_scores_current, # 項目ごとのスコアをグラフへ渡す
+        "radar_scores_past": radar_scores_past,       # 項目ごとの平均スコアをグラフへ渡す
         "history": [
             {
                 "date": r.get("completed_at"), 
