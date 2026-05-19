@@ -3728,23 +3728,74 @@ def calculate_full_comparison(current_raw: dict, past_reports: list):
     if not past_reports:
         return {"past_sessions_count": 0, "deltas": {}, "history": []}
 
-    metrics_keys = ["shoulder", "hip", "wrist", "head", "knee", "x_factor", "spine"]
+    # 【復元】spine_top と spine_impact を評価対象に追加
+    metrics_keys = ["shoulder", "hip", "wrist", "head", "knee", "x_factor", "spine", "spine_top", "spine_impact"]
     deltas = {}
     past_raws = [r.get("raw", {}) for r in past_reports]
     num_past = len(past_raws)
     
+    # 【復元】レーダーチャート用のスコア保存先
+    radar_scores_current = {}
+    radar_scores_past = {}
+    
+    # 【復元】昨日設定した「項目ごとの設定（目標値と許容範囲）」
+    item_settings = {
+        "shoulder": {"target": 90, "range": 30},
+        "hip": {"target": 45, "range": 20},
+        "wrist": {"target": 90, "range": 30},
+        "head": {"target": 0, "range": 15},
+        "knee": {"target": 0, "range": 15},
+        "x_factor": {"target": 45, "range": 20},
+        "spine": {"target": 45, "range": 20},
+        "spine_top": {"target": 45, "range": 20},
+        "spine_impact": {"target": 45, "range": 20}
+    }
+
     for key in metrics_keys:
-        curr_val = current_raw.get(key, {}).get("mean", 0)
-        avg_val = sum(r.get(key, {}).get("mean", 0) for r in past_raws) / num_past
+        # 生データの取得（辞書型以外が入ってきた場合のエラーも回避）
+        curr_raw_data = current_raw.get(key, {})
+        if not isinstance(curr_raw_data, dict):
+            curr_raw_data = {"mean": curr_raw_data, "std": 0}
+            
+        curr_val = curr_raw_data.get("mean", 0)
+        curr_std = curr_raw_data.get("std", 0)
+        
+        # 過去平均の計算
+        past_vals = []
+        past_stds = []
+        for r in past_raws:
+            r_data = r.get(key, {})
+            if not isinstance(r_data, dict):
+                r_data = {"mean": r_data, "std": 0}
+            past_vals.append(r_data.get("mean", 0) or 0)
+            past_stds.append(r_data.get("std", 0) or 0)
+            
+        avg_val = sum(past_vals) / num_past if num_past > 0 else 0
         deltas[f"{key}_mean"] = round(curr_val - avg_val, 2)
         
-        curr_std = current_raw.get(key, {}).get("std", 0)
-        avg_std = sum(r.get(key, {}).get("std", 0) for r in past_raws) / num_past
+        avg_std = sum(past_stds) / num_past if num_past > 0 else 0
         deltas[f"{key}_std"] = round(curr_std - avg_std, 2)
+
+        # 【復元】項目ごとの設定を適用したスコア化（100点満点）
+        settings = item_settings.get(key, {"target": 45, "range": 30})
+        target = settings["target"]
+        allowable = settings["range"]
+
+        # 今回のスコア
+        curr_diff = abs(curr_val - target)
+        curr_score = max(0, min(100, 100 - (curr_diff / allowable * 50)))
+        radar_scores_current[key] = round(curr_score)
+
+        # 過去平均のスコア
+        past_diff = abs(avg_val - target)
+        past_score = max(0, min(100, 100 - (past_diff / allowable * 50)))
+        radar_scores_past[key] = round(past_score)
 
     return {
         "past_sessions_count": num_past,
         "deltas": deltas,
+        "radar_scores_current": radar_scores_current, # グラフにスコアを渡す
+        "radar_scores_past": radar_scores_past,       # グラフにスコアを渡す
         "history": [
             {
                 "date": r.get("completed_at"), 
@@ -3753,7 +3804,7 @@ def calculate_full_comparison(current_raw: dict, past_reports: list):
             } for r in past_reports
         ]
     }
-
+    
 def build_comparison_block(comparison: Dict[str, Any]) -> Dict[str, Any]:
     deltas = comparison.get("deltas", {})
     count = comparison.get("past_sessions_count", 0)
