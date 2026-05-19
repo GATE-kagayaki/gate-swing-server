@@ -3763,18 +3763,42 @@ def calculate_full_comparison(current_raw: dict, past_reports: list):
         avg_std = sum(past_stds) / num_past if num_past > 0 else 0
         deltas[f"{key}_std"] = round(curr_std - avg_std, 2)
 
-    # --- 【重要】前傾角（spine）の評価用数値をトップとインパクトの差分から直接算出 ---
+    # --- 【重要・型エラー修正】前傾角（spine）の評価用数値をトップとインパクトの差分から直接算出 ---
     # 今回のスイングの前傾角変化（度数）
-    curr_spine_top = current_raw.get("spine_top", {}).get("mean", 0)
-    curr_spine_impact = current_raw.get("spine_impact", {}).get("mean", 0)
+    curr_spine_top_raw = current_raw.get("spine_top", {})
+    if isinstance(curr_spine_top_raw, dict):
+        curr_spine_top = curr_spine_top_raw.get("mean", 0)
+    else:
+        curr_spine_top = curr_spine_top_raw if curr_spine_top_raw is not None else 0
+
+    curr_spine_impact_raw = current_raw.get("spine_impact", {})
+    if isinstance(curr_spine_impact_raw, dict):
+        curr_spine_impact = curr_spine_impact_raw.get("mean", 0)
+    else:
+        curr_spine_impact = curr_spine_impact_raw if curr_spine_impact_raw is not None else 0
+
     current_spine_val = abs(curr_spine_top - curr_spine_impact)
 
     # 過去5回平均の前傾角変化（度数）
-    past_spine_top_avg = sum(r.get("spine_top", {}).get("mean", 0) for r in past_raws) / num_past if num_past > 0 else 0
-    past_spine_impact_avg = sum(r.get("spine_impact", {}).get("mean", 0) for r in past_raws) / num_past if num_past > 0 else 0
+    past_spine_top_vals = []
+    past_spine_impact_vals = []
+    for r in past_raws:
+        r_top = r.get("spine_top", {})
+        if isinstance(r_top, dict):
+            past_spine_top_vals.append(r_top.get("mean", 0) or 0)
+        else:
+            past_spine_top_vals.append(r_top if r_top is not None else 0)
+
+        r_impact = r.get("spine_impact", {})
+        if isinstance(r_impact, dict):
+            past_spine_impact_vals.append(r_impact.get("mean", 0) or 0)
+        else:
+            past_spine_impact_vals.append(r_impact if r_impact is not None else 0)
+
+    past_spine_top_avg = sum(past_spine_top_vals) / num_past if num_past > 0 else 0
+    past_spine_impact_avg = sum(past_spine_impact_vals) / num_past if num_past > 0 else 0
     past_spine_val = abs(past_spine_top_avg - past_spine_impact_avg)
     # --------------------------------------------------------------------------------
-
     # グラフに描画する7項目（spine_top, spine_impact を除く項目）のみスコア化を行う
     for key in ["shoulder", "hip", "wrist", "head", "knee", "x_factor", "spine"]:
         if key == "spine":
