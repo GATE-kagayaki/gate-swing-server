@@ -3780,19 +3780,28 @@ def calculate_full_comparison(current_raw: dict, past_reports: list):
 
     # --- スコア化 ---
     for key in ["shoulder", "hip", "wrist", "head", "knee", "x_factor", "spine"]:
+        # --- 今回のスイングのスコア算出 ---
         if key == "spine":
             curr_score = _calculate_item_score(key, current_spine_val)
-            past_score = _calculate_item_score(key, past_spine_val)
         else:
-            c_val = get_val(current_raw.get(key, {}))
-            p_val = sum(get_val(r.get(key, {})) for r in past_raws) / num_past if num_past > 0 else 0
-
-            curr_score = _calculate_item_score(key, c_val)
-            past_score = _calculate_item_score(key, p_val)
-
+            curr_score = _calculate_item_score(key, get_val(current_raw.get(key, {})))
         radar_scores_current[key] = round(curr_score)
-        radar_scores_past[key] = round(past_score)
 
+        # --- 過去平均スコアの算出（各過去セッションのスコアを個別に算出して平均する） ---
+        past_scores = []
+        for r in past_raws:
+            if key == "spine":
+                p_top = get_val(r.get("spine_top", {}))
+                p_impact = get_val(r.get("spine_impact", {}))
+                p_spine_val = abs(p_top - p_impact)
+                score = _calculate_item_score(key, p_spine_val)
+            else:
+                score = _calculate_item_score(key, get_val(r.get(key, {})))
+            past_scores.append(score)
+            
+        avg_score = sum(past_scores) / num_past if num_past > 0 else 0
+        radar_scores_past[key] = round(avg_score)
+       
     return {
         "past_sessions_count": num_past,
         "deltas": deltas,
