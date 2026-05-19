@@ -3669,27 +3669,27 @@ def _calculate_item_score(key: str, val: float) -> float:
     10点＝100スコア、1点の減点＝-10スコア。
     """
     if key == "shoulder":
-        # 基準値: 100°。5% (5°) ズレるごとに -1点(-10スコア)
+        # 基準値: 100°。MAX値から 10° ズレるごとに -1点(-10スコア)
         diff = abs(val - 100.0)
-        score = 100.0 - (diff / 5.0) * 10.0
+        score = 100.0 - (diff / 10.0) * 10.0
         return max(0.0, min(100.0, score))
         
     elif key == "hip":
-        # 基準値: 50°。5% (2.5°) ズレるごとに -1点(-10スコア)
+        # 基準値: 50°。MAX値から 5° ズレるごとに -1点(-10スコア)
         diff = abs(val - 50.0)
-        score = 100.0 - (diff / 2.5) * 10.0
+        score = 100.0 - (diff / 5.0) * 10.0
         return max(0.0, min(100.0, score))
 
     elif key == "wrist":
-        # 基準値: 60°。5% (3.0°) ズレるごとに -1点(-10スコア)
+        # 基準値: 60°。mean値から 10° ズレるごとに -1点(-10スコア)
         diff = abs(val - 60.0)
-        score = 100.0 - (diff / 3.0) * 10.0
+        score = 100.0 - (diff / 10.0) * 10.0
         return max(0.0, min(100.0, score))
 
     elif key == "x_factor":
-        # 基準値: 50°。5% (2.5°) ズレるごとに -1点(-10スコア)
+        # 基準値: 50°。MAX値から 5° ズレるごとに -1点(-10スコア)
         diff = abs(val - 50.0)
-        score = 100.0 - (diff / 2.5) * 10.0
+        score = 100.0 - (diff / 5.0) * 10.0
         return max(0.0, min(100.0, score))
 
     elif key == "head":
