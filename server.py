@@ -3758,6 +3758,10 @@ def build_comparison_block(comparison: Dict[str, Any]) -> Dict[str, Any]:
     deltas = comparison.get("deltas", {})
     count = comparison.get("past_sessions_count", 0)
     
+    # 【修正】ここでcomparisonからスコアデータを取り出す処理が抜けていました！
+    radar_scores_current = comparison.get("radar_scores_current", {})
+    radar_scores_past = comparison.get("radar_scores_past", {})
+    
     label_map = {
         "shoulder": "肩の回転", "hip": "腰の回転", "wrist": "手首の角度",
         "head": "頭のブレ", "knee": "膝の動き", "x_factor": "捻転差(X-Factor)",
@@ -3848,7 +3852,6 @@ def build_comparison_block(comparison: Dict[str, Any]) -> Dict[str, Any]:
         "radar_scores_past": radar_scores_past,       
         "past_sessions_count": count
     }
-
 def build_paid_07_from_analysis(analysis: Dict[str, Any], raw: Dict[str, Any], comparison: Dict[str, Any] = None) -> Dict[str, Any]:
     c = collect_tag_counter(analysis)
     swing_type = judge_swing_type(c)
