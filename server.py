@@ -3730,7 +3730,21 @@ def calculate_full_comparison(current_raw: dict, past_reports: list):
 
     metrics_keys = ["shoulder", "hip", "wrist", "head", "knee", "x_factor", "spine", "spine_top", "spine_impact"]
     deltas = {}
-    past_raws = [r.get("raw", {}) for r in past_reports]
+    
+    # 修正箇所1：過去データの安全な抽出（グラフが均等になるバグの解消）
+    past_raws = []
+    for r in past_reports:
+        if isinstance(r, dict):
+            if "raw" in r and isinstance(r["raw"], dict) and r["raw"]:
+                past_raws.append(r["raw"])
+            else:
+                past_raws.append(r)
+        elif hasattr(r, "to_dict"):
+            r_dict = r.to_dict()
+            past_raws.append(r_dict.get("raw") if isinstance(r_dict.get("raw"), dict) else r_dict)
+        else:
+            past_raws.append({})
+            
     num_past = len(past_raws)
     
     radar_scores_current = {}
@@ -3782,7 +3796,8 @@ def calculate_full_comparison(current_raw: dict, past_reports: list):
     # グラフに描画する 7 項目のみスコア化を行う
     for key in ["shoulder", "hip", "wrist", "head", "knee", "x_factor", "spine"]:
         # 回転系や捻転差の項目は max を優先、それ以外（head/knee/spine）は mean 系のロジックを適用
-        is_max_metric = key in ["shoulder", "hip", "wrist", "x_factor"]
+        # 修正箇所2：wrist（手首）を除外
+        is_max_metric = key in ["shoulder", "hip", "x_factor"]
 
         # --- ① 今回のスイングのスコア算出 ---
         if key == "spine":
@@ -3816,7 +3831,7 @@ def calculate_full_comparison(current_raw: dict, past_reports: list):
             
         avg_score = sum(past_scores) / num_past if num_past > 0 else 0
         radar_scores_past[key] = round(avg_score)
-       
+        
     return {
         "past_sessions_count": num_past,
         "deltas": deltas,
