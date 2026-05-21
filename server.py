@@ -3669,31 +3669,31 @@ def _calculate_item_score(key: str, val: float) -> float:
     10点＝100スコア、1点の減点＝-10スコア。
     """
     if key == "shoulder":
-        # 基準値: 100°。MAX値から 10° ズレるごとに -1点(-10スコア)
+        # 基準値: 100°。10° ズレるごとに -1点(-10スコア)
         diff = abs(val - 100.0)
         score = 100.0 - (diff / 10.0) * 10.0
         return max(0.0, min(100.0, score))
         
     elif key == "hip":
-        # 基準値: 50°。MAX値から 5° ズレるごとに -1点(-10スコア)
+        # 基準値: 50°。5° ズレるごとに -1点(-10スコア)
         diff = abs(val - 50.0)
         score = 100.0 - (diff / 5.0) * 10.0
         return max(0.0, min(100.0, score))
 
     elif key == "wrist":
-        # 基準値: 60°。mean値から 10° ズレるごとに -1点(-10スコア)
+        # 基準値: 60°。10° ズレるごとに -1点(-10スコア)
         diff = abs(val - 60.0)
         score = 100.0 - (diff / 10.0) * 10.0
         return max(0.0, min(100.0, score))
 
     elif key == "x_factor":
-        # 基準値: 50°。MAX値から 5° ズレるごとに -1点(-10スコア)
+        # 基準値: 50°。5° ズレるごとに -1点(-10スコア)
         diff = abs(val - 50.0)
         score = 100.0 - (diff / 5.0) * 10.0
         return max(0.0, min(100.0, score))
 
     elif key == "head":
-        # 基準値: 3.0%以下で10点(100スコア)。そこから 2.0% 増えるごとに -1点(-10スコア)
+        # 基準値: 3.0%以下で10点(100スコア)。2.0% 増えるごとに -1点(-10スコア)
         if val <= 3.0:
             return 100.0
         else:
@@ -3702,7 +3702,7 @@ def _calculate_item_score(key: str, val: float) -> float:
             return max(0.0, min(100.0, score))
 
     elif key == "knee":
-        # 基準値: 5.0%以下で10点(100スコア)。そこから 2.0% 増えるごとに -1点(-10スコア)
+        # 基準値: 5.0%以下で10点(100スコア)。2.0% 増えるごとに -1点(-10スコア)
         if val <= 5.0:
             return 100.0
         else:
@@ -3711,7 +3711,7 @@ def _calculate_item_score(key: str, val: float) -> float:
             return max(0.0, min(100.0, score))
         
     elif key in ["spine", "spine_top", "spine_impact"]:
-        # 基準値: 3.0°以下で10点(100スコア)。そこから 1.0° 増えるごとに -1点(-10スコア)
+        # 基準値: spine_top と spine_impact の差分絶対値。3.0°以下で10点(100スコア)。1.0° 増えるごとに -1点(-10スコア)
         if val <= 3.0:
             return 100.0
         else:
@@ -3732,18 +3732,39 @@ def calculate_full_comparison(current_raw: dict, past_reports: list):
     deltas = {}
     
     # 修正箇所1：過去データの安全な抽出（グラフが均等になるバグの解消）
+    _RAW_METRIC_MARKERS = (
+        "shoulder", "hip", "wrist", "head", "knee", "x_factor", "spine",
+        "spine_raw", "spine_top", "spine_impact", "club_type", "frame_count",
+    )
+
+    def _looks_like_swing_raw(d: dict) -> bool:
+        if not isinstance(d, dict) or not d:
+            return False
+        return any(m in d for m in _RAW_METRIC_MARKERS)
+
+    def _extract_past_raw_from_report_item(item) -> dict:
+        if item is None:
+            return {}
+        if isinstance(item, dict):
+            nested = item.get("raw")
+            if isinstance(nested, dict) and nested:
+                return nested
+            if _looks_like_swing_raw(item):
+                return item
+            return {}
+        if hasattr(item, "to_dict"):
+            try:
+                as_dict = item.to_dict()
+            except Exception:
+                return {}
+            if isinstance(as_dict, dict):
+                return _extract_past_raw_from_report_item(as_dict)
+        return {}
+
     past_raws = []
     for r in past_reports:
-        if isinstance(r, dict):
-            if "raw" in r and isinstance(r["raw"], dict) and r["raw"]:
-                past_raws.append(r["raw"])
-            else:
-                past_raws.append(r)
-        elif hasattr(r, "to_dict"):
-            r_dict = r.to_dict()
-            past_raws.append(r_dict.get("raw") if isinstance(r_dict.get("raw"), dict) else r_dict)
-        else:
-            past_raws.append({})
+        extracted = _extract_past_raw_from_report_item(r)
+        past_raws.append(extracted if isinstance(extracted, dict) else {})
             
     num_past = len(past_raws)
     
@@ -3755,6 +3776,34 @@ def calculate_full_comparison(current_raw: dict, past_reports: list):
         if isinstance(data, dict):
             return float(data.get("mean", 0) or 0)
         return float(data or 0)
+
+    def pick_metric_val(metric_key: str, block) -> float:
+        """レーダー用：項目ごとに max / mean の優先順位を固定する。"""
+        if not isinstance(block, dict):
+            try:
+                return float(block or 0)
+            except (TypeError, ValueError):
+                return 0.0
+        if metric_key == "wrist":
+            # mean 最優先、なければ max
+            if "mean" in block and block.get("mean") is not None:
+                return float(block.get("mean", 0) or 0)
+            if "max" in block and block.get("max") is not None:
+                return float(block.get("max", 0) or 0)
+            return 0.0
+        if metric_key in ("shoulder", "hip", "x_factor"):
+            # max 最優先、なければ mean
+            if "max" in block and block.get("max") is not None:
+                return float(block.get("max", 0) or 0)
+            return float(block.get("mean", 0) or 0)
+        if metric_key in ("head", "knee"):
+            return float(block.get("mean", 0) or 0)
+        return float(block.get("mean", 0) or 0)
+
+    def spine_delta_val(raw_dict: dict) -> float:
+        top = get_val(raw_dict.get("spine_top", {}))
+        impact = get_val(raw_dict.get("spine_impact", {}))
+        return abs(top - impact)
 
     for key in metrics_keys:
         curr_raw_data = current_raw.get(key, {})
@@ -3793,39 +3842,24 @@ def calculate_full_comparison(current_raw: dict, past_reports: list):
     past_spine_val = abs(past_spine_top_avg - past_spine_impact_avg)
 
     # --- スコア化 ---
-    # グラフに描画する 7 項目のみスコア化を行う
+    # グラフに描画する 7 項目のみスコア化を行う（各セッション独立で _calculate_item_score → 過去はスコア平均）
     for key in ["shoulder", "hip", "wrist", "head", "knee", "x_factor", "spine"]:
-        # 回転系や捻転差の項目は max を優先、それ以外（head/knee/spine）は mean 系のロジックを適用
-        # 修正箇所2：wrist（手首）を除外
-        is_max_metric = key in ["shoulder", "hip", "x_factor"]
-
         # --- ① 今回のスイングのスコア算出 ---
         if key == "spine":
-            curr_score = _calculate_item_score(key, current_spine_val)
+            curr_score = _calculate_item_score(key, spine_delta_val(current_raw))
         else:
-            c_data = current_raw.get(key, {})
-            # 回転系は max の値を抽出、なければ mean を取る
-            if isinstance(c_data, dict):
-                c_val = float(c_data.get("max") if is_max_metric and "max" in c_data else c_data.get("mean", 0))
-            else:
-                c_val = float(c_data or 0)
+            c_val = pick_metric_val(key, current_raw.get(key, {}))
             curr_score = _calculate_item_score(key, c_val)
         radar_scores_current[key] = round(curr_score)
 
-        # --- ② 過去平均スコアの算出 ---
+        # --- ② 過去平均スコアの算出（各 past_raw をスコア化してから平均）---
         past_scores = []
         for r in past_raws:
             if key == "spine":
-                p_top = get_val(r.get("spine_top", {}))
-                p_impact = get_val(r.get("spine_impact", {}))
-                p_spine_val = abs(p_top - p_impact)
+                p_spine_val = spine_delta_val(r)
                 score = _calculate_item_score(key, p_spine_val)
             else:
-                r_data = r.get(key, {})
-                if isinstance(r_data, dict):
-                    p_val = float(r_data.get("max") if is_max_metric and "max" in r_data else r_data.get("mean", 0))
-                else:
-                    p_val = float(r_data or 0)
+                p_val = pick_metric_val(key, r.get(key, {}))
                 score = _calculate_item_score(key, p_val)
             past_scores.append(score)
             
