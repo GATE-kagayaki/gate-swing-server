@@ -197,12 +197,18 @@
       const canvas = document.getElementById(canvasId);
       if (!canvas || typeof Chart === 'undefined') return;
 
-      const deltas = secData.deltas || {};
+      const radarCurrent = secData.radar_scores_current || {};
+      const radarPast = secData.radar_scores_past || {};
       const count = secData.past_sessions_count || 0;
       
       const currentStats = [
-        100 + (deltas.shoulder_mean || 0), 100 + (deltas.hip_mean || 0), 100 - (deltas.wrist_mean || 0),
-        100 - (deltas.head_mean || 0), 100 - (deltas.knee_mean || 0), 100 + (deltas.x_factor_mean || 0), 100 - (deltas.spine_mean || 0)
+        radarCurrent.shoulder || 0, radarCurrent.hip || 0, radarCurrent.wrist || 0,
+        radarCurrent.head || 0, radarCurrent.knee || 0, radarCurrent.x_factor || 0, radarCurrent.spine || 0
+      ];
+
+      const pastStats = [
+        radarPast.shoulder || 0, radarPast.hip || 0, radarPast.wrist || 0,
+        radarPast.head || 0, radarPast.knee || 0, radarPast.x_factor || 0, radarPast.spine || 0
       ];
 
       new Chart(canvas, {
@@ -211,7 +217,7 @@
           labels: ["肩の回転", "腰の回転", "手首角度", "頭のブレ", "膝の動き", "捻転差", "前傾角"],
           datasets: [
             { label: '今回のスイング', data: currentStats, backgroundColor: 'rgba(34, 197, 94, 0.25)', borderColor: '#22c55e', borderWidth: 3, pointRadius: 4 },
-            { label: '過去' + count + '回の平均 (基準)', data: [100, 100, 100, 100, 100, 100, 100], backgroundColor: 'rgba(156, 163, 175, 0.05)', borderColor: '#9ca3af', borderDash: [5, 5], pointRadius: 0 }
+            { label: '過去' + count + '回の平均 (基準)', data: pastStats, backgroundColor: 'rgba(156, 163, 175, 0.05)', borderColor: '#9ca3af', borderDash: [5, 5], pointRadius: 0 }
           ]
         },
         options: {
