@@ -3019,6 +3019,84 @@ def calc_stability_idx(raw: Dict[str, Any], club_type: str) -> int:
     return int(round((a + b + c) / 3.0 * 100))
 
 # ==================================================
+# comparison レーダー用：部位別絶対スコア（0-100）
+# ==================================================
+COMPARISON_METRICS = frozenset({
+    "shoulder", "hip", "wrist", "x_factor", "head", "knee", "spine",
+})
+
+
+def _spine_stability_mean_for_comparison(raw: Dict[str, Any]) -> float:
+    """calc_stability_idx と同じ spine_raw ブレ幅平均。"""
+    spines = raw.get("spine_raw") or []
+    if not spines:
+        return 0.0
+    base = float(spines[0])
+    deltas = [abs(float(x) - base) for x in spines if x is not None]
+    return sum(deltas) / len(deltas) if deltas else 0.0
+
+
+def _raw_metric_mean(raw: Dict[str, Any], metric: str) -> float:
+    block = raw.get(metric) or {}
+    if not isinstance(block, dict):
+        return 0.0
+    try:
+        return float(block.get("mean", 0) or 0)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def calc_metric_absolute_score(metric: str, raw: Dict[str, Any], club_type: str) -> int:
+    """
+    比較グラフ専用：単一部位の絶対スコア（0-100）。
+    calc_power_idx / calc_stability_idx と同じ閾値・正規化のみ（優しさ補正なし）。
+    """
+    key = (metric or "").strip().lower()
+    if key not in COMPARISON_METRICS:
+        raise ValueError(
+            f"unsupported metric: {metric!r}; expected one of {sorted(COMPARISON_METRICS)}"
+        )
+
+    is_driver = (club_type or "").strip().lower() == "driver"
+
+    if key == "shoulder":
+        v = _raw_metric_mean(raw, "shoulder")
+        lo, hi = (90.0, 120.0) if is_driver else (85.0, 105.0)
+        norm = _norm_range(v, lo, hi)
+    elif key == "hip":
+        v = abs(_raw_metric_mean(raw, "hip"))
+        lo, hi = (35.0, 65.0) if is_driver else (36.0, 50.0)
+        norm = _norm_range(v, lo, hi)
+    elif key == "wrist":
+        v = _raw_metric_mean(raw, "wrist")
+        lo, hi = (70.0, 90.0)
+        norm = _norm_range(v, lo, hi)
+    elif key == "x_factor":
+        v = _raw_metric_mean(raw, "x_factor")
+        lo, hi = (36.0, 55.0)
+        norm = _norm_range(v, lo, hi)
+    elif key == "head":
+        v = _raw_metric_mean(raw, "head")
+        lo, hi = (4.0, 11.0) if is_driver else (3.0, 8.0)
+        norm = _norm_inverse(v, lo, hi)
+    elif key == "knee":
+        v = _raw_metric_mean(raw, "knee")
+        lo, hi = (5.0, 15.0) if is_driver else (4.0, 10.0)
+        norm = _norm_inverse(v, lo, hi)
+    else:
+        v = _spine_stability_mean_for_comparison(raw)
+        lo, hi = (3.0, 8.0) if is_driver else (2.0, 6.0)
+        norm = _norm_inverse(v, lo, hi)
+
+    return int(round(_clamp01(norm) * 100))
+
+
+def score_metrics_from_raw(raw: Dict[str, Any], club_type: str) -> Dict[str, int]:
+    """7部位の絶対スコアを一括算出（レーダー軸順）。"""
+    keys = ("shoulder", "hip", "wrist", "head", "knee", "x_factor", "spine")
+    return {k: calc_metric_absolute_score(k, raw, club_type) for k in keys}
+
+# ==================================================
 # 新規追加: 総合スコア計算
 # ==================================================
 def calculate_swing_score(raw: Dict[str, Any], club_type: str) -> int:
@@ -3663,70 +3741,22 @@ def get_past_reports(user_id: str, current_report_id: str, club_type: str, limit
     past_data.sort(key=lambda x: x.get("completed_at") or "", reverse=True)
     return past_data[:limit]
 
-def _calculate_item_score(key: str, val: float) -> float:
+def calculate_full_comparison(
+    current_raw: dict,
+    past_reports: list,
+    club_type: str,
+):
     """
-    各項目の絶対値を、10点満点（レーダーチャート用 0〜100スケール）のスコアに変換する。
-    10点＝100スコア、1点の減点＝-10スコア。
-    """
-    if key == "shoulder":
-        # 基準値: 100°。MAX値から 10° ズレるごとに -1点(-10スコア)
-        diff = abs(val - 100.0)
-        score = 100.0 - (diff / 10.0) * 10.0
-        return max(0.0, min(100.0, score))
-        
-    elif key == "hip":
-        # 基準値: 50°。MAX値から 5° ズレるごとに -1点(-10スコア)
-        diff = abs(val - 50.0)
-        score = 100.0 - (diff / 5.0) * 10.0
-        return max(0.0, min(100.0, score))
-
-    elif key == "wrist":
-        # 基準値: 60°。mean値から 10° ズレるごとに -1点(-10スコア)
-        diff = abs(val - 60.0)
-        score = 100.0 - (diff / 10.0) * 10.0
-        return max(0.0, min(100.0, score))
-
-    elif key == "x_factor":
-        # 基準値: 50°。MAX値から 5° ズレるごとに -1点(-10スコア)
-        diff = abs(val - 50.0)
-        score = 100.0 - (diff / 5.0) * 10.0
-        return max(0.0, min(100.0, score))
-
-    elif key == "head":
-        # 基準値: 3.0%以下で10点(100スコア)。そこから 2.0% 増えるごとに -1点(-10スコア)
-        if val <= 3.0:
-            return 100.0
-        else:
-            diff = val - 3.0
-            score = 100.0 - (diff / 2.0) * 10.0
-            return max(0.0, min(100.0, score))
-
-    elif key == "knee":
-        # 基準値: 5.0%以下で10点(100スコア)。そこから 2.0% 増えるごとに -1点(-10スコア)
-        if val <= 5.0:
-            return 100.0
-        else:
-            diff = val - 5.0
-            score = 100.0 - (diff / 2.0) * 10.0
-            return max(0.0, min(100.0, score))
-        
-    elif key in ["spine", "spine_top", "spine_impact"]:
-        # 基準値: 3.0°以下で10点(100スコア)。そこから 1.0° 増えるごとに -1点(-10スコア)
-        if val <= 3.0:
-            return 100.0
-        else:
-            diff = val - 3.0
-            score = 100.0 - (diff / 1.0) * 10.0
-            return max(0.0, min(100.0, score))
-
-    return 50.0 # 未定義の項目
-
-def calculate_full_comparison(current_raw: dict, past_reports: list):
-    """
-    全解析項目の過去平均との差分を計算し、グラフ用の履歴データを作成します。
+    全解析項目の過去平均との差分（deltas）と、
+    絶対スコア比較（scores.current / scores.past_avg）を作成します。
     """
     if not past_reports:
-        return {"past_sessions_count": 0, "deltas": {}, "history": []}
+        return {
+            "past_sessions_count": 0,
+            "deltas": {},
+            "history": [],
+            "scores": {"current": {}, "past_avg": {}},
+        }
 
     metrics_keys = ["shoulder", "hip", "wrist", "head", "knee", "x_factor", "spine", "spine_top", "spine_impact"]
     deltas = {}
@@ -3746,9 +3776,6 @@ def calculate_full_comparison(current_raw: dict, past_reports: list):
             past_raws.append({})
             
     num_past = len(past_raws)
-    
-    radar_scores_current = {}
-    radar_scores_past = {}
 
     # 型エラーを確実に回避するための値取得ヘルパー
     def get_val(data):
@@ -3780,63 +3807,27 @@ def calculate_full_comparison(current_raw: dict, past_reports: list):
         avg_std = sum(past_stds) / num_past if num_past > 0 else 0
         deltas[f"{key}_std"] = round(curr_std - avg_std, 2)
 
-    # --- 前傾角（spine）の評価用数値の算出 ---
-    curr_spine_top = get_val(current_raw.get("spine_top", {}))
-    curr_spine_impact = get_val(current_raw.get("spine_impact", {}))
-    current_spine_val = abs(curr_spine_top - curr_spine_impact)
+    radar_keys = ("shoulder", "hip", "wrist", "head", "knee", "x_factor", "spine")
+    current_scores = score_metrics_from_raw(current_raw, club_type)
 
-    past_spine_top_vals = [get_val(r.get("spine_top", {})) for r in past_raws]
-    past_spine_impact_vals = [get_val(r.get("spine_impact", {})) for r in past_raws]
-    
-    past_spine_top_avg = sum(past_spine_top_vals) / num_past if num_past > 0 else 0
-    past_spine_impact_avg = sum(past_spine_impact_vals) / num_past if num_past > 0 else 0
-    past_spine_val = abs(past_spine_top_avg - past_spine_impact_avg)
+    past_score_acc = {k: [] for k in radar_keys}
+    for pr in past_raws:
+        per = score_metrics_from_raw(pr, club_type)
+        for k in radar_keys:
+            past_score_acc[k].append(per[k])
 
-    # --- スコア化 ---
-    # グラフに描画する 7 項目のみスコア化を行う
-    for key in ["shoulder", "hip", "wrist", "head", "knee", "x_factor", "spine"]:
-        # 回転系や捻転差の項目は max を優先、それ以外（head/knee/spine）は mean 系のロジックを適用
-        # 修正箇所2：wrist（手首）を除外
-        is_max_metric = key in ["shoulder", "hip", "x_factor"]
+    past_avg_scores = {
+        k: int(round(sum(past_score_acc[k]) / num_past))
+        for k in radar_keys
+    }
 
-        # --- ① 今回のスイングのスコア算出 ---
-        if key == "spine":
-            curr_score = _calculate_item_score(key, current_spine_val)
-        else:
-            c_data = current_raw.get(key, {})
-            # 回転系は max の値を抽出、なければ mean を取る
-            if isinstance(c_data, dict):
-                c_val = float(c_data.get("max") if is_max_metric and "max" in c_data else c_data.get("mean", 0))
-            else:
-                c_val = float(c_data or 0)
-            curr_score = _calculate_item_score(key, c_val)
-        radar_scores_current[key] = round(curr_score)
-
-        # --- ② 過去平均スコアの算出 ---
-        past_scores = []
-        for r in past_raws:
-            if key == "spine":
-                p_top = get_val(r.get("spine_top", {}))
-                p_impact = get_val(r.get("spine_impact", {}))
-                p_spine_val = abs(p_top - p_impact)
-                score = _calculate_item_score(key, p_spine_val)
-            else:
-                r_data = r.get(key, {})
-                if isinstance(r_data, dict):
-                    p_val = float(r_data.get("max") if is_max_metric and "max" in r_data else r_data.get("mean", 0))
-                else:
-                    p_val = float(r_data or 0)
-                score = _calculate_item_score(key, p_val)
-            past_scores.append(score)
-            
-        avg_score = sum(past_scores) / num_past if num_past > 0 else 0
-        radar_scores_past[key] = round(avg_score)
-        
     return {
         "past_sessions_count": num_past,
         "deltas": deltas,
-        "radar_scores_current": radar_scores_current,
-        "radar_scores_past": radar_scores_past,
+        "scores": {
+            "current": current_scores,
+            "past_avg": past_avg_scores,
+        },
         "history": [
             {
                 "date": r.get("completed_at"), 
@@ -3848,11 +3839,12 @@ def calculate_full_comparison(current_raw: dict, past_reports: list):
     
 def build_comparison_block(comparison: Dict[str, Any]) -> Dict[str, Any]:
     deltas = comparison.get("deltas", {})
+    scores = comparison.get("scores") or {}
     count = comparison.get("past_sessions_count", 0)
     
-    # 【修正】ここでcomparisonからスコアデータを取り出す処理が抜けていました！
-    radar_scores_current = comparison.get("radar_scores_current", {})
-    radar_scores_past = comparison.get("radar_scores_past", {})
+    # scores 優先。旧 comparison の radar_scores_* もフォールバックで読む
+    radar_scores_current = comparison.get("radar_scores_current", scores.get("current", {}))
+    radar_scores_past = comparison.get("radar_scores_past", scores.get("past_avg", {}))
     
     label_map = {
         "shoulder": "肩の回転", "hip": "腰の回転", "wrist": "手首の角度",
@@ -3940,10 +3932,10 @@ def build_comparison_block(comparison: Dict[str, Any]) -> Dict[str, Any]:
         "subtitle": f"過去{count}回の平均データとの全指標比較",
         "detailed_results": detailed_results,
         "deltas": deltas,
-        "radar_scores_current": radar_scores_current, 
-        "radar_scores_past": radar_scores_past,       
+        "scores": scores,
         "past_sessions_count": count
     }
+
 def build_paid_07_from_analysis(analysis: Dict[str, Any], raw: Dict[str, Any], comparison: Dict[str, Any] = None) -> Dict[str, Any]:
     c = collect_tag_counter(analysis)
     swing_type = judge_swing_type(c)
@@ -4032,7 +4024,9 @@ def build_analysis(
             total_score = calculate_swing_score(raw, club_type)
             analysis["00_score"] = build_paid_score_block(total_score)
 
-            if is_monthly and comparison and "deltas" in comparison:
+            if is_monthly and comparison and (
+                "deltas" in comparison or "scores" in comparison
+            ):
                 analysis["00_comparison"] = build_comparison_block(comparison)
 
         except Exception as e:
@@ -4325,7 +4319,11 @@ def task_handler():
             # 過去5回に限定して取得（要件定義に基づく）
             past_reports = get_past_reports(user_id, report_id, club_type, limit=5)
             if past_reports:
-                comparison_data = calculate_full_comparison(raw, past_reports)
+                comparison_data = calculate_full_comparison(
+                    raw,
+                    past_reports,
+                    club_type,
+                )
         # ------------------------------------
 
         analysis = build_analysis(

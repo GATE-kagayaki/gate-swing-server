@@ -162,6 +162,42 @@
     }
   }
 
+  const RADAR_METRIC_KEYS = [
+    "shoulder", "hip", "wrist", "head", "knee", "x_factor", "spine"
+  ];
+  const RADAR_LABELS = [
+    "肩の回転", "腰の回転", "手首角度", "頭のブレ", "膝の動き", "捻転差", "前傾角"
+  ];
+
+  function hasAbsoluteScores(scores) {
+    if (!scores || !scores.current || !scores.past_avg) return false;
+    return RADAR_METRIC_KEYS.every(
+      (k) => scores.current[k] != null && scores.past_avg[k] != null
+    );
+  }
+
+  function buildRadarFromScores(scores) {
+    const c = scores.current;
+    const p = scores.past_avg;
+    return {
+      current: RADAR_METRIC_KEYS.map((k) => Number(c[k]) || 0),
+      past: RADAR_METRIC_KEYS.map((k) => Number(p[k]) || 0),
+      mode: "absolute"
+    };
+  }
+
+  function buildRadarFromDeltas(deltas) {
+    const d = deltas || {};
+    return {
+      current: [
+        100 + (d.shoulder_mean || 0), 100 + (d.hip_mean || 0), 100 - (d.wrist_mean || 0),
+        100 - (d.head_mean || 0), 100 - (d.knee_mean || 0), 100 + (d.x_factor_mean || 0), 100 - (d.spine_mean || 0)
+      ],
+      past: [100, 100, 100, 100, 100, 100, 100],
+      mode: "delta"
+    };
+  }
+
   // ==========================================
   // ★【追加箇所2】比較分析（グラフ・差分）表示用関数
   // ==========================================
@@ -183,11 +219,20 @@
       html += `</div>`;
     }
 
+    const scores = secData.scores;
+    const deltas = secData.deltas || {};
+    const count = secData.past_sessions_count || 0;
+    const radar = hasAbsoluteScores(scores)
+      ? buildRadarFromScores(scores)
+      : buildRadarFromDeltas(deltas);
+
     const canvasId = "statusRadarChart";
     html += `<div class="mt-4 bg-white rounded-xl p-4 shadow-inner" style="position: relative; height: 350px; width: 100%; border: 1px solid #f0f0f0;"><canvas id="${canvasId}"></canvas></div>`;
     html += `
     <p class="text-xs text-gray-500 mt-2">
-    ※ 灰色の円は過去平均（基準値100）です。緑の形が大きいほど、スイングの安定性や動きが改善しています。
+    ${radar.mode === "absolute"
+      ? "※ 灰色は過去" + count + "回の平均スコア、緑は今回のスコア（各0〜100点）です。大きいほどその項目の評価が高いことを示します。"
+      : "※ 灰色の円は過去平均（基準値100）です。緑の形が大きいほど、スイングの安定性や動きが改善しています。"}
     </p>`;
     
     sec.innerHTML += html;
@@ -197,26 +242,27 @@
       const canvas = document.getElementById(canvasId);
       if (!canvas || typeof Chart === 'undefined') return;
 
-      const deltas = secData.deltas || {};
-      const count = secData.past_sessions_count || 0;
-      
-      const currentStats = [
-        100 + (deltas.shoulder_mean || 0), 100 + (deltas.hip_mean || 0), 100 - (deltas.wrist_mean || 0),
-        100 - (deltas.head_mean || 0), 100 - (deltas.knee_mean || 0), 100 + (deltas.x_factor_mean || 0), 100 - (deltas.spine_mean || 0)
-      ];
+      const currentStats = radar.current;
+      const pastStats = radar.past;
+      const rScale = radar.mode === "absolute"
+        ? { min: 0, max: 100 }
+        : { min: 90, max: 110 };
+      const pastLabel = radar.mode === "absolute"
+        ? ("過去" + count + "回の平均")
+        : ("過去" + count + "回の平均 (基準)");
 
       new Chart(canvas, {
         type: 'radar',
         data: {
-          labels: ["肩の回転", "腰の回転", "手首角度", "頭のブレ", "膝の動き", "捻転差", "前傾角"],
+          labels: RADAR_LABELS,
           datasets: [
             { label: '今回のスイング', data: currentStats, backgroundColor: 'rgba(34, 197, 94, 0.25)', borderColor: '#22c55e', borderWidth: 3, pointRadius: 4 },
-            { label: '過去' + count + '回の平均 (基準)', data: [100, 100, 100, 100, 100, 100, 100], backgroundColor: 'rgba(156, 163, 175, 0.05)', borderColor: '#9ca3af', borderDash: [5, 5], pointRadius: 0 }
+            { label: pastLabel, data: pastStats, backgroundColor: 'rgba(156, 163, 175, 0.05)', borderColor: '#9ca3af', borderDash: [5, 5], pointRadius: 0 }
           ]
         },
         options: {
           responsive: true, maintainAspectRatio: false,
-          scales: { r: { min: 90, max: 110, ticks: { display: false }, grid: { color: '#f0f0f0' }, pointLabels: { font: { size: 12, weight: 'bold' } } } },
+          scales: { r: { min: rScale.min, max: rScale.max, ticks: { display: false }, grid: { color: '#f0f0f0' }, pointLabels: { font: { size: 12, weight: 'bold' } } } },
           plugins: { legend: { position: 'bottom', labels: { boxWidth: 12, padding: 20 } } }
         }
       });
