@@ -3733,7 +3733,7 @@ def calculate_full_comparison(current_raw: dict, past_reports: list):
     
     # 修正箇所1：過去データの安全な抽出（グラフが均等になるバグの解消）
     _RAW_METRIC_MARKERS = (
-        "shoulder", "hip", "wrist", "head", "knee", "x_factor", "spine",
+        "shoulder", "hip", "wrist", "head", "knee", "x_factor",
         "spine_raw", "spine_top", "spine_impact", "club_type", "frame_count",
     )
 
@@ -3801,8 +3801,14 @@ def calculate_full_comparison(current_raw: dict, past_reports: list):
         return float(block.get("mean", 0) or 0)
 
     def spine_delta_val(raw_dict: dict) -> float:
-        top = get_val(raw_dict.get("spine_top", {}))
-        impact = get_val(raw_dict.get("spine_impact", {}))
+        if not isinstance(raw_dict, dict):
+            return 0.0
+        top_data = raw_dict.get("spine_top")
+        impact_data = raw_dict.get("spine_impact")
+        if top_data is None or impact_data is None:
+            return 0.0
+        top = get_val(top_data)
+        impact = get_val(impact_data)
         return abs(top - impact)
 
     for key in metrics_keys:
@@ -3846,24 +3852,30 @@ def calculate_full_comparison(current_raw: dict, past_reports: list):
     for key in ["shoulder", "hip", "wrist", "head", "knee", "x_factor", "spine"]:
         # --- ① 今回のスイングのスコア算出 ---
         if key == "spine":
-            curr_score = _calculate_item_score(key, spine_delta_val(current_raw))
+            curr_spine_diff = spine_delta_val(current_raw)
+            curr_score = _calculate_item_score("spine", curr_spine_diff)
         else:
             c_val = pick_metric_val(key, current_raw.get(key, {}))
             curr_score = _calculate_item_score(key, c_val)
         radar_scores_current[key] = round(curr_score)
 
-        # --- ② 過去平均スコアの算出（各 past_raw をスコア化してから平均）---
+        # --- ② 過去平均スコアの算出（past_raws の各セッション dict のみ参照・current_raw は使わない）---
         past_scores = []
-        for r in past_raws:
+        for past_session_raw in past_raws:
+            if not isinstance(past_session_raw, dict):
+                continue
+            if past_session_raw is current_raw:
+                continue
             if key == "spine":
-                p_spine_val = spine_delta_val(r)
-                score = _calculate_item_score(key, p_spine_val)
+                p_spine_diff = spine_delta_val(past_session_raw)
+                score = _calculate_item_score("spine", p_spine_diff)
             else:
-                p_val = pick_metric_val(key, r.get(key, {}))
+                past_metric_block = past_session_raw.get(key, {})
+                p_val = pick_metric_val(key, past_metric_block)
                 score = _calculate_item_score(key, p_val)
             past_scores.append(score)
             
-        avg_score = sum(past_scores) / num_past if num_past > 0 else 0
+        avg_score = sum(past_scores) / len(past_scores) if past_scores else 0
         radar_scores_past[key] = round(avg_score)
         
     return {
