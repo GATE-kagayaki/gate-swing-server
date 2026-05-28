@@ -3850,7 +3850,7 @@ def _calculate_item_score(key: str, val: float) -> float:
             return max(0.0, min(100.0, score))
         
     elif key in ["spine", "spine_top", "spine_impact"]:
-        # 基準値: spine_top と spine_impact の差分絶対値。3.0°以下で10点(100スコア)。1.0° 増えるごとに -1点(-10スコア)
+        # 基準値: 前傾維持のブレ量（spine_raw のアドレス基準ズレ等）。3.0°以下で10点(100スコア)。1.0° 増えるごとに -1点(-10スコア)
         if val <= 3.0:
             return 100.0
         else:
@@ -3942,13 +3942,21 @@ def calculate_full_comparison(current_raw: dict, past_reports: list):
     def spine_delta_val(raw_dict: dict) -> float:
         if not isinstance(raw_dict, dict):
             return 0.0
-        top_data = raw_dict.get("spine_top")
-        impact_data = raw_dict.get("spine_impact")
-        if top_data is None or impact_data is None:
-            return 0.0
-        top = get_val(top_data)
-        impact = get_val(impact_data)
-        return abs(top - impact)
+        spines = raw_dict.get("spine_raw") or []
+        if spines:
+            base = float(spines[0])
+            deltas = [abs(float(x) - base) for x in spines if x is not None]
+            if deltas:
+                delta_mean = sum(deltas) / len(deltas)
+                spine_top = float(raw_dict.get("spine_top") or 0)
+                spine_impact = float(raw_dict.get("spine_impact") or 0)
+                delta_top = abs(spine_top - base) if spine_top else 0.0
+                delta_impact = abs(spine_impact - base) if spine_impact else 0.0
+                return max(delta_mean, delta_top * 0.7, delta_impact * 0.7)
+        spine_block = raw_dict.get("spine")
+        if isinstance(spine_block, dict):
+            return float(spine_block.get("std", 0) or 0)
+        return 0.0
 
     for key in metrics_keys:
         curr_raw_data = current_raw.get(key, {})
