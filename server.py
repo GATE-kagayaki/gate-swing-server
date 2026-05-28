@@ -2312,8 +2312,147 @@ def extract_priorities(tag_counter: Counter, max_items: int = 2) -> List[str]:
             break
 
     return result[:max_items]
-    
-    
+
+
+SWING_TYPE_CANDIDATES = (
+    "バランス型",
+    "体幹パワー不足型",
+    "安定性不足型",
+    "操作過多型",
+    "手元主因型",
+    "下半身主因型",
+)
+
+
+def _format_metric_block_for_llm(name: str, block: Any) -> str:
+    if not isinstance(block, dict):
+        return f"{name}: (なし)"
+    return (
+        f"{name}: max={block.get('max')} mean={block.get('mean')} "
+        f"std={block.get('std')} min={block.get('min')}"
+    )
+
+
+def generate_llm_swing_type_07(payload: Dict[str, Any]) -> str:
+    candidates = "\n".join(f"- {t}" for t in SWING_TYPE_CANDIDATES)
+    tags_flat = payload.get("tags_flat") or []
+    tag_counter = payload.get("tag_counter") or {}
+    comparison_text = payload.get("comparison_text") or "なし"
+
+    prompt = f"""
+あなたはプロのゴルフコーチです。以下の解析データを総合的に読み、スイングタイプを1つだけ判定してください。
+
+【候補（この中から1つだけ。TYPE行には名称を一字一句そのまま書くこと）】
+{candidates}
+
+【部位別タグ（02〜06）】
+tags: {tags_flat}
+tag_counter: {tag_counter}
+
+【数値（mean / std / max）】
+{_format_metric_block_for_llm("shoulder", payload.get("shoulder"))}
+{_format_metric_block_for_llm("hip", payload.get("hip"))}
+{_format_metric_block_for_llm("wrist", payload.get("wrist"))}
+{_format_metric_block_for_llm("head", payload.get("head"))}
+{_format_metric_block_for_llm("knee", payload.get("knee"))}
+{_format_metric_block_for_llm("x_factor", payload.get("x_factor"))}
+
+【総合スコア】
+swing_score: {payload.get("swing_score")}
+power_score: {payload.get("power_score")}
+stability_score: {payload.get("stability_score")}
+
+【過去比較（あれば）】
+{comparison_text}
+
+【判断の注意】
+- 膝ブレ・頭部ブレなど単一指標だけで機械的に「安定性不足型」と決めず、全体バランスで選ぶこと。
+- tag_counter は同一タグが複数セクションで重複カウントされている場合があるため、出現回数だけで過大評価しないこと。
+
+【出力形式（厳守。この2行形式のみ）】
+TYPE: （候補から1つ）
+REASON: （判定理由を1〜2文）
+"""
+    return call_llm(prompt)
+
+
+def parse_swing_type_from_llm(text: str) -> Optional[str]:
+    if not text or "（現在、詳細なコメントを生成できません" in text:
+        return None
+    for line in text.splitlines():
+        s = line.strip()
+        if s.upper().startswith("TYPE:"):
+            val = s.split(":", 1)[1].strip()
+            if val in SWING_TYPE_CANDIDATES:
+                return val
+            for cand in SWING_TYPE_CANDIDATES:
+                if cand in val:
+                    return cand
+    return None
+
+
+def resolve_swing_type_llm(
+    analysis: Dict[str, Any],
+    raw: Dict[str, Any],
+    comparison: Optional[Dict[str, Any]],
+    tag_counter: Counter,
+) -> str:
+    """LLMでスイングタイプを判定。失敗時は judge_swing_type にフォールバック。"""
+    club_type = raw.get("club_type", "iron")
+    tags_flat: List[str] = []
+    for k in ["02", "03", "04", "05", "06"]:
+        sec = analysis.get(k) or {}
+        tags_flat.extend(sec.get("tags", []) or [])
+
+    comparison_text = "なし"
+    if comparison:
+        comparison_text = json.dumps(
+            {
+                "past_sessions_count": comparison.get("past_sessions_count", 0),
+                "deltas": comparison.get("deltas", {}),
+                "radar_scores_current": comparison.get("radar_scores_current", {}),
+                "radar_scores_past": comparison.get("radar_scores_past", {}),
+            },
+            ensure_ascii=False,
+        )
+
+    try:
+        swing_score = calculate_swing_score(raw, club_type)
+        power_score = calc_power_idx(raw, club_type)
+        stability_score = calc_stability_idx(raw, club_type)
+    except Exception:
+        logging.exception("Swing score calc failed for LLM swing type")
+        swing_score = None
+        power_score = None
+        stability_score = None
+
+    type_payload = {
+        "tags_flat": tags_flat,
+        "tag_counter": dict(tag_counter),
+        "shoulder": raw.get("shoulder", {}),
+        "hip": raw.get("hip", {}),
+        "wrist": raw.get("wrist", {}),
+        "head": raw.get("head", {}),
+        "knee": raw.get("knee", {}),
+        "x_factor": raw.get("x_factor", {}),
+        "swing_score": swing_score,
+        "power_score": power_score,
+        "stability_score": stability_score,
+        "comparison_text": comparison_text,
+    }
+
+    try:
+        llm_out = generate_llm_swing_type_07(type_payload)
+        parsed = parse_swing_type_from_llm(llm_out)
+        if parsed:
+            return parsed
+        logging.warning("LLM swing type parse failed; fallback to judge_swing_type. output=%s", llm_out)
+    except Exception:
+        logging.exception("LLM swing type resolution failed; fallback to judge_swing_type")
+
+    return judge_swing_type(tag_counter)
+
+
 def generate_llm_comment_07(payload: Dict[str, Any]) -> str:
     # 既存のクラブ名取得ロジック
     raw_club = payload.get("club_type", "iron")
@@ -3992,24 +4131,40 @@ def build_comparison_block(comparison: Dict[str, Any]) -> Dict[str, Any]:
     }
 def build_paid_07_from_analysis(analysis: Dict[str, Any], raw: Dict[str, Any], comparison: Dict[str, Any] = None) -> Dict[str, Any]:
     c = collect_tag_counter(analysis)
-    swing_type = judge_swing_type(c)
+    club_type = raw.get("club_type", "iron")
+    swing_type = resolve_swing_type_llm(analysis, raw, comparison, c)
     priorities = extract_priorities(c, 2)
     conf = _conf(raw)
     frames = _frames(raw)
 
+    try:
+        swing_score = calculate_swing_score(raw, club_type)
+        power_score = calc_power_idx(raw, club_type)
+        stability_score = calc_stability_idx(raw, club_type)
+    except Exception:
+        swing_score = None
+        power_score = None
+        stability_score = None
+
     llm_payload = {
-        "club_type": raw.get("club_type", "iron"),
+        "club_type": club_type,
         "priority": priorities[0] if priorities else "不明",
         "swing_type": swing_type,
         "raw_metrics": raw,
         "tags": dict(c),
+        "tag_counter": dict(c),
 
+        "shoulder": raw.get("shoulder", {}),
         "hip": raw.get("hip", {}),
-        "x_factor": raw.get("x_factor", {}),
+        "wrist": raw.get("wrist", {}),
         "head": raw.get("head", {}),
         "knee": raw.get("knee", {}),
+        "x_factor": raw.get("x_factor", {}),
         "spine": judge_spine_flag(raw),
-        
+        "swing_score": swing_score,
+        "power_score": power_score,
+        "stability_score": stability_score,
+
         "comparison_data": {
             "deltas": comparison.get("deltas", {}) if comparison else {},
             "past_count": comparison.get("past_sessions_count", 0) if comparison else 0
