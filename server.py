@@ -5447,7 +5447,7 @@ def handle_text_message(event):
             f"https://buy.stripe.com/00w6oI6Qb8TogSn6uz18c0a?client_reference_id={user_id}\n\n"
             "【回数券プラン】1,200円/5回\n"
             "回数券を購入する → \n"
-            f"https://buy.stripe.com/4gM6oI3DZd9EeKfcSX18c09?client_reference_id={user_id}\n\n"
+            f"https://buy.stripe.com/8x27sMcavd9E31xf1518c0b?client_reference_id={user_id}\n\n"
             "【月額プラン】2,000円/月\n"
             "月額プランを申し込む → \n"
             f"{monthly_checkout_url}\n\n"
